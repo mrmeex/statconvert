@@ -1,0 +1,54 @@
+# Python bytecode and interpreter caches
+__pycache__/
+*.py[cod]
+
+# Test, lint, type-check, and coverage output
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pyright/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# Packaging and build output
+*.egg-info/
+build/
+dist/
+
+# Local environments
+.venv/
+.venv*/
+venv/
+env/
+ENV/
+
+# Editor, OS, and local AI-tool state
+.vscode/
+.idea/
+.agents/
+.codex/
+.DS_Store
+Thumbs.db
+
+# StatConvert manual-run output
+tmp_*/
+*.log
+*.statconvert-metadata.json
+reports/
+generated-reports/
+validation-output/
+validation-results/
+/output/
+/logs/
+
+# Permit intentional sidecar fixtures in the future.
+!tests/fixtures/**/*.statconvert-metadata.json
+
+# Generated performance data and results (framework sources remain tracked)
+benchmarks/data/generated/
+benchmarks/output/
+benchmarks/results/
+benchmarks/profiles/
+*.prof

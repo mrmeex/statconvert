@@ -1,0 +1,502 @@
+# StatConvert CLI reference
+
+**Status:** authoritative command reference, verified during the Phase 13.7 audit
+
+## Command overview
+
+```text
+convert       Convert one dataset to another format.
+transform     Transform a dataset and write it to another format.
+formats       List registered extensions and extension-level read/write support.
+backends      List backend engines and backend-wide capabilities.
+capabilities  Show details for one extension or backend.
+objects       List dataset-like objects inside a container file.
+info          Display basic dataset information.
+schema        Display normalized variable schema.
+labels        Display variable and value labels.
+metadata      Display a normalized metadata summary.
+summary       Display a dataset-level statistical summary.
+describe      Display column profiles.
+frequencies   Display value-count tables.
+missing       Display missing-value analysis.
+validate      Validate quality and conversion readiness.
+compare       Compare two datasets and optionally write a report.
+report        Generate a single-dataset profile report.
+batch         Plan and execute many conversions.
+peek          Preview the first rows.
+```
+
+There is no separate `diff` command. Use `statconvert compare` for diff-style dataset
+analysis and reports.
+
+## Global options
+
+Global options appear before the command:
+
+- `--debug` shows a terminal traceback for unexpected errors.
+- `--verbose`, `-v` enables additional user-facing progress information.
+- `--install-completion` and `--show-completion` are provided by Typer.
+- `--help` displays help.
+
+```bash
+statconvert --debug convert input.sav output.parquet
+statconvert --verbose info input.sav
+```
+
+## Logging options
+
+Every public command supports:
+
+- `--log FILE` - write diagnostics to a file;
+- `--log-level debug|info|warning|error` - set the file threshold (default `info`);
+- `--log-append` - append instead of replacing the selected log file; and
+- `--developer-log` - include source module and line information.
+
+Logging is opt-in, file-only, and separate from Rich terminal output. It never writes a
+status message to stdout and therefore does not contaminate `--json` output. Secret-like
+parameter keys are masked, and logs contain compact summaries rather than DataFrames or
+file contents.
+
+Expected non-zero results are logged as command outcomes, not crashes. This includes
+validation policy blocks, compare differences that match the exit policy, and batch
+blockers/failures. Unexpected exceptions remain failures and include a traceback in the
+log. `--developer-log` and `--log-level` affect the log file only.
+
+```bash
+statconvert convert input.sav output.parquet --log convert.log
+statconvert compare before.sav after.sav --json --log compare.log
+```
+
+## JSON output
+
+The commands `objects`, `summary`, `describe`, `frequencies`, `missing`, `validate`,
+`batch`, and `compare` support machine-readable JSON stdout. `report --json` writes the requested report
+and prints a concise JSON completion summary.
+
+JSON is written directly to stdout without Rich rendering. Markup-like strings, ANSI-like
+text, Unicode, non-native scalar mapping keys, and missing/non-finite scalar values are
+normalized safely. When `--json` is used, redirect or pipe stdout normally:
+
+```bash
+statconvert frequencies input.csv --json > frequencies.json
+```
+
+`formats`, `backends`, `capabilities`, `info`, `peek`, `schema`, `labels`, and `metadata`
+do not currently have `--json` options.
+
+## Exit codes
+
+- `0` means the command completed under its default policy.
+- `1` means an operational error or an intentional failing policy outcome.
+- `validate` exits `1` for errors, and for warnings with `--strict`.
+- `convert` and `transform` exit `1` when their validation write gate blocks output.
+- `compare` exits `1` for error-level differences, and for warnings with `--strict`.
+- `batch` exits `1` when a plan has blockers or an execution has failed/blocked items.
+  A dry run with blockers also exits `1`.
+- Report validation findings are observational; a successfully written report exits `0`.
+
+## Conversion and transformation
+
+### `convert`
+
+```bash
+statconvert convert INPUT_FILE OUTPUT_FILE [OPTIONS]
+```
+
+Options:
+
+- `--object OBJECT` selects an Excel/ODS sheet or RData/RDA object by exact name or
+  zero-based index.
+- `--overwrite` replaces an existing output.
+- `--validate` validates the loaded dataset for the output extension before writing.
+- `--strict-validation` implies validation and makes warnings write-blocking.
+- Common logging options.
+
+```bash
+statconvert convert input.sav output.parquet
+statconvert convert input.sav output.dta --validate
+statconvert convert input.csv output.xlsx --overwrite --log convert.log
+statconvert convert input.csv output.xls
+statconvert convert workbook.xlsx output.csv --object 0
+statconvert convert workspace.rdata patients.csv --object patients
+```
+
+Validation errors always prevent writing. Warnings prevent writing only in strict mode.
+Unsupported output extensions fail before a backend write. Genuine `.xls` writing uses
+the normally installed `xlwt` dependency and is limited to 65,535 data rows plus one header row and
+256 columns; use `.xlsx` for larger or wider datasets. `.zsav`, `.por`, and `.sas7bdat`
+are read-only.
+
+### `transform`
+
+```bash
+statconvert transform INPUT_FILE OUTPUT_FILE [OPTIONS]
+```
+
+Options:
+
+- `--object OBJECT` selects an Excel/ODS sheet or RData/RDA object by exact name or
+  zero-based index.
+- `--select COLUMN` - keep columns; repeat or supply trailing column values.
+- `--drop COLUMN` - remove columns; repeat or supply trailing column values.
+- `--rename OLD=NEW` - rename a column; repeatable.
+- `--type COLUMN=TYPE` - convert a column; repeatable. Supported targets are `string`,
+  `integer`/`int`, `float`, `boolean`/`bool`, `datetime`, `date`, and `category`.
+- `--type-errors raise|coerce|ignore` - type error policy (default `raise`).
+- `--datetime-format FORMAT` - pandas datetime parsing format.
+- `--filter COLUMN,OPERATOR,VALUE` - filter rows; repeatable. Missing checks omit VALUE.
+- `--filter-mode and|or` - combine filters (default `and`).
+- `--recode COLUMN:OLD=NEW,OLD=NEW` - recode values; repeatable.
+- `--recode-default VALUE` - value for unmapped non-missing recode values.
+- `--update-value-labels` / `--no-update-value-labels` - control recoded labels.
+- `--ignore-missing-columns` - ignore missing select/drop/rename columns.
+- `--reset-index` / `--no-reset-index` - control index reset after filtering.
+- `--overwrite`, `--dry-run`, `--validate`, and `--strict-validation`.
+- Common logging options.
+
+Filter operators are `eq`, `ne`, `gt`, `gte`, `lt`, `lte`, `in`, `not_in`, `contains`,
+`not_contains`, `startswith`, `endswith`, `is_missing`, and `not_missing`. Symbol aliases
+such as `==`, `!=`, `>`, `>=`, `<`, and `<=` are accepted. Membership values use `|`.
+
+The pipeline order is fixed: select, drop, rename, type conversion, filtering, then
+recoding. Validation runs on the transformed `Dataset` before writing.
+
+```bash
+statconvert transform input.sav output.csv --select age sex
+statconvert transform input.csv output.parquet --rename age=Age --type Age=int
+statconvert transform input.csv output.xlsx --filter age,gte,18 --recode status:A=Active,I=Inactive
+statconvert transform input.csv output.csv --drop notes --dry-run
+statconvert transform workbook.ods output.csv --object "Survey Data"
+```
+
+## Discovery and metadata commands
+
+### `formats`
+
+```bash
+statconvert formats
+```
+
+Lists extension, format name, backend, extension-level read/write support, and dataset
+object kind (`sheet`, `r_object`, or `-`). It has only the common logging options.
+
+### `backends`
+
+```bash
+statconvert backends
+```
+
+Lists backend name/class, whether any registered extension is readable or writable, and
+whether the backend declares metadata support. Backend-wide write support does not imply
+that every extension owned by the backend is writable.
+
+### `capabilities`
+
+```bash
+statconvert capabilities TARGET
+```
+
+`TARGET` may be a bare extension, dotted extension, filename-like value, or backend name.
+Format targets show extension-refined read/write truth; backend targets show broad engine
+capabilities. Format details include container status, object selection, object kind, and
+multiple-sheet/table flags.
+
+```bash
+statconvert capabilities zsav
+statconvert capabilities .xlsx
+statconvert capabilities pyreadstat
+```
+
+### `objects`
+
+```bash
+statconvert objects INPUT_FILE [--json]
+```
+
+Lists workbook sheets and named RData/RDA objects with zero-based indices. Legacy XLS
+listing uses the normally installed `xlrd`; an incomplete environment reports that
+dependency clearly. Single-dataset formats exit successfully with
+`This format does not expose multiple dataset objects.`; with `--json` they emit an empty
+JSON array.
+
+`--object TEXT` selects an exact Excel/ODS sheet or RData/RDA object name, or a zero-based
+index. A single supported object is selected automatically. A container with multiple
+supported objects fails with the available choices unless `--object` is provided;
+StatConvert never silently reads the first one. Unsupported R objects are shown when
+`pyreadr` can expose them. No format-specific `--sheet` or `--r-object` option is provided.
+
+```bash
+statconvert objects workbook.xlsx
+statconvert objects workbook.ods --json
+statconvert peek workbook.xlsx --object "Survey Data"
+statconvert objects workspace.rdata
+statconvert peek workspace.rdata --object patients
+statconvert convert workspace.rdata patients.csv --object patients
+```
+
+Every command that reads exactly one dataset exposes `--object`: convert, transform, info,
+peek, schema, labels, metadata, summary, describe, frequencies, missing, validate, and
+report. Compare provides shared and side-specific selectors, and batch applies one shared
+selector to every input file. Choosing an output workbook sheet or R object name remains
+deferred at the CLI level. The Excel backend accepts an output `object_selector` for
+internal/API callers without changing this input-selector convention.
+
+### `info`
+
+```bash
+statconvert info INPUT_FILE [--object OBJECT]
+```
+
+Displays source format/backend, dimensions, variables, and types. It has only common
+logging options.
+
+### `peek`
+
+```bash
+statconvert peek INPUT_FILE [--rows N] [--object OBJECT]
+```
+
+`--rows` defaults to `5`.
+
+### `schema`
+
+```bash
+statconvert schema INPUT_FILE [--object OBJECT]
+```
+
+Displays normalized names, storage types, labels, value-label/missing counts, display
+formats, and measurement levels.
+
+### `labels`
+
+```bash
+statconvert labels INPUT_FILE [--limit N] [--object OBJECT]
+```
+
+Displays variable and value labels. `--limit` defaults to `100` value labels.
+`--object` selects an Excel/ODS sheet or RData/RDA object.
+
+### `metadata`
+
+```bash
+statconvert metadata INPUT_FILE [--object OBJECT]
+```
+
+Displays normalized source metadata and metadata counts through `Dataset` accessors.
+
+## Statistical inspection and validation
+
+### `summary`
+
+```bash
+statconvert summary INPUT_FILE [--json] [--object OBJECT]
+```
+
+Shows dimensions, type counts, label counts, missing cells, duplicate rows, and memory
+usage.
+
+### `describe`
+
+```bash
+statconvert describe INPUT_FILE [--object OBJECT] [OPTIONS]
+```
+
+Options:
+
+- `--columns COLUMN` - restrict columns; repeatable/trailing values supported;
+- `--only numeric|categorical|datetime|other` - restrict profile type; and
+- `--json` - emit the profile model as JSON.
+- `--object OBJECT` - select an Excel/ODS sheet or RData/RDA object.
+
+```bash
+statconvert describe workbook.xlsx --object Survey
+```
+
+### `frequencies`
+
+```bash
+statconvert frequencies INPUT_FILE [--object OBJECT] [OPTIONS]
+```
+
+Options:
+
+- `--columns COLUMN` - restrict columns;
+- `--top N` - maximum values per column (default `20`);
+- `--include-missing` - include missing values;
+- `--max-unique N` - skip default columns above the unique-value limit; and
+- `--json`; and
+- `--object OBJECT` - select an Excel/ODS sheet or RData/RDA object.
+
+```bash
+statconvert frequencies workspace.rdata --object patients
+```
+
+### `missing`
+
+```bash
+statconvert missing INPUT_FILE [--object OBJECT] [OPTIONS]
+```
+
+Options:
+
+- `--columns COLUMN` - restrict columns;
+- `--only-missing` - omit columns without actual or metadata-defined missing values;
+- `--threshold PERCENT` - minimum missing percentage; and
+- `--json`; and
+- `--object OBJECT` - select an Excel/ODS sheet or RData/RDA object.
+
+```bash
+statconvert missing workbook.ods --object 0
+```
+
+Actual nulls and metadata-defined missing values/ranges are reported separately.
+
+### `validate`
+
+```bash
+statconvert validate INPUT_FILE [--to FORMAT] [--strict] [--json] [--object OBJECT]
+```
+
+- `--to FORMAT` adds destination-format readiness and metadata-preservation checks.
+- `--strict` makes warnings fail validation.
+- `--json` emits issue objects only.
+- `--object OBJECT` selects an Excel/ODS sheet or RData/RDA object.
+
+Read-only targets such as `zsav`, `por`, and `sas7bdat` are reported as invalid write
+targets. `xls`, `xlsx`, `sav`, `dta`, and `xpt` are valid writable targets when their
+backend dependencies are available. Validation reports the legacy XLS row and column
+limits before conversion.
+
+## Batch conversion
+
+### `batch`
+
+```bash
+statconvert batch INPUT_PATH OUTPUT_PATH --to FORMAT [OPTIONS]
+```
+
+Options:
+
+- `--to FORMAT` - required writable target extension.
+- `--object OBJECT` - apply the same dataset-object selector to every input file.
+- `--recursive`, `-r` - include subdirectories.
+- `--overwrite` - allow existing output replacement.
+- `--preserve-structure` / `--flatten` - path policy (preserve is default).
+- `--include-unsupported` / `--supported-only` - skipped-input visibility.
+- `--pattern GLOB` and `--exclude-pattern GLOB` - repeatable discovery filters.
+- `--dry-run` - show/write a plan without conversion.
+- `--fail-fast` - stop after the first failure; running worker tasks may finish.
+- `--allow-blocked` - execute pending items despite other blocked items.
+- `--json` - emit the plan or result as JSON.
+- `--report FILE` - write a CSV or JSON plan/result report.
+- `--report-format csv|json` - override suffix inference.
+- `--no-progress` - disable file-level progress.
+- `--workers N` - worker threads (default `1`).
+- `--validate` - validate each pending dataset before writing.
+- `--strict-validation` - make warnings fail; requires `--validate`.
+- Common logging options.
+
+Planning is deterministic. It detects unsupported inputs, existing outputs, output-path
+collisions, nested output discovery, and unsupported targets before execution. Recursive
+runs preserve relative folders by default. Result and report order follows plan order even
+with multiple workers. Object selection happens during execution, so dry-run remains
+read-free. It selects one object per file and never expands all objects. A format that
+does not support object selection fails as an individual item rather than silently
+ignoring `--object`.
+
+```bash
+statconvert batch input output --to csv --recursive --dry-run
+statconvert batch input output --to parquet --workers 4 --report result.csv
+statconvert batch input output --to xlsx --validate --strict-validation
+statconvert batch workbooks output --to csv --object Data
+statconvert batch rdata output --to parquet --object patients
+```
+
+Batch transformations are not implemented.
+
+## Dataset comparison
+
+### `compare`
+
+```bash
+statconvert compare LEFT_FILE RIGHT_FILE [OPTIONS]
+```
+
+Options:
+
+- `--values` / `--no-values` - enable/disable cell comparison (enabled by default).
+- `--sample N` - compare only the first N rows of values; incompatible with `--no-values`.
+- `--columns COLUMN` - restrict schema, metadata, and values; repeatable/trailing values.
+- `--object OBJECT` - apply one selector to both input files.
+- `--left-object OBJECT` - select an object only from the left input.
+- `--right-object OBJECT` - select an object only from the right input.
+- `--json` - emit the full comparison model.
+- `--strict` - make warning-level differences fail.
+- `--report FILE` - write CSV, JSON, or HTML.
+- `--report-format csv|json|html` - override suffix inference.
+- Common logging options.
+
+Comparison covers shape, full column membership/order, storage types, display formats,
+measurement levels, normalized variable/value labels and missing metadata, and optional
+cell values. Reports and terminal output expose the same schema-change categories.
+`--object` cannot be combined with either side-specific selector; left and right selectors
+may be used independently or together.
+
+```bash
+statconvert compare before.sav after.parquet
+statconvert compare before.csv after.csv --sample 1000 --strict
+statconvert compare before.csv after.csv --json --report comparison.html
+statconvert compare before.xlsx after.xlsx --object SurveyData
+statconvert compare before.xlsx after.xlsx --left-object Old --right-object New
+statconvert compare before.rdata after.rdata --object patients
+```
+
+Reports are written even when differences result in exit code `1`. Key-based row matching,
+numeric tolerance, ignored-column policy, and chunked comparison are deferred.
+
+## Dataset reports
+
+### `report`
+
+```bash
+statconvert report INPUT_FILE --output FILE [--object OBJECT] [OPTIONS]
+```
+
+Options:
+
+- `--object OBJECT` selects an Excel/ODS sheet or RData/RDA object by exact name or
+  zero-based index.
+- `--output FILE`, `-o FILE` - required `.html`, `.htm`, `.json`, or `.csv` report.
+- `--format html|json|csv` - override suffix inference.
+- `--preset quick|full|validation|metadata` - section preset.
+- `--section NAME` - include only named sections; repeatable.
+- `--no-summary`, `--no-schema`, `--no-metadata`, `--no-labels`, `--no-missing`,
+  `--no-describe`, and `--no-validation` - omit default/preset sections.
+- `--frequencies` - include frequency tables.
+- `--columns COLUMN` - restrict describe/frequency columns.
+- `--frequency-top N` - maximum frequency values (default `20`).
+- `--frequency-include-missing` - include missing values in frequencies.
+- `--frequency-max-unique N` - skip high-cardinality default frequency columns.
+- `--max-table-rows N` - HTML/CSV rows per table (default `1000`).
+- `--max-preview-values N` - value-label preview limit (default `5`).
+- `--target-format FORMAT` - add conversion-readiness validation.
+- `--strict-validation` - use strict validation severity in the report.
+- `--json` - print a concise JSON summary after writing.
+- `--quiet` - suppress the normal Rich completion summary.
+- Common logging options.
+
+Default sections are summary, schema, metadata, labels, missing, describe, and validation.
+`full` adds frequencies; `quick` selects summary/schema/missing/validation; `validation`
+selects summary/schema/validation; `metadata` selects summary/schema/metadata/labels.
+Explicit `--section`, `--frequencies`, and `--no-*` options refine the preset.
+
+`--max-table-rows` limits HTML/CSV tables and adds truncation notices; JSON report files
+retain the complete model. Reports are static and Rich-free.
+
+```bash
+statconvert report input.sav --output report.html --preset quick
+statconvert report input.sav --output report.json --preset full
+statconvert report input.sav --output report.csv --section summary --section validation
+```
+
+PDF reports are not implemented.

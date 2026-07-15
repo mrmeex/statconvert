@@ -2,12 +2,14 @@ from statconvert.backends.base import Backend
 from statconvert.backends.capabilities import BackendCapabilities
 from statconvert.backends.objects import DatasetObjectInfo
 from statconvert.dataset import Dataset
+from statconvert.dataset_options import DatasetReadOptions, DatasetWriteOptions
 from statconvert.exceptions import ObjectSelectionNotSupportedError
 
 from dataclasses import replace
 from importlib.util import find_spec
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
+import warnings
 
 from statconvert.backends.arrow_backend import ArrowBackend
 from statconvert.backends.csv_backend import CSVBackend
@@ -32,6 +34,21 @@ BACKENDS: dict[str, Backend] = {
     "pyreadstat": PyReadstatBackend(),
     "r": RBackend(),
 }
+
+OptionWarningCallback = Callable[[str], None]
+
+READ_ENCODING_EXTENSIONS = {
+    ".csv",
+    ".json",
+    ".jsonl",
+    ".ndjson",
+    ".sav",
+    ".zsav",
+    ".dta",
+    ".sas7bdat",
+    ".xpt",
+}
+WRITE_ENCODING_EXTENSIONS = {".csv"}
 
 
 #
@@ -257,15 +274,22 @@ def read_dataset(
     path: str | Path,
     *,
     object_selector: str | None = None,
+    options: DatasetReadOptions | None = None,
+    on_option_warning: OptionWarningCallback | None = None,
 ) -> Dataset:
     """Read a dataset with an optional backend-neutral object selector."""
 
     filename = str(path)
-    reader = get_reader_for_file(filename)
-    if object_selector is None:
-        return reader.read(filename)
-
     extension = get_extension(filename)
+    reader = get_reader_for_file(filename)
+    read_kwargs = _dataset_read_kwargs(
+        extension,
+        options,
+        on_option_warning=on_option_warning,
+    )
+    if object_selector is None:
+        return reader.read(filename, **read_kwargs)
+
     if not format_supports_objects(extension):
         raise ObjectSelectionNotSupportedError(
             f"Object selection is not supported for {extension} files."
@@ -275,6 +299,92 @@ def read_dataset(
         Path(path),
         object_selector,
     )
+
+
+def write_dataset(
+    dataset: Dataset,
+    path: str | Path,
+    *,
+    options: DatasetWriteOptions | None = None,
+    on_option_warning: OptionWarningCallback | None = None,
+) -> None:
+    """Write a dataset, applying format-specific options only to that format."""
+
+    filename = str(path)
+    extension = get_extension(filename)
+    writer = get_writer_for_file(filename)
+    write_kwargs = _dataset_write_kwargs(
+        extension,
+        options,
+        on_option_warning=on_option_warning,
+    )
+    writer.write(dataset, filename, **write_kwargs)
+
+
+def _dataset_read_kwargs(
+    extension: str,
+    options: DatasetReadOptions | None,
+    *,
+    on_option_warning: OptionWarningCallback | None,
+) -> dict[str, str]:
+    if options is None:
+        return {}
+
+    read_kwargs: dict[str, str] = {}
+    if options.encoding is not None:
+        if extension in READ_ENCODING_EXTENSIONS:
+            read_kwargs["encoding"] = options.encoding
+        else:
+            _emit_encoding_warning(
+                "input",
+                extension,
+                on_option_warning=on_option_warning,
+            )
+    if extension == ".csv":
+        read_kwargs.update(options.csv_kwargs())
+    return read_kwargs
+
+
+def _dataset_write_kwargs(
+    extension: str,
+    options: DatasetWriteOptions | None,
+    *,
+    on_option_warning: OptionWarningCallback | None,
+) -> dict[str, str]:
+    if options is None:
+        return {}
+
+    write_kwargs: dict[str, str] = {}
+    if options.encoding is not None:
+        if extension in WRITE_ENCODING_EXTENSIONS:
+            write_kwargs["encoding"] = options.encoding
+        else:
+            _emit_encoding_warning(
+                "output",
+                extension,
+                on_option_warning=on_option_warning,
+            )
+    if extension == ".csv":
+        write_kwargs.update(options.csv_kwargs())
+    return write_kwargs
+
+
+def _emit_encoding_warning(
+    direction: str,
+    extension: str,
+    *,
+    on_option_warning: OptionWarningCallback | None,
+) -> None:
+    option_name = f"--{direction}-encoding"
+    format_name = extension.lstrip(".")
+    message = (
+        f"Warning: {option_name} was provided, but the {format_name} backend does "
+        f"not support explicit {direction} encoding. The option was ignored."
+    )
+    if on_option_warning is not None:
+        on_option_warning(message)
+        return
+    warnings.warn(message, UserWarning, stacklevel=3)
 
 
 def list_dataset_objects(path: str | Path) -> list[DatasetObjectInfo]:

@@ -3,9 +3,9 @@
 ## How to use these examples
 
 This guide is a copy-and-adapt recipe book for common StatConvert workflows. Install
-StatConvert from the downloaded GitHub Release wheel before using these recipes. The
-examples assume the command is available as `statconvert`; if it is not on `PATH`, replace
-it with `python -m statconvert`.
+StatConvert from the wheel attached to a GitHub Release before using these recipes. The
+examples assume it is available as `statconvert`; if the console command is not on
+`PATH`, replace it with `python -m statconvert`.
 
 The commands use PowerShell-friendly syntax and relative paths for readability. Replace
 the sample filenames, sheet names, R object names, and columns with values from your own
@@ -21,8 +21,19 @@ Run `statconvert --help` or command-specific help such as
 [CLI Reference](cli.md) defines exact syntax and exit behavior, and the
 [Format Guide](formats.md) records format capabilities and caveats.
 
-Examples assume output files do not already exist. Use `--overwrite` only when replacing
-an existing conversion or transformation is intentional.
+Examples assume output files do not already exist and their parent directories exist.
+Use `--overwrite` only when replacement is intentional and `--create-dirs` when the
+user-specified output directory is missing.
+
+To capture the exact installed application, Python, and dependency versions for support,
+run:
+
+```powershell
+statconvert --version
+```
+
+Use `python -m statconvert --version` when the console command is not on `PATH`. Missing
+dependencies appear as `not installed`.
 
 ## Example files and paths
 
@@ -110,6 +121,11 @@ analytics-oriented Parquet file:
 
 ```powershell
 statconvert convert .\input\data.xpt .\output\data.csv
+statconvert convert .\input\data.sav .\output\data.xlsx --input-encoding cp1252
+statconvert convert .\input\data.csv .\output\data.xlsx --input-encoding latin1 --csv-delimiter ";"
+statconvert convert .\input\data.xlsx .\output\data.csv --output-encoding utf-8-sig --csv-delimiter ";"
+statconvert convert .\input\legacy.csv .\output\clean.csv --input-encoding latin1 --output-encoding utf-8-sig --csv-delimiter ";"
+statconvert convert .\input\data.xlsx .\output\data.csv --csv-delimiter ";" --csv-decimal ","
 statconvert convert .\input\data.xpt .\output\data.parquet
 ```
 
@@ -122,6 +138,11 @@ statconvert convert .\input\data.sas7bdat .\output\data.parquet
 Metadata fidelity depends on the destination. See the
 [SAS and XPT format guidance](formats.md#sas-sas7bdat-and-xpt) before relying on a
 cross-format round trip.
+
+Encoding and CSV controls are available only on `convert`, `transform`, and `batch`.
+Input and output encodings are independent; unsupported backends warn and ignore the
+relevant directional option. These controls are not added to `peek`, `info`, `compare`,
+or other read-only commands.
 
 ## Convert CSV to Excel XLSX
 
@@ -284,18 +305,37 @@ Convert supported files in one folder, include subfolders, or preview a plan:
 ```powershell
 statconvert batch .\input .\output --to parquet
 statconvert batch .\input .\output --to csv --recursive
+statconvert batch .\input .\output --to csv --csv-delimiter ";"
 statconvert batch .\input .\output --to xlsx --dry-run
+statconvert batch .\input .\new-output --to csv --create-dirs
 ```
 
 The output extension comes from `--to`. Planning and result order are deterministic, even
-when several workers are used. A dry run does not read datasets or container contents; it
+when several workers are used. The output root must exist unless `--create-dirs` is used;
+generated preserve-structure folders below an existing root are automatic. A dry run
+does not read datasets, create directories, write files, or replace existing outputs; it
 previews paths, capabilities, collisions, and other plan information.
+
+Single-file output policy is the same for conversion, transformation, and reports:
+
+```powershell
+statconvert convert .\input\data.sav .\output\data.xlsx --overwrite
+statconvert transform .\input\data.xlsx .\new-output\data.csv --create-dirs
+statconvert report .\input\data.sav --output .\reports\data.html --create-dirs
+```
 
 Capture a JSON plan or write a durable CSV result report:
 
 ```powershell
 statconvert batch .\input .\output --to parquet --dry-run --json > .\output\batch-plan.json
 statconvert batch .\input .\output --to parquet --report .\reports\batch-results.csv
+```
+
+For regional CSV output, combine a semicolon field delimiter with a comma decimal
+separator:
+
+```powershell
+statconvert batch .\input .\output --to csv --output-encoding utf-8-sig --csv-delimiter ";" --csv-decimal ","
 ```
 
 ## Batch convert standardized workbooks
@@ -324,6 +364,12 @@ Selection failures are reported per item. Batch does not discover and expand eve
 and does not support a per-file object manifest.
 
 ## Transform selected or dropped columns
+
+CSV transformation output accepts the same focused controls:
+
+```powershell
+statconvert transform .\input\data.xlsx .\output\data.csv --csv-delimiter ";"
+```
 
 Keep only selected columns:
 

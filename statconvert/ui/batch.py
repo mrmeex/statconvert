@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Callable
+
 from rich.console import Group
 from rich.live import Live
 from rich.progress import BarColumn, Progress, TextColumn, TimeElapsedColumn
@@ -7,6 +9,7 @@ from rich.table import Table
 from rich.text import Text
 
 from statconvert.batch import BatchItem, BatchPlan, BatchResult, execute_batch_plan
+from statconvert.dataset_options import DatasetReadOptions, DatasetWriteOptions
 
 from .console import console
 
@@ -18,6 +21,9 @@ def run_batch_with_progress(
     validate: bool = False,
     strict_validation: bool = False,
     object_selector: str | None = None,
+    read_options: DatasetReadOptions | None = None,
+    write_options: DatasetWriteOptions | None = None,
+    on_option_warning: Callable[[str], None] | None = None,
 ) -> BatchResult:
     """Execute a batch plan with file-level Rich progress."""
 
@@ -80,6 +86,9 @@ def run_batch_with_progress(
             validate=validate,
             strict_validation=strict_validation,
             object_selector=object_selector,
+            read_options=read_options,
+            write_options=write_options,
+            on_option_warning=on_option_warning,
             on_item_start=on_item_start,
             on_item_finish=on_item_finish,
         )

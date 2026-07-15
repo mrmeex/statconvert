@@ -108,8 +108,14 @@ left/right selectors, while batch applies one selector to every input file.
 CSV is the simplest choice for a single table that must be readable by many tools.
 StatConvert reads and writes comma-separated files without a pandas index. Column types
 are inferred during reading, so text, dates, identifiers with leading zeroes, and mixed
-columns may need inspection after import. The CLI does not expose general delimiter or
-encoding controls.
+columns may need inspection after import.
+
+The datafile-writing commands `convert`, `transform`, and `batch` can select CSV input or
+output encoding independently with `--input-encoding` and `--output-encoding`. The
+CSV-specific `--csv-delimiter` and `--csv-decimal` options apply to CSV input/output
+paths. Delimiters and decimal separators are limited to one character and cannot be the
+same when both are supplied. Read-only inspection and comparison commands do not expose
+these controls, sniffing, dialect presets, or auto-detection.
 
 CSV has no native variable labels, value labels, statistical missing-value definitions,
 or measurement levels. StatConvert writes normalized metadata to a sidecar, but software
@@ -119,6 +125,7 @@ that reads only the CSV will see data and column names only.
 statconvert peek data.csv
 statconvert convert data.csv data.xlsx
 statconvert validate data.csv --to parquet
+statconvert convert data.xlsx data.csv --csv-delimiter ";" --csv-decimal ","
 ```
 
 CSV contains one dataset and does not support object selection.
@@ -358,7 +365,7 @@ One Excel sheet to CSV:
 
 ```powershell
 statconvert objects workbook.xlsx
-statconvert convert workbook.xlsx data.csv --object Data
+statconvert convert workbook.xlsx data.csv --object Data --csv-delimiter ";"
 ```
 
 One RData object to CSV:

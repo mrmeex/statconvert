@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import Callable
 
 from statconvert.dataset import Dataset
+from statconvert.dataset_options import DatasetReadOptions, DatasetWriteOptions
 from statconvert.exceptions import ConversionError
 from statconvert.inspection import (
     ValidationFailedError,
@@ -10,7 +11,13 @@ from statconvert.inspection import (
     validation_should_fail,
 )
 from statconvert.logging import get_logger
-from statconvert.registry import get_reader_for_file, get_writer_for_file, read_dataset
+from statconvert.output_paths import validate_output_file_path
+from statconvert.registry import (
+    get_reader_for_file,
+    get_writer_for_file,
+    read_dataset,
+    write_dataset,
+)
 from statconvert.ui import show_verbose
 from statconvert.ui.progress import progress
 
@@ -19,10 +26,14 @@ def transform(
     input_file: str,
     output_file: str,
     overwrite: bool = False,
+    create_dirs: bool = False,
     validate: bool = False,
     strict_validation: bool = False,
     on_validation: Callable[[list[ValidationIssue]], None] | None = None,
     object_selector: str | None = None,
+    read_options: DatasetReadOptions | None = None,
+    write_options: DatasetWriteOptions | None = None,
+    on_option_warning: Callable[[str], None] | None = None,
 ) -> Dataset:
     """
     Convert one dataset file to another format.
@@ -37,12 +48,6 @@ def transform(
             f"Input file does not exist: {input_file}"
         )
 
-    if output_path.exists() and not overwrite:
-        raise ConversionError(
-            f"Output exists: {output_file}. "
-            "Use --overwrite to replace it."
-        )
-
     # Determine reader and writer
 
     try:
@@ -50,6 +55,11 @@ def transform(
         writer = get_writer_for_file(output_file)
     except ValueError as exc:
         raise ConversionError(str(exc)) from None
+    validate_output_file_path(
+        output_path,
+        overwrite=overwrite,
+        create_dirs=create_dirs,
+    )
     logger.debug(
         "Conversion backends resolved: reader=%s writer=%s",
         reader.__class__.__name__,
@@ -66,6 +76,8 @@ def transform(
         dataset = read_dataset(
             input_file,
             object_selector=object_selector,
+            options=read_options,
+            on_option_warning=on_option_warning,
         )
 
     logger.info(
@@ -103,9 +115,11 @@ def transform(
 
     with progress(f"Writing {output_path.name}"):
 
-        writer.write(
+        write_dataset(
             dataset,
-            output_file
+            output_file,
+            options=write_options,
+            on_option_warning=on_option_warning,
         )
 
     logger.info("Output write completed: output_file=%s", output_file)

@@ -1,6 +1,6 @@
 # StatConvert CLI reference
 
-**Status:** authoritative command reference, verified during the Phase 13.7 audit
+**Status:** authoritative command reference
 
 ## Command overview
 
@@ -35,13 +35,21 @@ Global options appear before the command:
 
 - `--debug` shows a terminal traceback for unexpected errors.
 - `--verbose`, `-v` enables additional user-facing progress information.
+- `--version` prints the installed StatConvert version, Python version, and important
+  runtime dependency versions, then exits successfully without requiring a command.
 - `--install-completion` and `--show-completion` are provided by Typer.
 - `--help` displays help.
 
 ```bash
 statconvert --debug convert input.sav output.parquet
 statconvert --verbose info input.sav
+statconvert --version
+python -m statconvert --version
 ```
+
+Version status is plain text without Rich styling. Dependencies that cannot be imported
+are shown as `not installed`. Use the `python -m` form when `statconvert` is not on
+`PATH`.
 
 ## Logging options
 
@@ -108,17 +116,28 @@ Options:
 - `--object OBJECT` selects an Excel/ODS sheet or RData/RDA object by exact name or
   zero-based index.
 - `--overwrite` replaces an existing output.
+- `--create-dirs` creates a missing output parent directory.
 - `--validate` validates the loaded dataset for the output extension before writing.
 - `--strict-validation` implies validation and makes warnings write-blocking.
+- `--input-encoding TEXT` selects the text encoding for supported input formats.
+- `--output-encoding TEXT` selects the text encoding for supported output formats.
+- `--csv-delimiter TEXT` selects one delimiter character for CSV input/output paths.
+- `--csv-decimal TEXT` selects one decimal separator for CSV input/output paths.
 - Common logging options.
 
 ```bash
 statconvert convert input.sav output.parquet
+statconvert convert input.sav new-output/output.xlsx --create-dirs
 statconvert convert input.sav output.dta --validate
 statconvert convert input.csv output.xlsx --overwrite --log convert.log
 statconvert convert input.csv output.xls
 statconvert convert workbook.xlsx output.csv --object 0
 statconvert convert workspace.rdata patients.csv --object patients
+statconvert convert input.sav output.xlsx --input-encoding cp1252
+statconvert convert input.csv output.xlsx --input-encoding latin1 --csv-delimiter ";"
+statconvert convert input.xlsx output.csv --output-encoding utf-8-sig --csv-delimiter ";"
+statconvert convert legacy.csv clean.csv --input-encoding latin1 --output-encoding utf-8-sig --csv-delimiter ";"
+statconvert convert input.xlsx output.csv --csv-delimiter ";" --csv-decimal ","
 ```
 
 Validation errors always prevent writing. Warnings prevent writing only in strict mode.
@@ -151,7 +170,11 @@ Options:
 - `--update-value-labels` / `--no-update-value-labels` - control recoded labels.
 - `--ignore-missing-columns` - ignore missing select/drop/rename columns.
 - `--reset-index` / `--no-reset-index` - control index reset after filtering.
-- `--overwrite`, `--dry-run`, `--validate`, and `--strict-validation`.
+- `--overwrite`, `--create-dirs`, `--dry-run`, `--validate`, and
+  `--strict-validation`.
+- `--input-encoding TEXT` and `--output-encoding TEXT` control supported input and output
+  backends independently.
+- `--csv-delimiter TEXT` and `--csv-decimal TEXT` control CSV input/output paths.
 - Common logging options.
 
 Filter operators are `eq`, `ne`, `gt`, `gte`, `lt`, `lte`, `in`, `not_in`, `contains`,
@@ -167,7 +190,16 @@ statconvert transform input.csv output.parquet --rename age=Age --type Age=int
 statconvert transform input.csv output.xlsx --filter age,gte,18 --recode status:A=Active,I=Inactive
 statconvert transform input.csv output.csv --drop notes --dry-run
 statconvert transform workbook.ods output.csv --object "Survey Data"
+statconvert transform input.xlsx output.csv --csv-delimiter ";"
 ```
+
+Encoding and CSV options are available only on the datafile-writing commands `convert`,
+`transform`, and `batch`. `--input-encoding` affects only readers that support explicit
+encoding; `--output-encoding` affects only supporting writers. An unsupported backend
+produces a warning and ignores that directional option. CSV delimiter and decimal values
+apply only to CSV input/output paths, must each be one character, and cannot be the same
+when both are supplied. Read-only and comparison commands do not expose these controls in
+0.1.1.
 
 ## Discovery and metadata commands
 
@@ -381,6 +413,7 @@ Options:
 - `--object OBJECT` - apply the same dataset-object selector to every input file.
 - `--recursive`, `-r` - include subdirectories.
 - `--overwrite` - allow existing output replacement.
+- `--create-dirs` - create the root output directory when it is missing.
 - `--preserve-structure` / `--flatten` - path policy (preserve is default).
 - `--include-unsupported` / `--supported-only` - skipped-input visibility.
 - `--pattern GLOB` and `--exclude-pattern GLOB` - repeatable discovery filters.
@@ -394,21 +427,30 @@ Options:
 - `--workers N` - worker threads (default `1`).
 - `--validate` - validate each pending dataset before writing.
 - `--strict-validation` - make warnings fail; requires `--validate`.
+- `--input-encoding TEXT` and `--output-encoding TEXT` control supported batch readers
+  and writers independently.
+- `--csv-delimiter TEXT` and `--csv-decimal TEXT` control CSV input/output paths.
 - Common logging options.
 
-Planning is deterministic. It detects unsupported inputs, existing outputs, output-path
-collisions, nested output discovery, and unsupported targets before execution. Recursive
-runs preserve relative folders by default. Result and report order follows plan order even
-with multiple workers. Object selection happens during execution, so dry-run remains
-read-free. It selects one object per file and never expands all objects. A format that
+Planning is deterministic. It detects unsupported inputs, output-path collisions, nested
+output discovery, and unsupported targets before execution. The user-specified output
+root must exist unless `--create-dirs` is used. Recursive runs preserve relative folders
+by default, and generated subfolders below an existing root are created automatically.
+Existing item outputs fail during execution unless `--overwrite` is used, following the
+normal fail-fast policy. Result and report order follows plan order even with multiple
+workers. Dry-run neither creates directories nor writes or replaces files. Object
+selection happens during execution, so dry-run remains read-free. It selects one object
+per file and never expands all objects. A format that
 does not support object selection fails as an individual item rather than silently
 ignoring `--object`.
 
 ```bash
 statconvert batch input output --to csv --recursive --dry-run
+statconvert batch input new-output --to csv --create-dirs
 statconvert batch input output --to parquet --workers 4 --report result.csv
 statconvert batch input output --to xlsx --validate --strict-validation
 statconvert batch workbooks output --to csv --object Data
+statconvert batch input output --to csv --output-encoding utf-8-sig --csv-delimiter ";"
 statconvert batch rdata output --to parquet --object patients
 ```
 
@@ -468,6 +510,8 @@ Options:
   zero-based index.
 - `--output FILE`, `-o FILE` - required `.html`, `.htm`, `.json`, or `.csv` report.
 - `--format html|json|csv` - override suffix inference.
+- `--overwrite` - replace an existing report file.
+- `--create-dirs` - create a missing report output parent directory.
 - `--preset quick|full|validation|metadata` - section preset.
 - `--section NAME` - include only named sections; repeatable.
 - `--no-summary`, `--no-schema`, `--no-metadata`, `--no-labels`, `--no-missing`,
@@ -495,6 +539,7 @@ retain the complete model. Reports are static and Rich-free.
 
 ```bash
 statconvert report input.sav --output report.html --preset quick
+statconvert report input.sav --output reports/report.html --create-dirs
 statconvert report input.sav --output report.json --preset full
 statconvert report input.sav --output report.csv --section summary --section validation
 ```

@@ -18,6 +18,7 @@ from statconvert.batch.models import (
     BatchPlan,
     BatchResult,
 )
+from statconvert.dataset_options import DatasetReadOptions, DatasetWriteOptions
 from statconvert.inspection import ValidationIssue, validate_dataset
 
 
@@ -35,6 +36,9 @@ def execute_batch_plan(
     on_item_start: BatchItemCallback | None = None,
     on_item_finish: BatchItemCallback | None = None,
     object_selector: str | None = None,
+    read_options: DatasetReadOptions | None = None,
+    write_options: DatasetWriteOptions | None = None,
+    on_option_warning: Callable[[str], None] | None = None,
 ) -> BatchResult:
     """
     Execute pending items sequentially or with a bounded thread pool.
@@ -62,10 +66,14 @@ def execute_batch_plan(
             result_items,
             fail_fast=fail_fast,
             create_output_dirs=create_output_dirs,
+            overwrite=plan.options.overwrite,
             validate=validate,
             strict_validation=strict_validation,
             target_format=validation_target,
             object_selector=object_selector,
+            read_options=read_options,
+            write_options=write_options,
+            on_option_warning=on_option_warning,
             on_item_start=on_item_start,
             on_item_finish=on_item_finish,
         )
@@ -74,11 +82,15 @@ def execute_batch_plan(
             result_items,
             fail_fast=fail_fast,
             create_output_dirs=create_output_dirs,
+            overwrite=plan.options.overwrite,
             workers=workers,
             validate=validate,
             strict_validation=strict_validation,
             target_format=validation_target,
             object_selector=object_selector,
+            read_options=read_options,
+            write_options=write_options,
+            on_option_warning=on_option_warning,
             on_item_start=on_item_start,
             on_item_finish=on_item_finish,
         )
@@ -93,10 +105,14 @@ def _execute_sequential(
     items: list[BatchItem],
     fail_fast: bool,
     create_output_dirs: bool,
+    overwrite: bool,
     validate: bool,
     strict_validation: bool,
     target_format: str | None,
     object_selector: str | None,
+    read_options: DatasetReadOptions | None,
+    write_options: DatasetWriteOptions | None,
+    on_option_warning: Callable[[str], None] | None,
     on_item_start: BatchItemCallback | None,
     on_item_finish: BatchItemCallback | None,
 ) -> None:
@@ -139,10 +155,14 @@ def _execute_sequential(
         _execute_one_item(
             item,
             create_output_dirs=create_output_dirs,
+            overwrite=overwrite,
             validate=validate,
             strict_validation=strict_validation,
             target_format=target_format,
             object_selector=object_selector,
+            read_options=read_options,
+            write_options=write_options,
+            on_option_warning=on_option_warning,
         )
         _call_callback(
             on_item_finish,
@@ -156,11 +176,15 @@ def _execute_parallel(
     items: list[BatchItem],
     fail_fast: bool,
     create_output_dirs: bool,
+    overwrite: bool,
     workers: int,
     validate: bool,
     strict_validation: bool,
     target_format: str | None,
     object_selector: str | None,
+    read_options: DatasetReadOptions | None,
+    write_options: DatasetWriteOptions | None,
+    on_option_warning: Callable[[str], None] | None,
     on_item_start: BatchItemCallback | None,
     on_item_finish: BatchItemCallback | None,
 ) -> None:
@@ -186,10 +210,14 @@ def _execute_parallel(
                 _execute_one_item,
                 replace(item),
                 create_output_dirs,
+                overwrite,
                 validate,
                 strict_validation,
                 target_format,
                 object_selector,
+                read_options,
+                write_options,
+                on_option_warning,
             )
             futures[future] = (index, item)
 
@@ -221,20 +249,28 @@ def _execute_parallel(
 def _execute_one_item(
     item: BatchItem,
     create_output_dirs: bool = True,
+    overwrite: bool = False,
     validate: bool = False,
     strict_validation: bool = False,
     target_format: str | None = None,
     object_selector: str | None = None,
+    read_options: DatasetReadOptions | None = None,
+    write_options: DatasetWriteOptions | None = None,
+    on_option_warning: Callable[[str], None] | None = None,
 ) -> BatchItem:
     """Complete one independent item and return it to the collecting thread."""
 
     _execute_item(
         item,
         create_output_dirs=create_output_dirs,
+        overwrite=overwrite,
         validate=validate,
         strict_validation=strict_validation,
         target_format=target_format,
         object_selector=object_selector,
+        read_options=read_options,
+        write_options=write_options,
+        on_option_warning=on_option_warning,
     )
     return item
 
@@ -258,10 +294,14 @@ def _collect_worker_result(
 def _execute_item(
     item: BatchItem,
     create_output_dirs: bool,
+    overwrite: bool = False,
     validate: bool = False,
     strict_validation: bool = False,
     target_format: str | None = None,
     object_selector: str | None = None,
+    read_options: DatasetReadOptions | None = None,
+    write_options: DatasetWriteOptions | None = None,
+    on_option_warning: Callable[[str], None] | None = None,
 ) -> None:
     """
     Execute one pending batch item.
@@ -272,12 +312,15 @@ def _execute_item(
 
     try:
         _validate_item_ready(
-            item
+            item,
+            overwrite=overwrite,
         )
 
         dataset = _read_file(
             str(item.input_file),
             object_selector=object_selector,
+            read_options=read_options,
+            on_option_warning=on_option_warning,
         )
         item.rows = dataset.rows
         item.columns = len(dataset.columns)
@@ -302,6 +345,8 @@ def _execute_item(
         _write_file(
             dataset,
             str(item.output_file),
+            write_options=write_options,
+            on_option_warning=on_option_warning,
         )
         item.status = BATCH_STATUS_SUCCESS
         item.reason = None
@@ -325,7 +370,9 @@ def _execute_item(
 
 
 def _validate_item_ready(
-    item: BatchItem
+    item: BatchItem,
+    *,
+    overwrite: bool,
 ) -> None:
     """
     Validate execution safety for one pending item.
@@ -349,11 +396,19 @@ def _validate_item_ready(
             "Input and output path are the same."
         )
 
+    if item.output_file.exists() and not overwrite:
+        raise FileExistsError(
+            f"Output file already exists: {item.output_file}\n"
+            "Use --overwrite to replace it."
+        )
+
 
 def _read_file(
     input_file: str,
     *,
     object_selector: str | None = None,
+    read_options: DatasetReadOptions | None = None,
+    on_option_warning: Callable[[str], None] | None = None,
 ):
     """
     Convert a file through registered backends without UI output.
@@ -364,22 +419,29 @@ def _read_file(
     dataset = read_dataset(
         input_file,
         object_selector=object_selector,
+        options=read_options,
+        on_option_warning=on_option_warning,
     )
 
     return dataset
 
 
-def _write_file(dataset, output_file: str) -> None:
+def _write_file(
+    dataset,
+    output_file: str,
+    *,
+    write_options: DatasetWriteOptions | None = None,
+    on_option_warning: Callable[[str], None] | None = None,
+) -> None:
     """Write a dataset through its registered backend."""
 
-    from statconvert.registry import get_writer_for_file
+    from statconvert.registry import write_dataset
 
-    writer = get_writer_for_file(
-        output_file
-    )
-    writer.write(
+    write_dataset(
         dataset,
         output_file,
+        options=write_options,
+        on_option_warning=on_option_warning,
     )
 
 

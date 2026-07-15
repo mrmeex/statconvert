@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from statconvert.output_paths import validate_output_file_path
 from statconvert.reporting.exceptions import ReportError
 from statconvert.reporting.models import DatasetReport, ReportIssue, ReportSection
 from statconvert.serialization import make_json_safe
@@ -47,12 +48,19 @@ def write_dataset_report(
     output_file: str | Path,
     output_format: str | None = None,
     max_table_rows: int | None = None,
+    overwrite: bool = False,
+    create_dirs: bool = False,
 ) -> None:
     """Write a dataset report as JSON, CSV or static HTML."""
 
     path = Path(output_file)
     resolved_format = _normalize_output_format(output_format, path)
     _validate_max_table_rows(max_table_rows)
+    validate_output_file_path(
+        path,
+        overwrite=overwrite,
+        create_dirs=create_dirs,
+    )
     try:
         if resolved_format == "json":
             write_dataset_report_json(report, path)

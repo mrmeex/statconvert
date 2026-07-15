@@ -17,36 +17,35 @@ stays out of conversion and analysis workflows.
 - Generic dataset-object discovery and selection for Excel/ODS sheets and RData objects
 - Single-dataset reports in HTML, JSON, and CSV
 - Opt-in file diagnostics across every public command
+- Plain-text installed version, Python version, and runtime dependency status
 
 Dataset comparison is provided by `statconvert compare`. There is currently no separate
 `statconvert diff` alias.
 
 ## Installation
 
-StatConvert requires Python 3.11 or newer and is distributed as a wheel attached to a
-GitHub Release.
-
-1. Open the StatConvert GitHub Releases page and download the latest
-   `statconvert-<version>-py3-none-any.whl` file.
-2. Open PowerShell in the download folder.
-3. Install the downloaded wheel:
+StatConvert requires Python 3.11 or newer. Public releases are distributed as wheel
+files attached to the GitHub Releases page. Download
+`statconvert-<version>-py3-none-any.whl`, open PowerShell in the download folder, and
+install that exact file:
 
 ```powershell
 python -m pip install .\statconvert-<version>-py3-none-any.whl
-```
-
-4. Verify the installation:
-
-```powershell
+python -m statconvert --version
 python -m statconvert --help
 python -m statconvert formats
 ```
 
-If the `statconvert` command is not found, continue using `python -m statconvert` or add
-the selected Python environment's `Scripts` directory to `PATH`. The wheel installation
-includes dependencies for every supported format. See the
-[Administrator Guide](docs/admin-guide.md) for detailed wheel deployment, updates, and
-Windows `PATH` guidance.
+The wheel install includes dependencies for every supported format. See the
+[Administrator Guide](docs/admin-guide.md) for wheel deployment, verification, updates,
+and Windows `PATH` guidance. If the `statconvert` console command is not found, continue
+using `python -m statconvert` or add the active Python environment's Scripts directory
+to `PATH`.
+
+`python -m statconvert --version` reports the installed StatConvert and Python versions
+plus each important runtime dependency. Missing dependencies are shown as
+`not installed`. The equivalent `statconvert --version` form works when the console
+command is on `PATH`.
 
 ## Quick start
 
@@ -55,12 +54,17 @@ statconvert formats
 statconvert objects workbook.xlsx
 statconvert peek input.sav
 statconvert convert input.sav output.xlsx
+statconvert convert input.sav new-output/output.xlsx --create-dirs
 statconvert convert workbook.xlsx output.csv --object Data
 statconvert validate input.sav --to parquet
 statconvert compare before.sav after.parquet
 statconvert report input.sav --output report.html
 statconvert batch input-folder output-folder --to parquet
 ```
+
+Commands that write files refuse to replace an existing output unless `--overwrite` is
+used. `convert`, `transform`, `batch`, and `report` accept `--create-dirs` for a missing
+user-specified output directory; dry-run does not create directories or write files.
 
 Use `statconvert capabilities FORMAT` for detailed runtime capabilities. Important output
 restrictions include:

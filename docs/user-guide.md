@@ -21,16 +21,21 @@ features such as formatting, formulas, macros, charts, or existing sheets.
 
 ## Before you start
 
-StatConvert requires Python 3.11 or newer. Download the wheel from the StatConvert GitHub
-Releases page and install it as described in the [Administrator Guide](admin-guide.md).
-Public installation uses the downloaded release wheel.
+StatConvert requires Python 3.11 or newer. Install the downloaded release wheel from the
+GitHub Releases page; installation, upgrades, and managed deployment are covered by the
+[Administrator Guide](admin-guide.md).
 
 Verify the installed command and list the formats available in the current environment:
 
 ```powershell
+python -m statconvert --version
 python -m statconvert --help
 python -m statconvert formats
 ```
+
+`--version` also reports the Python version and important runtime dependency versions.
+Any unavailable dependency is shown as `not installed`. If the `statconvert` console
+command is on `PATH`, `statconvert --version` provides the same report.
 
 The examples in this guide use PowerShell-friendly syntax. Quote paths that contain
 spaces:
@@ -119,7 +124,31 @@ replace it explicitly:
 
 ```powershell
 statconvert convert input.sav output.xlsx --overwrite
+statconvert convert input.sav new-output/output.xlsx --create-dirs
 ```
+
+StatConvert does not replace an existing output unless `--overwrite` is supplied. If the
+output parent directory is missing, the command fails unless `--create-dirs` is supplied.
+No directory flag is needed for the current directory or any existing directory.
+
+For CSV dataset output, select an encoding, one-character delimiter, or one-character
+decimal separator:
+
+```powershell
+statconvert convert input.sav output.xlsx --input-encoding cp1252
+statconvert convert input.csv output.xlsx --input-encoding latin1 --csv-delimiter ";"
+statconvert convert input.xlsx output.csv --output-encoding utf-8-sig --csv-delimiter ";"
+statconvert convert legacy.csv clean.csv --input-encoding latin1 --output-encoding utf-8-sig --csv-delimiter ";"
+statconvert convert input.xlsx output.csv --csv-delimiter ";" --csv-decimal ","
+```
+
+These options are available on `convert`, `transform`, and `batch` because those commands
+write dataset files. `--input-encoding` applies only to a supporting input reader, while
+`--output-encoding` applies only to a supporting output writer. StatConvert warns and
+continues when the selected backend cannot apply a directional encoding option. The
+CSV-specific delimiter and decimal options apply to CSV input/output paths; both must be
+one character and cannot be equal when supplied together. Read-only command support,
+sniffing, and dialect presets are not provided.
 
 Legacy `.xls` output is a genuine Excel 97-2003 BIFF file. It is limited to 65,535 data
 rows plus one header row and 256 columns. Use `.xlsx` for larger or wider Excel output.
@@ -276,12 +305,16 @@ Use `batch` to plan and convert many files to one target format:
 ```powershell
 statconvert batch input-folder output-folder --to parquet
 statconvert batch input-folder output-folder --to csv --recursive
+statconvert batch input-folder output-folder --to csv --csv-delimiter ";"
 statconvert batch workbooks output-folder --to parquet --object Data
 statconvert batch input-folder output-folder --to xlsx --dry-run
 ```
 
 `--recursive` includes subdirectories. A dry run previews the deterministic file and
-output plan without converting data. Because dry runs do not read container contents,
+output plan without converting data, creating directories, or replacing files. The root
+output folder must already exist unless `--create-dirs` is supplied. Preserve-structure
+subfolders generated below an existing root are created automatically during execution.
+Because dry runs do not read container contents,
 object-selection problems are detected during execution rather than during the dry run.
 
 `--object` applies the same exact name or zero-based index to every pending input. Batch
@@ -291,6 +324,9 @@ ignored.
 
 Batch transformations are not implemented. Use `transform` on individual files or batch
 plain conversions with `batch`.
+
+Batch accepts the same `--input-encoding`, `--output-encoding`, `--csv-delimiter`, and
+`--csv-decimal` controls as `convert`. Unsupported encoding directions warn and continue.
 
 ## Transforming datasets
 
@@ -302,6 +338,7 @@ statconvert transform input.csv output.csv --select id --select name
 statconvert transform input.csv output.csv --rename old_name=new_name
 statconvert transform input.csv output.csv --type age=int
 statconvert transform input.csv output.csv --filter age,gte,18
+statconvert transform input.xlsx output.csv --csv-delimiter ";"
 ```
 
 Transformations can select or drop columns, rename columns, change types, filter rows, and
@@ -352,9 +389,9 @@ documents log levels and developer-oriented diagnostics.
 
 ### `statconvert` command not found
 
-Try `python -m statconvert --help`. On Windows, pip may have installed
-`statconvert.exe` in a Python `Scripts` directory that is not on `PATH`. See the
-[Administrator Guide](admin-guide.md#windows-path-behavior).
+Try `python -m statconvert --version` or `python -m statconvert --help`. On Windows, pip
+may have installed `statconvert.exe` in a Python `Scripts` directory that is not on
+`PATH`. See the [Administrator Guide](admin-guide.md#windows-path-behavior).
 
 ### A multi-sheet workbook fails without `--object`
 
@@ -373,8 +410,14 @@ Use an `.xlsx` output path instead.
 
 ### The output file already exists
 
-Choose a different output path or add `--overwrite` to `convert`, `transform`, or `batch`
-when replacement is intentional.
+Choose a different output path or add `--overwrite` to `convert`, `transform`, `batch`, or
+`report` when replacement is intentional.
+
+### The output directory does not exist
+
+Create it first or add `--create-dirs` to `convert`, `transform`, `batch`, or `report`.
+For batch this applies only to the user-specified root; generated preserve-structure
+subfolders are created automatically below an existing root.
 
 ### Metadata or labels are missing after conversion
 

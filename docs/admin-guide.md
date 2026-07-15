@@ -61,6 +61,7 @@ location to update, verify, or remove:
 py -3.11 -m venv C:\Tools\StatConvert\.venv
 C:\Tools\StatConvert\.venv\Scripts\python.exe -m pip install --upgrade pip
 C:\Tools\StatConvert\.venv\Scripts\python.exe -m pip install C:\Installers\statconvert-<version>-py3-none-any.whl
+C:\Tools\StatConvert\.venv\Scripts\python.exe -m statconvert --version
 C:\Tools\StatConvert\.venv\Scripts\python.exe -m statconvert --help
 C:\Tools\StatConvert\.venv\Scripts\python.exe -m statconvert formats
 ```
@@ -81,6 +82,7 @@ Run verification with the exact interpreter intended for users:
 python --version
 python -m pip --version
 python -m pip show statconvert
+python -m statconvert --version
 python -m statconvert --help
 python -m statconvert formats
 python -m statconvert capabilities xlsx
@@ -92,7 +94,12 @@ The console command can be checked separately when it will be exposed to users:
 
 ```powershell
 statconvert --help
+statconvert --version
 ```
+
+The version report identifies the installed StatConvert and Python versions and lists
+important runtime dependency versions. A missing dependency is shown as `not installed`,
+which makes this report useful for deployment verification and support intake.
 
 Use a tiny, non-sensitive CSV file for optional smoke operations:
 
@@ -171,7 +178,7 @@ files are stored inside it before deleting that environment.
 Ask users for:
 
 - the exact command and full error message;
-- `python --version`;
+- `python -m statconvert --version`;
 - `python -m pip show statconvert`;
 - `python -m statconvert --help`;
 - `python -m statconvert formats`;
@@ -212,7 +219,11 @@ C:\Tools\StatConvert\.venv\Scripts\python.exe -m statconvert --help
 ### Output cannot be written
 
 Choose a writable output folder and close applications that have the destination open,
-including Excel. Existing outputs require an explicit overwrite option where supported.
+including Excel. Existing outputs require `--overwrite` for `convert`, `transform`,
+`batch`, and `report`. Missing user-specified output directories require `--create-dirs`;
+the current directory and existing directories need no flag. Batch creates generated
+preserve-structure subfolders below an existing root automatically. Dry-run creates no
+directories and writes or replaces no files.
 
 ### A workbook or R workspace cannot be selected
 

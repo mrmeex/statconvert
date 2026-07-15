@@ -10,6 +10,10 @@ class ConversionError(StatConvertError):
     """Conversion failed."""
 
 
+class OutputPathError(ConversionError):
+    """An output path conflicts with the selected write policy."""
+
+
 class ObjectSelectionError(StatConvertError):
     """A dataset object could not be selected."""
 

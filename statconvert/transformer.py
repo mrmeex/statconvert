@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Callable
 
 from statconvert.dataset import Dataset
+from statconvert.dataset_options import DatasetReadOptions, DatasetWriteOptions
 from statconvert.exceptions import ConversionError
 from statconvert.inspection import (
     ValidationFailedError,
@@ -12,7 +13,13 @@ from statconvert.inspection import (
     validation_should_fail,
 )
 from statconvert.logging import get_logger
-from statconvert.registry import get_reader_for_file, get_writer_for_file, read_dataset
+from statconvert.output_paths import validate_output_file_path
+from statconvert.registry import (
+    get_reader_for_file,
+    get_writer_for_file,
+    read_dataset,
+    write_dataset,
+)
 from statconvert.transformations import TransformationPipeline
 
 
@@ -37,11 +44,15 @@ def transform_file(
     output_file: str,
     pipeline: TransformationPipeline,
     overwrite: bool = False,
+    create_dirs: bool = False,
     dry_run: bool = False,
     validate: bool = False,
     strict_validation: bool = False,
     on_validation: Callable[[list[ValidationIssue]], None] | None = None,
     object_selector: str | None = None,
+    read_options: DatasetReadOptions | None = None,
+    write_options: DatasetWriteOptions | None = None,
+    on_option_warning: Callable[[str], None] | None = None,
 ) -> Dataset:
     """
     Read a file, apply transformations and optionally write the result.
@@ -60,16 +71,17 @@ def transform_file(
             f"Input file does not exist: {input_file}"
         )
 
-    if output_path.exists() and not overwrite and not dry_run:
-        raise ConversionError(
-            f"Output exists: {output_file}. Use --overwrite to replace it."
-        )
-
     try:
         reader = get_reader_for_file(input_file)
         writer = get_writer_for_file(output_file)
     except ValueError as exc:
         raise ConversionError(str(exc)) from None
+    validate_output_file_path(
+        output_path,
+        overwrite=overwrite,
+        create_dirs=create_dirs,
+        dry_run=dry_run,
+    )
     logger.debug(
         "Transformation backends resolved: reader=%s writer=%s",
         reader.__class__.__name__,
@@ -80,6 +92,8 @@ def transform_file(
     dataset = read_dataset(
         input_file,
         object_selector=object_selector,
+        options=read_options,
+        on_option_warning=on_option_warning,
     )
     logger.info(
         "Transformation input read: rows=%s columns=%s",
@@ -117,9 +131,11 @@ def transform_file(
 
     if not dry_run:
         logger.debug("Writing transformed dataset: %s", output_file)
-        writer.write(
+        write_dataset(
             transformed,
             output_file,
+            options=write_options,
+            on_option_warning=on_option_warning,
         )
         logger.info("Transformation output written: output_file=%s", output_file)
     else:

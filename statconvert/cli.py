@@ -18,6 +18,7 @@ from statconvert.compare import (
     write_compare_report,
 )
 from statconvert.converter import transform as convert_file
+from statconvert.dataset_options import DatasetReadOptions, DatasetWriteOptions
 from statconvert.inspection import (
     ColumnProfile,
     MissingProfile,
@@ -29,6 +30,10 @@ from statconvert.inspection import (
     validate_dataset,
 )
 from statconvert.logging import command_log_wrapper, get_logger, log_command_outcome
+from statconvert.output_paths import (
+    validate_output_parent_directory,
+    validate_output_root_directory,
+)
 from statconvert.reporting import (
     build_dataset_report,
     dataset_report_summary_dict,
@@ -48,6 +53,7 @@ from statconvert.registry import (
 from statconvert.exceptions import ObjectSelectionNotSupportedError
 from statconvert.transformer import transform_file
 from statconvert.transformations.cli_parsing import build_pipeline_from_cli_options
+from statconvert.version import format_version_status
 
 from statconvert.ui import (
     console,
@@ -74,6 +80,7 @@ from statconvert.ui import (
     show_objects_not_supported,
     show_schema,
     show_error,
+    show_warning,
     show_transformation_summary,
 )
 
@@ -141,10 +148,106 @@ RightObjectSelectorOption = Annotated[
         help="Dataset object inside the right container file.",
     ),
 ]
+InputEncodingOption = Annotated[
+    str | None,
+    typer.Option(
+        "--input-encoding",
+        help=(
+            "Text encoding to use when reading supported input formats, for example "
+            "utf-8, latin1, or cp1252."
+        ),
+    ),
+]
+OutputEncodingOption = Annotated[
+    str | None,
+    typer.Option(
+        "--output-encoding",
+        help=(
+            "Text encoding to use when writing supported output formats, for example "
+            "utf-8, utf-8-sig, or cp1252."
+        ),
+    ),
+]
+CsvDelimiterOption = Annotated[
+    str | None,
+    typer.Option(
+        "--csv-delimiter",
+        help=(
+            "Single-character delimiter to use for supported CSV input/output paths, "
+            "for example , or ;."
+        ),
+    ),
+]
+CsvDecimalOption = Annotated[
+    str | None,
+    typer.Option(
+        "--csv-decimal",
+        help=(
+            "Single-character decimal separator to use for supported CSV input/output "
+            "paths, for example . or ,."
+        ),
+    ),
+]
+OverwriteOption = Annotated[
+    bool,
+    typer.Option(
+        "--overwrite",
+        help="Replace the output file if it already exists.",
+    ),
+]
+CreateDirsOption = Annotated[
+    bool,
+    typer.Option(
+        "--create-dirs",
+        help="Create missing output directories when writing files.",
+    ),
+]
+
+
+def _version_callback(value: bool) -> None:
+    if value:
+        typer.echo(format_version_status())
+        raise typer.Exit()
+
+
+def _dataset_io_options(
+    input_encoding: str | None,
+    output_encoding: str | None,
+    csv_delimiter: str | None,
+    csv_decimal: str | None,
+) -> tuple[DatasetReadOptions, DatasetWriteOptions]:
+    return (
+        DatasetReadOptions(
+            encoding=input_encoding,
+            csv_delimiter=csv_delimiter,
+            csv_decimal=csv_decimal,
+        ),
+        DatasetWriteOptions(
+            encoding=output_encoding,
+            csv_delimiter=csv_delimiter,
+            csv_decimal=csv_decimal,
+        ),
+    )
+
+
+def _show_dataset_option_warning(message: str, *, json_output: bool = False) -> None:
+    if json_output:
+        typer.echo(message, err=True)
+        return
+    show_warning(message)
 
 
 @app.callback()
 def main(
+    version_status: Annotated[
+        bool,
+        typer.Option(
+            "--version",
+            callback=_version_callback,
+            is_eager=True,
+            help="Show StatConvert and runtime dependency versions.",
+        ),
+    ] = False,
     debug: bool = typer.Option(
         False,
         "--debug",
@@ -218,7 +321,8 @@ def convert(
     input_file: str,
     output_file: str,
     object_selector: ObjectSelectorOption = None,
-    overwrite: bool = False,
+    overwrite: OverwriteOption = False,
+    create_dirs: CreateDirsOption = False,
     validate_inputs: bool = typer.Option(
         False,
         "--validate",
@@ -229,6 +333,10 @@ def convert(
         "--strict-validation",
         help="Treat validation warnings as failures and imply --validate.",
     ),
+    input_encoding: InputEncodingOption = None,
+    output_encoding: OutputEncodingOption = None,
+    csv_delimiter: CsvDelimiterOption = None,
+    csv_decimal: CsvDecimalOption = None,
     log_file: LogFileOption = None,
     log_level: LogLevelOption = "info",
     log_append: LogAppendOption = False,
@@ -248,22 +356,37 @@ def convert(
                 "output_file": output_file,
                 "object": object_selector,
                 "overwrite": overwrite,
+                "create_dirs": create_dirs,
                 "validate": validate_inputs,
                 "strict_validation": strict_validation,
+                "input_encoding": input_encoding,
+                "output_encoding": output_encoding,
+                "csv_delimiter": csv_delimiter,
+                "csv_decimal": csv_decimal,
             },
             log_file=log_file,
             log_level=log_level,
             log_append=log_append,
             developer_log=developer_log,
         ) as logger:
+            read_options, write_options = _dataset_io_options(
+                input_encoding,
+                output_encoding,
+                csv_delimiter,
+                csv_decimal,
+            )
             try:
                 dataset = convert_file(
                     input_file=input_file,
                     output_file=output_file,
                     overwrite=overwrite,
+                    create_dirs=create_dirs,
                     validate=validate_inputs,
                     strict_validation=strict_validation,
                     object_selector=object_selector,
+                    read_options=read_options,
+                    write_options=write_options,
+                    on_option_warning=show_warning,
                     on_validation=lambda issues: show_validation_issues(
                         issues,
                         strict=strict_validation,
@@ -381,11 +504,8 @@ def transform(
         "--reset-index/--no-reset-index",
         help="Reset row index after filtering.",
     ),
-    overwrite: bool = typer.Option(
-        False,
-        "--overwrite",
-        help="Replace the output file if it already exists.",
-    ),
+    overwrite: OverwriteOption = False,
+    create_dirs: CreateDirsOption = False,
     dry_run: bool = typer.Option(
         False,
         "--dry-run",
@@ -401,6 +521,10 @@ def transform(
         "--strict-validation",
         help="Treat validation warnings as failures and imply --validate.",
     ),
+    input_encoding: InputEncodingOption = None,
+    output_encoding: OutputEncodingOption = None,
+    csv_delimiter: CsvDelimiterOption = None,
+    csv_decimal: CsvDecimalOption = None,
     log_file: LogFileOption = None,
     log_level: LogLevelOption = "info",
     log_append: LogAppendOption = False,
@@ -420,6 +544,7 @@ def transform(
                 "output_file": output_file,
                 "object": object_selector,
                 "overwrite": overwrite,
+                "create_dirs": create_dirs,
                 "select": select,
                 "drop": drop,
                 "rename": rename,
@@ -429,12 +554,22 @@ def transform(
                 "validate": validate_inputs,
                 "strict_validation": strict_validation,
                 "dry_run": dry_run,
+                "input_encoding": input_encoding,
+                "output_encoding": output_encoding,
+                "csv_delimiter": csv_delimiter,
+                "csv_decimal": csv_decimal,
             },
             log_file=log_file,
             log_level=log_level,
             log_append=log_append,
             developer_log=developer_log,
         ) as logger:
+            read_options, write_options = _dataset_io_options(
+                input_encoding,
+                output_encoding,
+                csv_delimiter,
+                csv_decimal,
+            )
             select, drop = _attach_extra_column_args(
                 extra_columns=extra_columns,
                 select=select,
@@ -461,10 +596,14 @@ def transform(
                     output_file=output_file,
                     pipeline=pipeline,
                     overwrite=overwrite,
+                    create_dirs=create_dirs,
                     dry_run=dry_run,
                     validate=validate_inputs,
                     strict_validation=strict_validation,
                     object_selector=object_selector,
+                    read_options=read_options,
+                    write_options=write_options,
+                    on_option_warning=show_warning,
                     on_validation=lambda issues: show_validation_issues(
                         issues,
                         strict=strict_validation,
@@ -1429,6 +1568,8 @@ def report(
         "--format",
         help="Report format override: html, json or csv.",
     ),
+    overwrite: OverwriteOption = False,
+    create_dirs: CreateDirsOption = False,
     preset: str | None = typer.Option(
         None,
         "--preset",
@@ -1513,6 +1654,8 @@ def report(
                 "object": object_selector,
                 "output": output_file,
                 "format": output_format,
+                "overwrite": overwrite,
+                "create_dirs": create_dirs,
                 "preset": preset,
                 "sections": sections,
                 "columns": logged_columns or None,
@@ -1579,6 +1722,8 @@ def report(
                 output_file,
                 output_format=output_format,
                 max_table_rows=report_options.max_table_rows,
+                overwrite=overwrite,
+                create_dirs=create_dirs,
             )
 
             resolved_output_format = (
@@ -1635,11 +1780,8 @@ def batch(
         "-r",
         help="Include files in subdirectories and calculate paths from the input root.",
     ),
-    overwrite: bool = typer.Option(
-        False,
-        "--overwrite",
-        help="Allow existing output files to be replaced.",
-    ),
+    overwrite: OverwriteOption = False,
+    create_dirs: CreateDirsOption = False,
     preserve_structure: bool = typer.Option(
         True,
         "--preserve-structure/--flatten",
@@ -1710,6 +1852,10 @@ def batch(
         "--strict-validation",
         help="Treat validation warnings as failures. Requires --validate.",
     ),
+    input_encoding: InputEncodingOption = None,
+    output_encoding: OutputEncodingOption = None,
+    csv_delimiter: CsvDelimiterOption = None,
+    csv_decimal: CsvDecimalOption = None,
     log_file: LogFileOption = None,
     log_level: LogLevelOption = "info",
     log_append: LogAppendOption = False,
@@ -1731,6 +1877,7 @@ def batch(
                 "object": object_selector,
                 "recursive": recursive,
                 "overwrite": overwrite,
+                "create_dirs": create_dirs,
                 "preserve_structure": preserve_structure,
                 "include_unsupported": include_unsupported,
                 "pattern": patterns,
@@ -1741,12 +1888,27 @@ def batch(
                 "report": report,
                 "validate": validate_inputs,
                 "strict_validation": strict_validation,
+                "input_encoding": input_encoding,
+                "output_encoding": output_encoding,
+                "csv_delimiter": csv_delimiter,
+                "csv_decimal": csv_decimal,
             },
             log_file=log_file,
             log_level=log_level,
             log_append=log_append,
             developer_log=developer_log,
         ) as logger:
+            read_options, write_options = _dataset_io_options(
+                input_encoding,
+                output_encoding,
+                csv_delimiter,
+                csv_decimal,
+            )
+            def option_warning(message: str) -> None:
+                _show_dataset_option_warning(
+                    message,
+                    json_output=json_output,
+                )
             plan = build_batch_plan(
                 input_path=input_path,
                 output_path=output_path,
@@ -1758,6 +1920,20 @@ def batch(
                 patterns=patterns,
                 exclude_patterns=exclude_patterns,
             )
+            input_path_value = Path(input_path)
+            output_path_value = Path(output_path)
+            if input_path_value.is_file() and output_path_value.suffix:
+                validate_output_parent_directory(
+                    output_path_value,
+                    create_dirs=create_dirs,
+                    dry_run=dry_run,
+                )
+            else:
+                validate_output_root_directory(
+                    output_path_value,
+                    create_dirs=create_dirs,
+                    dry_run=dry_run,
+                )
 
             if dry_run:
                 if report is not None:
@@ -1804,6 +1980,9 @@ def batch(
                         validate=validate_inputs,
                         strict_validation=strict_validation,
                         object_selector=object_selector,
+                        read_options=read_options,
+                        write_options=write_options,
+                        on_option_warning=option_warning,
                     )
                 else:
                     result = run_batch_with_progress(
@@ -1813,6 +1992,9 @@ def batch(
                         validate=validate_inputs,
                         strict_validation=strict_validation,
                         object_selector=object_selector,
+                        read_options=read_options,
+                        write_options=write_options,
+                        on_option_warning=option_warning,
                     )
 
                 if report is not None:

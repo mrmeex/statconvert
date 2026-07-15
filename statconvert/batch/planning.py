@@ -292,10 +292,6 @@ def _build_item(
         status = BATCH_STATUS_BLOCKED
         reason = "Input and output path are the same"
 
-    elif output_file.exists() and not overwrite:
-        status = BATCH_STATUS_BLOCKED
-        reason = "Output file already exists. Use --overwrite to replace it."
-
     return BatchItem(
         input_file=input_file,
         output_file=output_file,

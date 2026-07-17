@@ -1,8 +1,9 @@
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from pathlib import Path
 
 from statconvert.backends.capabilities import BackendCapabilities
-from statconvert.backends.objects import DatasetObjectInfo
+from statconvert.backends.objects import DatasetObjectInfo, NamedDataset
 from statconvert.dataset import Dataset
 from statconvert.exceptions import ObjectSelectionNotSupportedError
 
@@ -38,6 +39,31 @@ class Backend(ABC):
         extension = path.suffix.lower() or "this format"
         raise ObjectSelectionNotSupportedError(
             f"Object selection is not supported for {extension} files."
+        )
+
+    def validate_object_names(
+        self,
+        names: Sequence[str],
+        filename: str,
+    ) -> None:
+        """Validate names for a multi-object output or reject it by default."""
+
+        extension = Path(filename).suffix.lower() or "this format"
+        raise ObjectSelectionNotSupportedError(
+            f"Writing multiple dataset objects is not supported for {extension}."
+        )
+
+    def write_objects(
+        self,
+        objects: Sequence[NamedDataset],
+        filename: str,
+        **kwargs,
+    ) -> None:
+        """Write named datasets to one output container or reject by default."""
+
+        extension = Path(filename).suffix.lower() or "this format"
+        raise ObjectSelectionNotSupportedError(
+            f"Writing multiple dataset objects is not supported for {extension}."
         )
 
     @abstractmethod

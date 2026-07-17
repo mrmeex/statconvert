@@ -32,9 +32,9 @@ metadata. Other applications usually ignore this sidecar.
 | Extension | Format | Read | Write | Metadata | Objects | Notes |
 |---|---|:---:|:---:|---|---|---|
 | `.csv` | Comma-separated values | Yes | Yes | Sidecar | None | Simple one-table text interchange. |
-| `.xlsx` | Excel workbook | Yes | Yes | Sidecar | Sheet | Recommended Excel output; rich workbook features are not preserved. |
+| `.xlsx` | Excel workbook | Yes | Yes | Sidecar | Sheet | Recommended Excel output; supports multi-sheet `convert --all-objects`. |
 | `.xls` | Excel 97-2003 workbook | Yes | Yes | Sidecar | Sheet | Genuine legacy BIFF; limited to 65,535 data rows plus a header and 256 columns. |
-| `.ods` | OpenDocument Spreadsheet | Yes | Yes | Sidecar | Sheet | Workbook-like OpenDocument format. |
+| `.ods` | OpenDocument Spreadsheet | Yes | Yes | Sidecar | Sheet | Supports multi-sheet `convert --all-objects`. |
 | `.sav` | SPSS system file | Yes | Yes | Native, limited | None | Reads and writes supported pyreadstat metadata. |
 | `.zsav` | Compressed SPSS system file | Yes | No | Native on read | None | Read-only; StatConvert does not create ZSAV files. |
 | `.por` | SPSS portable file | Yes | No | Native on read | None | Read-only. |
@@ -99,9 +99,41 @@ never selected silently. R object names take precedence over index interpretatio
 name itself looks numeric.
 
 RDS and single-dataset files such as CSV, JSON, Parquet, and SAV reject `--object` rather
-than ignoring it. Object selection reads one dataset only. StatConvert does not expand
-all sheets or workspace objects into multiple outputs. Compare can use shared or
-left/right selectors, while batch applies one selector to every input file.
+than ignoring it. Shared object selection reads one dataset only. Compare can use shared
+or left/right selectors, while ordinary batch applies one selector to every input file;
+explicit `--all-objects` enables separate-file expansion.
+
+`objects` also accepts a folder. It reports one row for each single-dataset file and each
+listed container object, with folder-relative paths and suggested output names. Unsupported
+files are omitted unless `--include-unsupported` is used. CSV and grouped JSON discovery
+reports are inventories only: they do not convert files or expand all objects.
+
+`batch --all-objects` performs that expansion explicitly: single-dataset formats produce
+one output, while each supported XLSX/XLS/ODS sheet or RData/RDA object produces a separate
+output file. Unsupported objects are omitted from conversion.
+
+`batch --transform` is format-neutral: after each planned file/object is read through its
+normal backend, the shared dataset transformation pipeline runs before target validation
+and writing. Format-specific input and output options still apply on their respective
+sides. It does not add joins, appends, merges, or per-object rules.
+
+`convert --all-objects` instead converts one XLSX, XLS, ODS, RData, or RDA input into
+one multi-sheet XLSX or ODS output. Supported input objects retain their names and order.
+Unsupported input objects are skipped if another supported object remains. Invalid or
+duplicate output sheet names fail without renaming. Single-dataset inputs reject the
+option, and XLS/RData/RDA are not multi-object output targets.
+
+`collect` uses the same XLSX/ODS multi-object writer for a different input shape: included
+manifest rows may point to several files and selected objects. Each becomes one output
+sheet. The output name priority is `output_object`, `output_name`, `input_object`, then
+the input file stem. Invalid or duplicate target names fail without automatic renaming.
+XLS and RData/RDA remain unsupported collection outputs.
+
+XLSX/XLS/ODS object listing normally inspects workbook structure without loading sheet
+contents. RData/RDA listing may load workspace data because `pyreadr` descriptors do not
+reliably distinguish every readable DataFrame from unsupported objects. Single-container
+XLSX/ODS output is not streamed: `convert --all-objects` and `collect` retain selected
+datasets before the final write. Separate batch outputs provide better per-item isolation.
 
 ## CSV
 
@@ -110,7 +142,7 @@ StatConvert reads and writes comma-separated files without a pandas index. Colum
 are inferred during reading, so text, dates, identifiers with leading zeroes, and mixed
 columns may need inspection after import.
 
-The datafile-writing commands `convert`, `transform`, and `batch` can select CSV input or
+The datafile-writing commands `convert`, `collect`, `transform`, and `batch` can select CSV input or
 output encoding independently with `--input-encoding` and `--output-encoding`. The
 CSV-specific `--csv-delimiter` and `--csv-decimal` options apply to CSV input/output
 paths. Delimiters and decimal separators are limited to one character and cannot be the
@@ -141,9 +173,12 @@ statconvert convert workbook.xlsx output.csv --object Data
 statconvert report workbook.xlsx --object Data --output report.html
 ```
 
-StatConvert treats a selected sheet as tabular data. It does not act as a workbook editor
-and does not preserve formulas as formulas, cell formatting, charts, macros, or other
-existing sheets. XLSX output contains one data sheet and a metadata sidecar.
+StatConvert treats each selected sheet as tabular data. It does not act as a workbook
+editor and does not preserve formulas as formulas, cell formatting, charts, or macros.
+Normal conversion writes one data sheet and a metadata sidecar. With
+`convert --all-objects`, XLSX output contains one data sheet per supported input object;
+the multi-sheet file preserves tabular values and column names but does not write one
+ambiguous shared metadata sidecar.
 
 ## Legacy Excel XLS
 
@@ -180,10 +215,12 @@ statconvert objects workbook.ods
 statconvert convert workbook.ods output.csv --object Sheet1
 ```
 
-ODS output contains one sheet named `Sheet1` unless an internal API caller overrides it.
-Rich spreadsheet formatting and formulas are not preserved as workbook features.
-Statistical metadata is stored in a StatConvert sidecar. ODS support and its dependencies
-are included in the normal installation.
+Normal ODS output contains one sheet named `Sheet1`. `convert --all-objects` writes one
+sheet per supported input object and preserves the object names. Rich spreadsheet
+formatting and formulas are not preserved as workbook features. Normal single-dataset
+output stores statistical metadata in a StatConvert sidecar; multi-sheet output does not
+write one ambiguous shared sidecar. ODS support and its dependencies are included in the
+normal installation.
 
 ## SPSS SAV, ZSAV, and POR
 
@@ -304,9 +341,10 @@ Unsupported objects are listed with an explanation when pyreadr can describe the
 object types may not be exposed at all and therefore cannot appear in the listing. There
 is no automatic first-object fallback when several supported tables exist.
 
-Writing `.rdata` or `.rda` creates one DataFrame named `data`. The input `--object`
-selector does not choose an output object name, and multi-object output is not
-implemented. Normalized metadata is stored in a sidecar.
+Writing `.rdata` or `.rda` creates one DataFrame named `data`. They are not
+multi-object output targets. A workspace can be used as a `convert --all-objects` input
+when the destination is XLSX or ODS. Normalized metadata for normal single-object output
+is stored in a sidecar.
 
 ## Metadata preservation
 
@@ -375,6 +413,19 @@ statconvert objects workspace.rdata
 statconvert convert workspace.rdata patients.csv --object patients
 ```
 
+One container to one multi-sheet container:
+
+```powershell
+statconvert convert workbook.xlsx combined.ods --all-objects
+statconvert convert workspace.rdata workspace.xlsx --all-objects
+```
+
+Selected datasets from many files to one container:
+
+```powershell
+statconvert collect objects.csv combined.xlsx --base-dir incoming
+```
+
 Legacy XLS output:
 
 ```powershell
@@ -398,11 +449,8 @@ StatConvert does not currently provide:
 - spreadsheet formatting, chart, macro, or formula preservation;
 - formula recalculation;
 - PDF reports;
-- batch expansion of every sheet or R object;
-- per-input object manifest mapping;
-- multi-object output expansion;
+- row appending, joining, merging, or deduplication during object collection;
 - key-based, tolerance-based, ignored-column, or chunked comparison options; or
 - human-readable descriptions of raw display-format codes.
 
-These limitations are not hidden format modes; commands reject unsupported behavior rather
-than silently approximating it.
+Unsupported features are rejected rather than silently approximated.

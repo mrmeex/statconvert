@@ -4,6 +4,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
+from statconvert.dataset import Dataset
 from statconvert.exceptions import AmbiguousObjectError, ObjectNotFoundError
 
 
@@ -18,6 +19,17 @@ class DatasetObjectInfo:
     columns: int | None = None
     supported: bool = True
     message: str | None = None
+
+
+@dataclass(frozen=True)
+class NamedDataset:
+    """Associate a dataset with its name in a multi-object output container."""
+
+    name: str
+    dataset: Dataset
+    source_object_index: int | None = None
+    source_object_name: str | None = None
+    source_file: str | None = None
 
 
 def object_selector_matches(

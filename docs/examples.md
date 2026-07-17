@@ -139,7 +139,7 @@ Metadata fidelity depends on the destination. See the
 [SAS and XPT format guidance](formats.md#sas-sas7bdat-and-xpt) before relying on a
 cross-format round trip.
 
-Encoding and CSV controls are available only on `convert`, `transform`, and `batch`.
+Encoding and CSV controls are available only on `convert`, `collect`, `transform`, and `batch`.
 Input and output encodings are independent; unsupported backends warn and ignore the
 relevant directional option. These controls are not added to `peek`, `info`, `compare`,
 or other read-only commands.
@@ -228,6 +228,77 @@ statconvert report .\input\workspace.rdata --object patients --output .\reports\
 RData and RDA may contain several named objects. Unsupported objects can appear in the
 listing with a message when the backend can describe them. StatConvert does not choose
 the first object silently and does not convert arbitrary non-tabular R objects.
+
+## Convert one whole container to another
+
+Use `convert --all-objects` when one input container should become one multi-sheet XLSX
+or ODS output:
+
+```powershell
+statconvert convert .\input\workbook.xlsx .\output\combined.xlsx --all-objects
+statconvert convert .\input\workbook.xlsx .\output\combined.ods --all-objects
+statconvert convert .\input\workspace.rdata .\output\workspace.xlsx --all-objects
+```
+
+Every supported input object is read independently and written under its original name,
+in listing order. Unsupported objects are skipped with warnings if supported objects
+remain. Invalid or duplicate output sheet names stop conversion; names are not changed
+automatically.
+
+Use `batch --all-objects` instead when each object should become a separate file. These
+commands do not merge, append, join, or deduplicate rows.
+
+## Build a folder object discovery report
+
+Inspect direct files, recurse through subfolders, or write an editable manifest-ready
+report:
+
+```powershell
+statconvert objects .\incoming
+statconvert objects .\incoming --recursive
+statconvert objects .\incoming --recursive --output .\reports\objects.csv
+statconvert objects .\incoming --recursive --include-unsupported --output .\reports\objects-with-unsupported.csv
+statconvert objects .\incoming --recursive --json --output .\reports\objects.json
+```
+
+Use `--pattern *.xlsx` and repeatable `--exclude-pattern` values to focus a scan. The CSV
+columns `include`, `input_file`, `input_object`, and `output_name` are intended for later
+manifest workflows. This discovery step does not convert or expand any object.
+
+## Collect selected files and objects into one workbook
+
+Generate a discovery manifest, add an `output_object` column if custom sheet names are
+needed, and preview the collection:
+
+```powershell
+statconvert objects .\incoming --recursive --output .\objects.csv
+statconvert collect .\objects.csv .\output\combined.xlsx --base-dir .\incoming --dry-run
+```
+
+A minimal collection manifest is also valid:
+
+```csv
+include,input_file,input_object,output_object
+true,data.csv,,Imported_Data
+true,book.xlsx,Data,Book_Data
+true,book.xlsx,Lookup,Book_Lookup
+```
+
+Write XLSX or ODS after reviewing the plan:
+
+```powershell
+statconvert collect .\objects.csv .\output\combined.xlsx --base-dir .\incoming
+statconvert collect .\objects.csv .\output\combined.ods --base-dir .\incoming
+```
+
+Without `--base-dir`, relative `input_file` values resolve from the manifest directory.
+Sheet names use `output_object` first, followed by `output_name`, `input_object`, and
+the input file stem. Duplicate or invalid names fail; they are not rewritten. Excluded
+rows are ignored, but every included row must read and validate successfully before the
+single output write begins.
+
+This recipe places datasets on separate sheets. It does not append or relationally
+combine their rows.
 
 ## Validate before converting
 
@@ -348,7 +419,8 @@ statconvert batch .\monthly-workbooks .\converted --to parquet --object Data
 
 Every input workbook must contain the same exact sheet name, or the selected zero-based
 index must identify the intended sheet in every workbook. Object-selection failures are
-reported per item. Batch selects one sheet per input; it does not expand all sheets.
+reported per item. Shared `--object` mode selects one sheet per input; use `--all-objects`
+for expansion.
 A mixed single-dataset file such as CSV fails as an item when `--object` is supplied.
 
 ## Batch convert standardized RData files
@@ -360,8 +432,72 @@ statconvert batch .\site-workspaces .\converted --to csv --object patients
 ```
 
 Every RData/RDA workspace must expose the selected object as a supported tabular dataset.
-Selection failures are reported per item. Batch does not discover and expand every object
-and does not support a per-file object manifest.
+Selection failures are reported per item. Batch does not discover and expand every object.
+
+## Convert selected rows from an object manifest
+
+Generate a discovery CSV, edit `include`, `input_object`, and `output_name`, then use the
+included rows as the complete set of batch tasks:
+
+```powershell
+statconvert objects .\incoming --recursive --output .\objects.csv
+statconvert batch .\incoming .\converted --to csv --object-manifest .\objects.csv --create-dirs
+```
+
+A minimal hand-written manifest is also valid:
+
+```csv
+input_file,input_object,output_name
+jan.xlsx,Data,jan
+feb.xlsx,Responses,feb
+data.csv,,data
+```
+
+With the default preserve-structure policy, `site_a\jan.xlsx` and output name `jan`
+produce `converted\site_a\jan.csv`. Add `--flatten` for `converted\jan.csv`. Rows with
+`include=false` are ignored. Manifest mode selects one object per included row; it does
+not expand every object, collect objects, or apply manifest-specific transformations.
+The separate `collect` command can consume included manifest rows into one XLSX or ODS
+container; batch manifest mode itself still writes separate files.
+
+One command-level pipeline can transform every included manifest row consistently:
+
+```powershell
+statconvert batch .\incoming .\converted --to parquet --object-manifest .\objects.csv --transform --rename old_id=id
+```
+
+## Convert every supported object to separate files
+
+Expand each supported workbook sheet or R workspace object while keeping ordinary files
+as one task each:
+
+```powershell
+statconvert batch .\incoming .\converted --to csv --all-objects
+statconvert batch .\incoming .\converted --to parquet --all-objects --recursive
+```
+
+`workbook.xlsx` sheets `Data` and `Lookup` become `workbook__Data.csv` and
+`workbook__Lookup.csv`. A `data.csv` input remains `data.csv`. Recursive runs preserve
+relative parent folders unless `--flatten` is used.
+
+Generated-name collisions fail rather than receiving automatic suffixes. Resolve them
+through the editable manifest workflow:
+
+```powershell
+statconvert objects .\incoming --recursive --output .\objects.csv
+# Edit output_name values.
+statconvert batch .\incoming .\converted --to csv --object-manifest .\objects.csv
+```
+
+Unsupported objects are not converted. This workflow creates separate dataset files and
+does not merge rows. A shared pipeline can be applied to every expanded object:
+
+```powershell
+statconvert batch .\incoming .\converted --to csv --all-objects --transform --drop notes
+```
+
+Per-object transformation rules are not supported. Use `collect` when reviewed manifest
+rows should become separate sheets in one container.
 
 ## Transform selected or dropped columns
 
@@ -426,8 +562,28 @@ statconvert transform .\input\data.csv .\output\data-recoded.csv --recode status
 ```
 
 The fixed transformation order is select, drop, rename, type conversion, filtering, then
-recoding. Batch transformations are not implemented; apply `transform` to one input at a
-time.
+recoding. Use `transform` for one input, or apply the same pipeline to many planned items:
+
+```powershell
+statconvert batch .\incoming .\converted --to parquet --transform --select id --select name --filter active,eq,true
+```
+
+Batch dry-run plans paths and parses the options without reading datasets or checking
+whether referenced columns exist.
+
+## Choose separate outputs for large object sets
+
+`convert --all-objects` and `collect` create one final container, so all selected datasets
+are read before that final XLSX or ODS write. When the selected data may be large, prefer
+independent batch outputs:
+
+```powershell
+statconvert batch .\incoming .\converted --to parquet --all-objects --recursive
+```
+
+Batch items are processed independently; with multiple workers, memory use includes one
+current dataset per active worker. None of these workflows append, join, merge, or
+deduplicate rows.
 
 ## Use JSON output in scripts
 

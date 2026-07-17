@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.2.0 - 2026-07-17
+
+Batch and object workflow release.
+
+### Added
+
+- Added manifest-ready folder and file object discovery reports with `objects --output`.
+- Added manifest-driven object conversion with `batch --object-manifest`.
+- Added separate-file expansion for every supported object with `batch --all-objects`.
+- Added one-container multi-object conversion with `convert --all-objects`.
+- Added `collect` for gathering manifest-selected datasets into one XLSX or ODS container.
+- Added batch transformations through the existing transformation pipeline with
+  `batch --transform`.
+- Added backend-neutral multi-object writing for XLSX and ODS outputs.
+- Added performance-boundary regression tests and memory guidance for object workflows.
+
+### Changed
+
+- Batch plans, results, and reports now include object selectors and output names where
+  relevant.
+- Format capabilities now describe object selection and multi-object output behavior.
+- Broad streaming, chunking, memory profiling, and performance-tool refresh are deferred
+  to the planned 0.4.0 performance work.
+
+### Notes
+
+- `collect` and `convert --all-objects` retain selected datasets in memory before the one
+  final container write. Separate batch outputs provide better per-item isolation for very
+  large data.
+- Object/container workflows do not append, join, merge, or deduplicate rows.
+- XLS and RData/RDA multi-object output remain deferred; current multi-object output
+  targets are XLSX and ODS.
+- Public distribution remains a wheel attached to the GitHub Release; StatConvert is not
+  published to PyPI.
+
 ## 0.1.1 - 2026-07-15
 
 ### Added

@@ -1,10 +1,11 @@
 from statconvert.backends.base import Backend
 from statconvert.backends.capabilities import BackendCapabilities
-from statconvert.backends.objects import DatasetObjectInfo
+from statconvert.backends.objects import DatasetObjectInfo, NamedDataset
 from statconvert.dataset import Dataset
 from statconvert.dataset_options import DatasetReadOptions, DatasetWriteOptions
-from statconvert.exceptions import ObjectSelectionNotSupportedError
+from statconvert.exceptions import ConversionError, ObjectSelectionNotSupportedError
 
+from collections.abc import Sequence
 from dataclasses import replace
 from importlib.util import find_spec
 from pathlib import Path
@@ -68,6 +69,8 @@ FORMAT_INFO = {
         "is_container": True,
         "object_selection": True,
         "object_kind": "sheet",
+        "multi_object_write": True,
+        "output_object_kind": "sheet",
         "supports_multiple_sheets": True,
         "supports_multiple_tables": False,
     },
@@ -80,6 +83,8 @@ FORMAT_INFO = {
         "is_container": True,
         "object_selection": True,
         "object_kind": "sheet",
+        "multi_object_write": False,
+        "output_object_kind": None,
         "supports_multiple_sheets": True,
         "supports_multiple_tables": False,
     },
@@ -178,6 +183,8 @@ FORMAT_INFO = {
         "is_container": True,
         "object_selection": True,
         "object_kind": "sheet",
+        "multi_object_write": True,
+        "output_object_kind": "sheet",
         "supports_multiple_sheets": True,
         "supports_multiple_tables": False,
     },
@@ -319,6 +326,52 @@ def write_dataset(
         on_option_warning=on_option_warning,
     )
     writer.write(dataset, filename, **write_kwargs)
+
+
+def validate_dataset_object_names(
+    names: Sequence[str],
+    path: str | Path,
+) -> None:
+    """Validate output object names through the responsible writer backend."""
+
+    filename = str(path)
+    extension = get_extension(filename)
+    capabilities = get_format_capabilities(extension)
+    if not capabilities.can_write or not capabilities.multi_object_write:
+        raise ConversionError(
+            "--all-objects requires a multi-object output format such as "
+            "xlsx or ods.\n"
+            "Use batch --all-objects to write each object to separate files."
+        )
+    writer = get_writer_for_file(filename)
+    writer.validate_object_names(names, filename)
+
+
+def write_dataset_objects(
+    objects: Sequence[NamedDataset],
+    path: str | Path,
+    *,
+    options: DatasetWriteOptions | None = None,
+    on_option_warning: OptionWarningCallback | None = None,
+) -> None:
+    """Write named datasets to one output container."""
+
+    filename = str(path)
+    extension = get_extension(filename)
+    capabilities = get_format_capabilities(extension)
+    if not capabilities.can_write or not capabilities.multi_object_write:
+        raise ConversionError(
+            "--all-objects requires a multi-object output format such as "
+            "xlsx or ods.\n"
+            "Use batch --all-objects to write each object to separate files."
+        )
+    writer = get_writer_for_file(filename)
+    write_kwargs = _dataset_write_kwargs(
+        extension,
+        options,
+        on_option_warning=on_option_warning,
+    )
+    writer.write_objects(objects, filename, **write_kwargs)
 
 
 def _dataset_read_kwargs(
@@ -591,6 +644,13 @@ def get_format_capabilities(target: str) -> BackendCapabilities:
             info.get("object_selection", backend_capabilities.object_selection)
         ),
         object_kind=info.get("object_kind", backend_capabilities.object_kind),
+        multi_object_write=bool(
+            info.get("multi_object_write", backend_capabilities.multi_object_write)
+        ),
+        output_object_kind=info.get(
+            "output_object_kind",
+            backend_capabilities.output_object_kind,
+        ),
         supports_multiple_sheets=bool(
             info.get(
                 "supports_multiple_sheets",
@@ -611,6 +671,15 @@ def format_supports_objects(extension: str) -> bool:
 
     try:
         return get_format_capabilities(extension).object_selection
+    except ValueError:
+        return False
+
+
+def format_supports_multi_object_write(extension: str) -> bool:
+    """Return whether an extension can write multiple named datasets."""
+
+    try:
+        return get_format_capabilities(extension).multi_object_write
     except ValueError:
         return False
 
@@ -682,6 +751,8 @@ def _format_info_with_capabilities(extension: str) -> dict[str, Any]:
     info["is_container"] = capabilities.is_container
     info["object_selection"] = capabilities.object_selection
     info["object_kind"] = capabilities.object_kind
+    info["multi_object_write"] = capabilities.multi_object_write
+    info["output_object_kind"] = capabilities.output_object_kind
     info["supports_multiple_sheets"] = capabilities.supports_multiple_sheets
     info["supports_multiple_tables"] = capabilities.supports_multiple_tables
     return info

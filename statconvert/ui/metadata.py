@@ -180,6 +180,7 @@ def show_capabilities_panel(
         "Custom metadata": capabilities.supports_custom_metadata,
         "Container": capabilities.is_container,
         "Object selection": capabilities.object_selection,
+        "Multi-object write": capabilities.multi_object_write,
         "Multiple sheets": capabilities.supports_multiple_sheets,
         "Multiple tables": capabilities.supports_multiple_tables,
         "Compression": capabilities.supports_compression,
@@ -198,6 +199,10 @@ def show_capabilities_panel(
     table.add_row(
         "Object kind",
         capabilities.object_kind or "-",
+    )
+    table.add_row(
+        "Output object kind",
+        capabilities.output_object_kind or "-",
     )
 
     console.print(

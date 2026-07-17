@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from pathlib import Path
 
 import pandas as pd
@@ -6,6 +7,7 @@ from statconvert.backends.base import Backend
 from statconvert.backends.capabilities import BackendCapabilities
 from statconvert.backends.objects import (
     DatasetObjectInfo,
+    NamedDataset,
     dataset_objects_from_names,
     resolve_object_selector,
 )
@@ -31,6 +33,8 @@ class ODSBackend(Backend):
         is_container=True,
         object_selection=True,
         object_kind="sheet",
+        multi_object_write=True,
+        output_object_kind="sheet",
     )
 
 
@@ -181,6 +185,66 @@ class ODSBackend(Backend):
             raise ConversionError(
                 f"Failed writing ODS file: {e}"
             )
+
+
+    def validate_object_names(
+        self,
+        names: Sequence[str],
+        filename: str,
+    ) -> None:
+        """Reject empty or duplicate ODS sheet names."""
+
+        self._extension(filename)
+        seen: set[str] = set()
+        for name in names:
+            if not name:
+                raise ConversionError(
+                    "Object name is not valid for ods output: <blank>. "
+                    "ODS sheet names cannot be empty.\n"
+                    "Provide an explicit valid output object name; automatic "
+                    "renaming is not supported."
+                )
+            normalized = name.casefold()
+            if normalized in seen:
+                raise ConversionError(
+                    f"Duplicate output object name: {name}\n"
+                    "Provide unique output object names; automatic renaming "
+                    "is not supported."
+                )
+            seen.add(normalized)
+
+
+    def write_objects(
+        self,
+        objects: Sequence[NamedDataset],
+        filename: str,
+        **kwargs,
+    ) -> None:
+        """Write each named dataset to one sheet in an ODS workbook."""
+
+        if kwargs:
+            unexpected = ", ".join(sorted(kwargs))
+            raise ConversionError(
+                f"Unsupported multi-object ODS write option(s): {unexpected}."
+            )
+        self.validate_object_names(
+            [item.name for item in objects],
+            filename,
+        )
+        try:
+            with pd.ExcelWriter(filename, engine="odf") as workbook:
+                for item in objects:
+                    item.dataset.dataframe.to_excel(
+                        workbook,
+                        sheet_name=item.name,
+                        index=False,
+                    )
+        except ConversionError:
+            raise
+        except Exception as exc:
+            raise ConversionError(
+                f"Failed writing multi-object ODS file: {exc}"
+            ) from None
 
 
     def _extension(

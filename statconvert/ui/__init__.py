@@ -1,5 +1,6 @@
 from .console import console
 from .compare import show_dataset_comparison
+from .collection import show_collection_plan, show_collection_result
 from .batch import run_batch_with_progress, show_batch_plan, show_batch_result
 from .errors import (
     show_error,
@@ -24,7 +25,11 @@ from .inspection import (
     show_validation_issues,
 )
 from .panels import show_dataset_header
-from .objects import show_dataset_objects, show_objects_not_supported
+from .objects import (
+    show_dataset_objects,
+    show_object_discovery_report,
+    show_objects_not_supported,
+)
 from .reporting import show_dataset_report_written
 from .tables import show_dataset_info, show_preview
 from .transformations import show_transformation_summary
@@ -39,6 +44,8 @@ __all__ = [
     "show_batch_result",
     "run_batch_with_progress",
     "show_capabilities_panel",
+    "show_collection_plan",
+    "show_collection_result",
     "show_success",
     "show_formats_table",
     "show_labels",
@@ -51,6 +58,7 @@ __all__ = [
     "show_dataset_comparison",
     "show_dataset_info",
     "show_dataset_objects",
+    "show_object_discovery_report",
     "show_dataset_summary",
     "show_dataset_report_written",
     "show_column_profiles",

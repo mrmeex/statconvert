@@ -10,6 +10,7 @@ from rich.text import Text
 
 from statconvert.batch import BatchItem, BatchPlan, BatchResult, execute_batch_plan
 from statconvert.dataset_options import DatasetReadOptions, DatasetWriteOptions
+from statconvert.transformations.pipeline import TransformationPipeline
 
 from .console import console
 
@@ -24,6 +25,7 @@ def run_batch_with_progress(
     read_options: DatasetReadOptions | None = None,
     write_options: DatasetWriteOptions | None = None,
     on_option_warning: Callable[[str], None] | None = None,
+    transform_pipeline: TransformationPipeline | None = None,
 ) -> BatchResult:
     """Execute a batch plan with file-level Rich progress."""
 
@@ -40,7 +42,7 @@ def run_batch_with_progress(
     counts = {"success": 0, "failed": 0, "skipped": 0, "blocked": 0}
     current_file = "-"
     task_id = progress.add_task(
-        f"Converting files ({workers} worker{'s' if workers != 1 else ''})",
+        f"Converting items ({workers} worker{'s' if workers != 1 else ''})",
         total=plan.total_count,
     )
 
@@ -89,6 +91,7 @@ def run_batch_with_progress(
             read_options=read_options,
             write_options=write_options,
             on_option_warning=on_option_warning,
+            transform_pipeline=transform_pipeline,
             on_item_start=on_item_start,
             on_item_finish=on_item_finish,
         )
@@ -113,7 +116,7 @@ def show_batch_plan(
         justify="right",
     )
     summary.add_row(
-        "Total files",
+        "Total items",
         _format_count(
             plan.total_count
         ),
@@ -165,6 +168,16 @@ def show_batch_plan(
     summary.add_row(
         "Exclude patterns",
         _format_patterns(plan.options.exclude_patterns),
+    )
+    summary.add_row(
+        "Object manifest",
+        "none" if plan.options.object_manifest is None else str(
+            plan.options.object_manifest
+        ),
+    )
+    summary.add_row(
+        "All objects",
+        _format_bool(plan.options.all_objects),
     )
 
     console.print(
@@ -227,7 +240,7 @@ def show_batch_result(
         justify="right",
     )
     summary.add_row(
-        "Total files",
+        "Total items",
         _format_count(
             result.total_count
         ),
@@ -381,9 +394,11 @@ def _format_input_file(
     Format an input file compactly for result tables.
     """
 
-    if item.relative_path is not None:
-        return str(
-            item.relative_path
-        )
-
-    return item.input_file.name
+    display = (
+        str(item.relative_path)
+        if item.relative_path is not None
+        else item.input_file.name
+    )
+    if item.input_object is not None:
+        return f"{display} [{item.input_object}]"
+    return display

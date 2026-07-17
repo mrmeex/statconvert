@@ -22,6 +22,8 @@ class BackendCapabilities:
     is_container: bool = False
     object_selection: bool = False
     object_kind: str | None = None
+    multi_object_write: bool = False
+    output_object_kind: str | None = None
     supports_compression: bool = False
     supports_streaming: bool = False
 
@@ -83,4 +85,6 @@ class BackendCapabilities:
             "is_container": self.is_container,
             "object_selection": self.object_selection,
             "object_kind": self.object_kind,
+            "multi_object_write": self.multi_object_write,
+            "output_object_kind": self.output_object_kind,
         }

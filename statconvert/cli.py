@@ -6,6 +6,7 @@ from typing import Annotated
 import typer
 
 from statconvert.batch import (
+    BatchError,
     build_batch_plan,
     execute_batch_plan,
     write_batch_plan_report,
@@ -17,7 +18,15 @@ from statconvert.compare import (
     resolve_compare_object_selectors,
     write_compare_report,
 )
-from statconvert.converter import transform as convert_file
+from statconvert.converter import (
+    transform as convert_file,
+    transform_all_objects as convert_all_objects,
+)
+from statconvert.collection import (
+    CollectionPlanItem,
+    build_collection_plan,
+    execute_collection_plan,
+)
 from statconvert.dataset_options import DatasetReadOptions, DatasetWriteOptions
 from statconvert.inspection import (
     ColumnProfile,
@@ -33,6 +42,10 @@ from statconvert.logging import command_log_wrapper, get_logger, log_command_out
 from statconvert.output_paths import (
     validate_output_parent_directory,
     validate_output_root_directory,
+)
+from statconvert.object_discovery import (
+    build_object_discovery_report,
+    write_object_discovery_report,
 )
 from statconvert.reporting import (
     build_dataset_report,
@@ -50,7 +63,7 @@ from statconvert.registry import (
     resolve_format_info,
     resolve_format_or_backend,
 )
-from statconvert.exceptions import ObjectSelectionNotSupportedError
+from statconvert.exceptions import ConversionError, ObjectSelectionNotSupportedError
 from statconvert.transformer import transform_file
 from statconvert.transformations.cli_parsing import build_pipeline_from_cli_options
 from statconvert.version import format_version_status
@@ -63,10 +76,13 @@ from statconvert.ui import (
     show_batch_result,
     run_batch_with_progress,
     show_capabilities_panel,
+    show_collection_plan,
+    show_collection_result,
     show_dataset_header,
     show_dataset_comparison,
     show_dataset_info,
     show_dataset_objects,
+    show_object_discovery_report,
     show_dataset_summary,
     show_dataset_report_written,
     show_column_profiles,
@@ -316,11 +332,57 @@ def _show_dataset_header(
     )
 
 
+def _show_object_validation(
+    object_name: str,
+    issues,
+    *,
+    strict: bool,
+    target_format: str | None,
+) -> None:
+    """Display validation issues with their source object context."""
+
+    console.print(f"[bold]Object: {object_name}[/bold]")
+    show_validation_issues(
+        issues,
+        strict=strict,
+        target_format=target_format,
+    )
+
+
+def _show_collection_validation(
+    item: CollectionPlanItem,
+    issues,
+    *,
+    strict: bool,
+    target_format: str | None,
+) -> None:
+    """Display validation issues with manifest row and input context."""
+
+    selector = f" [{item.input_object}]" if item.input_object else ""
+    console.print(
+        f"[bold]Manifest row {item.row_number}: "
+        f"{item.input_file}{selector}[/bold]"
+    )
+    show_validation_issues(
+        issues,
+        strict=strict,
+        target_format=target_format,
+    )
+
+
 @app.command()
 def convert(
     input_file: str,
     output_file: str,
     object_selector: ObjectSelectorOption = None,
+    all_objects: bool = typer.Option(
+        False,
+        "--all-objects",
+        help=(
+            "Convert every supported input object into one multi-object "
+            "output file."
+        ),
+    ),
     overwrite: OverwriteOption = False,
     create_dirs: CreateDirsOption = False,
     validate_inputs: bool = typer.Option(
@@ -343,7 +405,7 @@ def convert(
     developer_log: DeveloperLogOption = False,
 ):
     """
-    Convert one dataset to another format.
+    Convert one dataset, or all objects in one container, to another format.
     """
 
     validation_failure: ValidationFailedError | None = None
@@ -355,6 +417,7 @@ def convert(
                 "input_file": input_file,
                 "output_file": output_file,
                 "object": object_selector,
+                "all_objects": all_objects,
                 "overwrite": overwrite,
                 "create_dirs": create_dirs,
                 "validate": validate_inputs,
@@ -375,24 +438,53 @@ def convert(
                 csv_delimiter,
                 csv_decimal,
             )
-            try:
-                dataset = convert_file(
-                    input_file=input_file,
-                    output_file=output_file,
-                    overwrite=overwrite,
-                    create_dirs=create_dirs,
-                    validate=validate_inputs,
-                    strict_validation=strict_validation,
-                    object_selector=object_selector,
-                    read_options=read_options,
-                    write_options=write_options,
-                    on_option_warning=show_warning,
-                    on_validation=lambda issues: show_validation_issues(
-                        issues,
-                        strict=strict_validation,
-                        target_format=Path(output_file).suffix.lower() or None,
-                    ),
+            if object_selector is not None and all_objects:
+                raise ConversionError(
+                    "Use either --object or --all-objects, not both."
                 )
+            try:
+                if all_objects:
+                    conversion_result = convert_all_objects(
+                        input_file=input_file,
+                        output_file=output_file,
+                        overwrite=overwrite,
+                        create_dirs=create_dirs,
+                        validate=validate_inputs,
+                        strict_validation=strict_validation,
+                        read_options=read_options,
+                        write_options=write_options,
+                        on_option_warning=show_warning,
+                        on_validation=lambda name, issues: (
+                            _show_object_validation(
+                                name,
+                                issues,
+                                strict=strict_validation,
+                                target_format=(
+                                    Path(output_file).suffix.lower() or None
+                                ),
+                            )
+                        ),
+                    )
+                else:
+                    dataset = convert_file(
+                        input_file=input_file,
+                        output_file=output_file,
+                        overwrite=overwrite,
+                        create_dirs=create_dirs,
+                        validate=validate_inputs,
+                        strict_validation=strict_validation,
+                        object_selector=object_selector,
+                        read_options=read_options,
+                        write_options=write_options,
+                        on_option_warning=show_warning,
+                        on_validation=lambda issues: show_validation_issues(
+                            issues,
+                            strict=strict_validation,
+                            target_format=(
+                                Path(output_file).suffix.lower() or None
+                            ),
+                        ),
+                    )
             except ValidationFailedError as exc:
                 validation_failure = exc
                 _log_validation_block(
@@ -402,20 +494,45 @@ def convert(
                     strict=strict_validation,
                 )
             else:
-                logger.info(
-                    "Conversion result: output_file=%s rows=%s columns=%s",
-                    output_file,
-                    dataset.rows,
-                    len(dataset.columns),
-                )
+                if all_objects:
+                    for skipped in conversion_result.skipped_objects:
+                        name = (
+                            skipped.name
+                            or (
+                                f"object_{skipped.index}"
+                                if skipped.index is not None
+                                else "<unnamed>"
+                            )
+                        )
+                        message = skipped.message or "Unsupported object"
+                        show_warning(
+                            f"Skipped unsupported object: {name} - {message}"
+                        )
+                    logger.info(
+                        "Multi-object conversion result: output_file=%s "
+                        "objects=%s skipped=%s rows=%s",
+                        output_file,
+                        len(conversion_result.objects),
+                        len(conversion_result.skipped_objects),
+                        conversion_result.rows,
+                    )
+                    show_success("Multi-object conversion completed.")
+                    console.print(
+                        f"Objects converted: {len(conversion_result.objects):,}"
+                    )
+                    console.print(
+                        f"Rows converted: {conversion_result.rows:,}"
+                    )
+                else:
+                    logger.info(
+                        "Conversion result: output_file=%s rows=%s columns=%s",
+                        output_file,
+                        dataset.rows,
+                        len(dataset.columns),
+                    )
 
-                show_success(
-                    "Conversion completed."
-                )
-
-                console.print(
-                    f"Rows converted: {dataset.rows:,}"
-                )
+                    show_success("Conversion completed.")
+                    console.print(f"Rows converted: {dataset.rows:,}")
 
     except Exception as exc:
 
@@ -427,6 +544,139 @@ def convert(
         show_error(
             "Validation failed. Output was not written."
         )
+        raise typer.Exit(1)
+
+
+@app.command()
+def collect(
+    manifest: str,
+    output_file: str,
+    base_dir: str | None = typer.Option(
+        None,
+        "--base-dir",
+        help=(
+            "Resolve relative manifest input_file values from this directory. "
+            "Defaults to the manifest directory."
+        ),
+    ),
+    overwrite: OverwriteOption = False,
+    create_dirs: CreateDirsOption = False,
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Validate and display the collection plan without reading or writing data.",
+    ),
+    validate_inputs: bool = typer.Option(
+        False,
+        "--validate",
+        help="Validate each selected dataset before writing the container.",
+    ),
+    strict_validation: bool = typer.Option(
+        False,
+        "--strict-validation",
+        help="Treat validation warnings as failures and imply --validate.",
+    ),
+    input_encoding: InputEncodingOption = None,
+    output_encoding: OutputEncodingOption = None,
+    csv_delimiter: CsvDelimiterOption = None,
+    csv_decimal: CsvDecimalOption = None,
+    log_file: LogFileOption = None,
+    log_level: LogLevelOption = "info",
+    log_append: LogAppendOption = False,
+    developer_log: DeveloperLogOption = False,
+):
+    """Collect manifest-selected datasets into one multi-object output file."""
+
+    validation_failure: ValidationFailedError | None = None
+
+    try:
+        with command_log_wrapper(
+            command="collect",
+            parameters={
+                "manifest": manifest,
+                "output_file": output_file,
+                "base_dir": base_dir,
+                "overwrite": overwrite,
+                "create_dirs": create_dirs,
+                "dry_run": dry_run,
+                "validate": validate_inputs,
+                "strict_validation": strict_validation,
+                "input_encoding": input_encoding,
+                "output_encoding": output_encoding,
+                "csv_delimiter": csv_delimiter,
+                "csv_decimal": csv_decimal,
+            },
+            log_file=log_file,
+            log_level=log_level,
+            log_append=log_append,
+            developer_log=developer_log,
+        ) as logger:
+            read_options, write_options = _dataset_io_options(
+                input_encoding,
+                output_encoding,
+                csv_delimiter,
+                csv_decimal,
+            )
+            plan = build_collection_plan(
+                manifest,
+                output_file,
+                base_dir=base_dir,
+                overwrite=overwrite,
+                create_dirs=create_dirs,
+                dry_run=dry_run,
+            )
+            if dry_run:
+                show_collection_plan(plan)
+                logger.info(
+                    "Collection dry-run plan: manifest=%s output=%s objects=%s",
+                    manifest,
+                    output_file,
+                    len(plan.items),
+                )
+            else:
+                try:
+                    result = execute_collection_plan(
+                        plan,
+                        validate=validate_inputs,
+                        strict_validation=strict_validation,
+                        read_options=read_options,
+                        write_options=write_options,
+                        on_option_warning=show_warning,
+                        on_validation=lambda item, issues: (
+                            _show_collection_validation(
+                                item,
+                                issues,
+                                strict=strict_validation,
+                                target_format=(
+                                    Path(output_file).suffix.lower() or None
+                                ),
+                            )
+                        ),
+                    )
+                except ValidationFailedError as exc:
+                    validation_failure = exc
+                    _log_validation_block(
+                        logger,
+                        command="collect",
+                        exc=exc,
+                        strict=strict_validation,
+                    )
+                else:
+                    logger.info(
+                        "Collection result: output_file=%s objects=%s rows=%s",
+                        output_file,
+                        len(result.objects),
+                        result.rows,
+                    )
+                    show_collection_result(result)
+                    show_success("Object collection completed.")
+
+    except Exception as exc:
+        handle_exception(exc)
+        raise typer.Exit(1)
+
+    if validation_failure is not None:
+        show_error("Validation failed. Output was not written.")
         raise typer.Exit(1)
 
 
@@ -781,44 +1031,121 @@ def capabilities(
 
 @app.command()
 def objects(
-    input_file: str,
+    input_path: str,
+    recursive: bool = typer.Option(
+        False,
+        "--recursive",
+        "-r",
+        help="Include files in subdirectories when INPUT_PATH is a folder.",
+    ),
+    patterns: list[str] | None = typer.Option(
+        None,
+        "--pattern",
+        help="Include filename or relative-path glob matches. Can be repeated.",
+    ),
+    exclude_patterns: list[str] | None = typer.Option(
+        None,
+        "--exclude-pattern",
+        help="Exclude filename or relative-path glob matches. Can be repeated.",
+    ),
+    include_unsupported: bool = typer.Option(
+        False,
+        "--include-unsupported",
+        help="Include unsupported files as excluded discovery rows.",
+    ),
+    output: str | None = typer.Option(
+        None,
+        "--output",
+        help="Write a manifest-ready CSV report, or JSON with --json.",
+    ),
     json_output: bool = typer.Option(
         False,
         "--json",
         help="Emit dataset objects as plain JSON.",
     ),
+    overwrite: OverwriteOption = False,
+    create_dirs: CreateDirsOption = False,
     log_file: LogFileOption = None,
     log_level: LogLevelOption = "info",
     log_append: LogAppendOption = False,
     developer_log: DeveloperLogOption = False,
 ):
-    """List dataset-like objects inside a container file."""
+    """Discover dataset-like objects in a file or folder."""
 
     try:
         with command_log_wrapper(
             command="objects",
-            parameters={"input_file": input_file, "json": json_output},
+            parameters={
+                "input_path": input_path,
+                "recursive": recursive,
+                "pattern": patterns,
+                "exclude_pattern": exclude_patterns,
+                "include_unsupported": include_unsupported,
+                "output": output,
+                "json": json_output,
+                "overwrite": overwrite,
+                "create_dirs": create_dirs,
+            },
             log_file=log_file,
             log_level=log_level,
             log_append=log_append,
             developer_log=developer_log,
         ) as logger:
-            try:
-                dataset_objects = list_dataset_objects(input_file)
-            except ObjectSelectionNotSupportedError:
-                dataset_objects = []
-                logger.info("Object listing is not supported for input format")
+            path = Path(input_path)
+            legacy_single_file = (
+                path.is_file()
+                and output is None
+                and not recursive
+                and not patterns
+                and not exclude_patterns
+                and not include_unsupported
+            )
+            if legacy_single_file:
+                try:
+                    dataset_objects = list_dataset_objects(input_path)
+                except ObjectSelectionNotSupportedError:
+                    dataset_objects = []
+                    logger.info("Object listing is not supported for input format")
+                    if json_output:
+                        emit_json(dataset_objects)
+                    else:
+                        show_objects_not_supported()
+                    return
+
+                logger.info("Object listing completed: objects=%s", len(dataset_objects))
                 if json_output:
                     emit_json(dataset_objects)
                 else:
-                    show_objects_not_supported()
+                    show_dataset_objects(dataset_objects)
                 return
 
-            logger.info("Object listing completed: objects=%s", len(dataset_objects))
-            if json_output:
-                emit_json(dataset_objects)
+            report = build_object_discovery_report(
+                input_path,
+                recursive=recursive,
+                patterns=patterns,
+                exclude_patterns=exclude_patterns,
+                include_unsupported=include_unsupported,
+                excluded_file=output,
+            )
+            logger.info(
+                "Object discovery completed: files=%s objects=%s",
+                len(report.files),
+                len(report.rows),
+            )
+            if output is not None:
+                written_path = write_object_discovery_report(
+                    report,
+                    output,
+                    json_output=json_output,
+                    overwrite=overwrite,
+                    create_dirs=create_dirs,
+                )
+                logger.info("Object discovery report written: %s", written_path)
+                console.print(f"Object discovery report written: {written_path}")
+            elif json_output:
+                emit_json(report.to_json_dict())
             else:
-                show_dataset_objects(dataset_objects)
+                show_object_discovery_report(report)
 
     except Exception as exc:
         handle_exception(exc)
@@ -1766,6 +2093,7 @@ def report(
 
 @app.command()
 def batch(
+    ctx: typer.Context,
     input_path: str,
     output_path: str,
     to_format: str = typer.Option(
@@ -1774,6 +2102,86 @@ def batch(
         help="Target output format, for example csv, parquet, sav or xlsx.",
     ),
     object_selector: ObjectSelectorOption = None,
+    object_manifest: str | None = typer.Option(
+        None,
+        "--object-manifest",
+        help="Use included rows from an object discovery CSV as batch tasks.",
+    ),
+    all_objects: bool = typer.Option(
+        False,
+        "--all-objects",
+        help="Expand container files and convert every supported dataset object.",
+    ),
+    transform_items: bool = typer.Option(
+        False,
+        "--transform",
+        help="Apply the existing transformation pipeline to every batch item.",
+    ),
+    select: list[str] | None = typer.Option(
+        None,
+        "--select",
+        help="Select columns in every batch item. Can be repeated.",
+    ),
+    drop: list[str] | None = typer.Option(
+        None,
+        "--drop",
+        help="Drop columns from every batch item. Can be repeated.",
+    ),
+    rename: list[str] | None = typer.Option(
+        None,
+        "--rename",
+        help="Rename a column using OLD=NEW. Can be repeated.",
+    ),
+    type_items: list[str] | None = typer.Option(
+        None,
+        "--type",
+        help="Convert a column using COLUMN=TYPE. Can be repeated.",
+    ),
+    type_errors: str = typer.Option(
+        "raise",
+        "--type-errors",
+        help="Type conversion error mode: raise, coerce or ignore.",
+    ),
+    datetime_format: str | None = typer.Option(
+        None,
+        "--datetime-format",
+        help="Datetime parsing format for type conversion.",
+    ),
+    filter_items: list[str] | None = typer.Option(
+        None,
+        "--filter",
+        help="Filter rows using COLUMN,OPERATOR,VALUE. Can be repeated.",
+    ),
+    filter_mode: str = typer.Option(
+        "and",
+        "--filter-mode",
+        help="Combine filters with and or or.",
+    ),
+    recode: list[str] | None = typer.Option(
+        None,
+        "--recode",
+        help="Recode values using COLUMN:OLD=NEW,OLD=NEW. Can be repeated.",
+    ),
+    recode_default: str | None = typer.Option(
+        None,
+        "--recode-default",
+        help="Default value for unmapped non-missing recode values.",
+    ),
+    update_value_labels: bool = typer.Option(
+        True,
+        "--update-value-labels/--no-update-value-labels",
+        help="Update normalized value labels during recode.",
+    ),
+    ignore_missing_columns: bool = typer.Option(
+        False,
+        "--ignore-missing-columns",
+        help="Ignore missing columns for select, drop and rename.",
+    ),
+    reset_index: bool = typer.Option(
+        True,
+        "--reset-index/--no-reset-index",
+        help="Reset row index after filtering.",
+    ),
     recursive: bool = typer.Option(
         False,
         "--recursive",
@@ -1875,6 +2283,15 @@ def batch(
                 "output_path": output_path,
                 "to": to_format,
                 "object": object_selector,
+                "object_manifest": object_manifest,
+                "all_objects": all_objects,
+                "transform": transform_items,
+                "select": select,
+                "drop": drop,
+                "rename": rename,
+                "type": type_items,
+                "filters": filter_items,
+                "recode": recode,
                 "recursive": recursive,
                 "overwrite": overwrite,
                 "create_dirs": create_dirs,
@@ -1904,10 +2321,71 @@ def batch(
                 csv_delimiter,
                 csv_decimal,
             )
+            transform_pipeline = build_pipeline_from_cli_options(
+                select_columns=select,
+                drop_columns=drop,
+                rename_items=rename,
+                type_items=type_items,
+                type_errors=type_errors,
+                datetime_format=datetime_format,
+                filter_items=filter_items,
+                filter_mode=filter_mode,
+                recode_items=recode,
+                recode_default=recode_default,
+                update_value_labels=update_value_labels,
+                ignore_missing_columns=ignore_missing_columns,
+                reset_index=reset_index,
+            )
+            transform_options_supplied = any(
+                (
+                    source := ctx.get_parameter_source(option_name)
+                ) is not None
+                and source.name == "COMMANDLINE"
+                for option_name in (
+                    "select",
+                    "drop",
+                    "rename",
+                    "type_items",
+                    "type_errors",
+                    "datetime_format",
+                    "filter_items",
+                    "filter_mode",
+                    "recode",
+                    "recode_default",
+                    "update_value_labels",
+                    "ignore_missing_columns",
+                    "reset_index",
+                )
+            )
+            if transform_items and transform_pipeline.is_empty():
+                raise BatchError(
+                    "--transform requires at least one transformation option."
+                )
+            if not transform_items and transform_options_supplied:
+                raise BatchError(
+                    "Transformation options require --transform."
+                )
+            active_transform_pipeline = (
+                transform_pipeline
+                if transform_items
+                else None
+            )
             def option_warning(message: str) -> None:
                 _show_dataset_option_warning(
                     message,
                     json_output=json_output,
+                )
+            if object_selector is not None and object_manifest is not None:
+                raise BatchError(
+                    "Use either --object or --object-manifest, not both."
+                )
+            if object_selector is not None and all_objects:
+                raise BatchError(
+                    "Use either --object or --all-objects, not both."
+                )
+            if object_manifest is not None and all_objects:
+                raise BatchError(
+                    "Use either --object-manifest or --all-objects, not both."
                 )
             plan = build_batch_plan(
                 input_path=input_path,
@@ -1919,6 +2397,8 @@ def batch(
                 preserve_structure=preserve_structure,
                 patterns=patterns,
                 exclude_patterns=exclude_patterns,
+                object_manifest=object_manifest,
+                all_objects=all_objects,
             )
             input_path_value = Path(input_path)
             output_path_value = Path(output_path)
@@ -1983,6 +2463,7 @@ def batch(
                         read_options=read_options,
                         write_options=write_options,
                         on_option_warning=option_warning,
+                        transform_pipeline=active_transform_pipeline,
                     )
                 else:
                     result = run_batch_with_progress(
@@ -1995,6 +2476,7 @@ def batch(
                         read_options=read_options,
                         write_options=write_options,
                         on_option_warning=option_warning,
+                        transform_pipeline=active_transform_pipeline,
                     )
 
                 if report is not None:

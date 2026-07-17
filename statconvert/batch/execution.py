@@ -20,6 +20,7 @@ from statconvert.batch.models import (
 )
 from statconvert.dataset_options import DatasetReadOptions, DatasetWriteOptions
 from statconvert.inspection import ValidationIssue, validate_dataset
+from statconvert.transformations.pipeline import TransformationPipeline
 
 
 BatchItemCallback = Callable[[BatchItem], None]
@@ -39,6 +40,7 @@ def execute_batch_plan(
     read_options: DatasetReadOptions | None = None,
     write_options: DatasetWriteOptions | None = None,
     on_option_warning: Callable[[str], None] | None = None,
+    transform_pipeline: TransformationPipeline | None = None,
 ) -> BatchResult:
     """
     Execute pending items sequentially or with a bounded thread pool.
@@ -74,6 +76,7 @@ def execute_batch_plan(
             read_options=read_options,
             write_options=write_options,
             on_option_warning=on_option_warning,
+            transform_pipeline=transform_pipeline,
             on_item_start=on_item_start,
             on_item_finish=on_item_finish,
         )
@@ -91,6 +94,7 @@ def execute_batch_plan(
             read_options=read_options,
             write_options=write_options,
             on_option_warning=on_option_warning,
+            transform_pipeline=transform_pipeline,
             on_item_start=on_item_start,
             on_item_finish=on_item_finish,
         )
@@ -113,6 +117,7 @@ def _execute_sequential(
     read_options: DatasetReadOptions | None,
     write_options: DatasetWriteOptions | None,
     on_option_warning: Callable[[str], None] | None,
+    transform_pipeline: TransformationPipeline | None,
     on_item_start: BatchItemCallback | None,
     on_item_finish: BatchItemCallback | None,
 ) -> None:
@@ -163,6 +168,7 @@ def _execute_sequential(
             read_options=read_options,
             write_options=write_options,
             on_option_warning=on_option_warning,
+            transform_pipeline=transform_pipeline,
         )
         _call_callback(
             on_item_finish,
@@ -185,6 +191,7 @@ def _execute_parallel(
     read_options: DatasetReadOptions | None,
     write_options: DatasetWriteOptions | None,
     on_option_warning: Callable[[str], None] | None,
+    transform_pipeline: TransformationPipeline | None,
     on_item_start: BatchItemCallback | None,
     on_item_finish: BatchItemCallback | None,
 ) -> None:
@@ -218,6 +225,7 @@ def _execute_parallel(
                 read_options,
                 write_options,
                 on_option_warning,
+                transform_pipeline,
             )
             futures[future] = (index, item)
 
@@ -257,6 +265,7 @@ def _execute_one_item(
     read_options: DatasetReadOptions | None = None,
     write_options: DatasetWriteOptions | None = None,
     on_option_warning: Callable[[str], None] | None = None,
+    transform_pipeline: TransformationPipeline | None = None,
 ) -> BatchItem:
     """Complete one independent item and return it to the collecting thread."""
 
@@ -271,6 +280,7 @@ def _execute_one_item(
         read_options=read_options,
         write_options=write_options,
         on_option_warning=on_option_warning,
+        transform_pipeline=transform_pipeline,
     )
     return item
 
@@ -302,6 +312,7 @@ def _execute_item(
     read_options: DatasetReadOptions | None = None,
     write_options: DatasetWriteOptions | None = None,
     on_option_warning: Callable[[str], None] | None = None,
+    transform_pipeline: TransformationPipeline | None = None,
 ) -> None:
     """
     Execute one pending batch item.
@@ -316,12 +327,19 @@ def _execute_item(
             overwrite=overwrite,
         )
 
+        item_object_selector = (
+            item.input_object
+            if item.input_object is not None
+            else object_selector
+        )
         dataset = _read_file(
             str(item.input_file),
-            object_selector=object_selector,
+            object_selector=item_object_selector,
             read_options=read_options,
             on_option_warning=on_option_warning,
         )
+        if transform_pipeline is not None:
+            dataset = transform_pipeline.apply(dataset)
         item.rows = dataset.rows
         item.columns = len(dataset.columns)
 

@@ -26,6 +26,8 @@ class BatchPlanningOptions:
     preserve_structure: bool = True
     patterns: list[str] | None = None
     exclude_patterns: list[str] | None = None
+    object_manifest: Path | None = None
+    all_objects: bool = False
 
 
 @dataclass
@@ -41,6 +43,11 @@ class BatchItem:
     status: str = BATCH_STATUS_PENDING
     reason: str | None = None
     relative_path: Path | None = None
+    input_object: str | None = None
+    output_name: str | None = None
+    object_index: int | None = None
+    object_name: str | None = None
+    manifest_row_number: int | None = None
     rows: int | None = None
     columns: int | None = None
     duration_seconds: float | None = None

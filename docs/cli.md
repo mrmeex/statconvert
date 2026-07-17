@@ -5,12 +5,13 @@
 ## Command overview
 
 ```text
-convert       Convert one dataset to another format.
+convert       Convert one dataset or a whole object container.
+collect       Collect manifest-selected datasets into one XLSX or ODS container.
 transform     Transform a dataset and write it to another format.
 formats       List registered extensions and extension-level read/write support.
 backends      List backend engines and backend-wide capabilities.
 capabilities  Show details for one extension or backend.
-objects       List dataset-like objects inside a container file.
+objects       Discover dataset-like objects in a file or folder.
 info          Display basic dataset information.
 schema        Display normalized variable schema.
 labels        Display variable and value labels.
@@ -97,7 +98,8 @@ do not currently have `--json` options.
 - `0` means the command completed under its default policy.
 - `1` means an operational error or an intentional failing policy outcome.
 - `validate` exits `1` for errors, and for warnings with `--strict`.
-- `convert` and `transform` exit `1` when their validation write gate blocks output.
+- `convert`, `collect`, and `transform` exit `1` when their validation write gate
+  blocks output.
 - `compare` exits `1` for error-level differences, and for warnings with `--strict`.
 - `batch` exits `1` when a plan has blockers or an execution has failed/blocked items.
   A dry run with blockers also exits `1`.
@@ -115,6 +117,8 @@ Options:
 
 - `--object OBJECT` selects an Excel/ODS sheet or RData/RDA object by exact name or
   zero-based index.
+- `--all-objects` converts every supported input object into one multi-object output.
+  It conflicts with `--object`.
 - `--overwrite` replaces an existing output.
 - `--create-dirs` creates a missing output parent directory.
 - `--validate` validates the loaded dataset for the output extension before writing.
@@ -133,6 +137,9 @@ statconvert convert input.csv output.xlsx --overwrite --log convert.log
 statconvert convert input.csv output.xls
 statconvert convert workbook.xlsx output.csv --object 0
 statconvert convert workspace.rdata patients.csv --object patients
+statconvert convert workbook.xlsx combined.xlsx --all-objects
+statconvert convert workbook.xlsx combined.ods --all-objects
+statconvert convert workspace.rdata workspace.xlsx --all-objects
 statconvert convert input.sav output.xlsx --input-encoding cp1252
 statconvert convert input.csv output.xlsx --input-encoding latin1 --csv-delimiter ";"
 statconvert convert input.xlsx output.csv --output-encoding utf-8-sig --csv-delimiter ";"
@@ -145,6 +152,62 @@ Unsupported output extensions fail before a backend write. Genuine `.xls` writin
 the normally installed `xlwt` dependency and is limited to 65,535 data rows plus one header row and
 256 columns; use `.xlsx` for larger or wider datasets. `.zsav`, `.por`, and `.sas7bdat`
 are read-only.
+
+`convert --all-objects` is container-to-container conversion: one XLSX, XLS, ODS,
+RData, or RDA input becomes one XLSX or ODS output with one sheet per supported input
+object. It preserves input object order and names. Unsupported input objects are skipped
+with warnings when at least one supported dataset object remains; zero supported objects
+is an error. Empty, invalid, or duplicate target sheet names fail without automatic
+renaming. Single-dataset inputs must omit `--all-objects`, and XLS, RData/RDA, CSV, and
+other single-dataset outputs are not multi-object targets.
+
+This differs from `batch --all-objects`, which expands objects into separate output
+files. `convert --all-objects` validates output safety and object names first, then reads
+all selected datasets before the one final container write. The selected datasets must fit
+comfortably in memory together. Neither mode merges, appends, or joins rows.
+
+### `collect`
+
+```bash
+statconvert collect MANIFEST OUTPUT_FILE [OPTIONS]
+```
+
+Collect reads included rows from a collection, discovery, or minimal object manifest and
+writes each selected dataset as a separate sheet in one XLSX or ODS output file.
+
+Options:
+
+- `--base-dir PATH` resolves relative `input_file` values from this directory. Without
+  it, paths resolve from the manifest parent directory.
+- `--overwrite` replaces an existing output.
+- `--create-dirs` creates a missing output parent directory.
+- `--dry-run` validates and displays the plan without reading datasets, creating
+  directories, or writing output.
+- `--validate` validates every selected dataset before the one final write.
+- `--strict-validation` implies validation and makes warnings write-blocking.
+- `--input-encoding`, `--output-encoding`, `--csv-delimiter`, and `--csv-decimal` use
+  the shared dataset I/O option behavior.
+- Common logging options.
+
+```bash
+statconvert collect objects.csv combined.xlsx --base-dir incoming
+statconvert collect objects.csv combined.ods --base-dir incoming
+statconvert collect objects.csv combined.xlsx --base-dir incoming --dry-run
+```
+
+The manifest requires `input_file`. `include` defaults to true; false rows are ignored
+without file or support validation. Optional names use this priority:
+`output_object`, `output_name`, `input_object`, then the input filename stem. Names must
+already be valid and unique for the selected output; StatConvert never sanitizes,
+renames, or suffixes them.
+
+Included `object_supported=false` or `file_supported=false` rows fail before dataset
+reads. A blank `input_object` uses normal single-dataset behavior and remains ambiguous
+for a multi-object input. Any included read or validation failure stops the whole
+collection before its final write. Collect does not append, join, merge, deduplicate, or
+transform rows. Because partial container output is intentionally avoided, all selected
+datasets are retained in memory until the final XLSX or ODS write. XLS and RData/RDA
+remain unsupported collection outputs.
 
 ### `transform`
 
@@ -194,12 +257,12 @@ statconvert transform input.xlsx output.csv --csv-delimiter ";"
 ```
 
 Encoding and CSV options are available only on the datafile-writing commands `convert`,
-`transform`, and `batch`. `--input-encoding` affects only readers that support explicit
+`collect`, `transform`, and `batch`. `--input-encoding` affects only readers that support explicit
 encoding; `--output-encoding` affects only supporting writers. An unsupported backend
 produces a warning and ignores that directional option. CSV delimiter and decimal values
 apply only to CSV input/output paths, must each be one character, and cannot be the same
 when both are supplied. Read-only and comparison commands do not expose these controls in
-0.1.1.
+0.2.0.
 
 ## Discovery and metadata commands
 
@@ -242,14 +305,32 @@ statconvert capabilities pyreadstat
 ### `objects`
 
 ```bash
-statconvert objects INPUT_FILE [--json]
+statconvert objects INPUT_PATH [OPTIONS]
 ```
 
-Lists workbook sheets and named RData/RDA objects with zero-based indices. Legacy XLS
-listing uses the normally installed `xlrd`; an incomplete environment reports that
-dependency clearly. Single-dataset formats exit successfully with
-`This format does not expose multiple dataset objects.`; with `--json` they emit an empty
-JSON array.
+For a single container file, lists workbook sheets and named RData/RDA objects with
+zero-based indices. Existing single-file console and JSON behavior remains unchanged:
+single-dataset formats report that they expose no multiple objects, and single-file
+`--json` emits the existing object array.
+
+For a folder, builds a manifest-ready discovery report without converting files. Direct
+files are scanned by default; `--recursive`/`-r` includes subfolders. Repeatable
+`--pattern` and `--exclude-pattern` values match file names or paths relative to the scan
+root. Unsupported files are hidden unless `--include-unsupported` is supplied.
+
+Folder console output shows flat discovery rows. `--json` without `--output` writes a
+grouped JSON document to stdout. `--output PATH` writes an editable flat CSV with this
+stable column order:
+
+```text
+include,input_file,input_relative_path,input_object,output_name,file_format,file_supported,object_index,object_name,object_kind,object_supported,rows,columns,message
+```
+
+Use `--json --output objects.json` for grouped JSON on disk. Existing report files require
+`--overwrite`; missing report parents require `--create-dirs`. `input_file` is relative to
+the scanned folder, `input_object` is a reusable selector for container objects, and
+`output_name` is a conservatively sanitized suggested base name. Discovery reports do not
+convert datasets, expand objects into outputs, or resolve suggested-name collisions.
 
 `--object TEXT` selects an exact Excel/ODS sheet or RData/RDA object name, or a zero-based
 index. A single supported object is selected automatically. A container with multiple
@@ -260,6 +341,10 @@ StatConvert never silently reads the first one. Unsupported R objects are shown 
 ```bash
 statconvert objects workbook.xlsx
 statconvert objects workbook.ods --json
+statconvert objects incoming --recursive
+statconvert objects incoming --recursive --output objects.csv
+statconvert objects incoming --recursive --include-unsupported --output objects.csv
+statconvert objects incoming --recursive --json --output objects.json
 statconvert peek workbook.xlsx --object "Survey Data"
 statconvert objects workspace.rdata
 statconvert peek workspace.rdata --object patients
@@ -411,6 +496,13 @@ Options:
 
 - `--to FORMAT` - required writable target extension.
 - `--object OBJECT` - apply the same dataset-object selector to every input file.
+- `--object-manifest FILE` - process included CSV manifest rows with per-row selectors and
+  output names. It cannot be combined with `--object`.
+- `--all-objects` - expand every supported object in each container into a separate batch
+  item. It cannot be combined with `--object` or `--object-manifest`.
+- `--transform` - apply one shared transformation pipeline to every planned batch item.
+- `--select`, `--drop`, `--rename`, `--type`, `--filter`, and `--recode`, plus their
+  existing modifier options, have the same syntax and fixed order as `transform`.
 - `--recursive`, `-r` - include subdirectories.
 - `--overwrite` - allow existing output replacement.
 - `--create-dirs` - create the root output directory when it is missing.
@@ -438,11 +530,59 @@ root must exist unless `--create-dirs` is used. Recursive runs preserve relative
 by default, and generated subfolders below an existing root are created automatically.
 Existing item outputs fail during execution unless `--overwrite` is used, following the
 normal fail-fast policy. Result and report order follows plan order even with multiple
-workers. Dry-run neither creates directories nor writes or replaces files. Object
-selection happens during execution, so dry-run remains read-free. It selects one object
-per file and never expands all objects. A format that
+workers. With `--transform`, each item is read, transformed, optionally validated, and
+then written. The same transformation specification applies to every item; transformation
+failures use normal item-failure and fail-fast behavior. Dry-run parses the specification
+but does not read data, apply transformations, check dataset columns, create directories,
+or write or replace files. In ordinary and shared-`--object` mode, object selection happens
+during execution, so dry-run performs no dataset or object reads. Shared `--object` mode
+selects one object per file; expansion requires `--all-objects`. A format that
 does not support object selection fails as an individual item rather than silently
 ignoring `--object`.
+
+Manifest mode reads either the full CSV from `objects --output` or a minimal CSV:
+
+```csv
+input_file,input_object,output_name
+jan.xlsx,Data,jan
+feb.xlsx,Responses,feb
+data.csv,,data
+```
+
+Only rows whose `include` value is true are planned; a missing `include` column defaults
+to true. Accepted true values are `true`, `yes`, `1`, and `y`; accepted false values are
+`false`, `no`, `0`, `n`, and blank, case-insensitively. Skipped rows are not validated as
+conversion tasks. Included rows marked `file_supported=false` or
+`object_supported=false` fail manifest validation before conversion.
+
+Relative `input_file` values resolve below `INPUT_PATH`; absolute inputs are accepted. By
+default, a relative input's parent folders are preserved below `OUTPUT_PATH`, while
+`--flatten` writes directly below the output root. `output_name` controls the base file
+name. If blank, it defaults to the input stem for a single dataset or
+`input-stem__input-object` when a selector is present. Duplicate planned paths fail; no
+automatic suffix is added. An absolute input outside `INPUT_PATH` uses no preserved parent
+folder.
+
+Manifest dry-run parses and validates the CSV, checks input paths, and plans outputs but
+does not read datasets or create output directories. Blank `input_object` means normal
+single-dataset/automatic-selection behavior, never all-object expansion.
+
+All-object mode uses normal deterministic discovery and lists container objects during
+planning. A single-dataset file still creates one item named `input-stem.ext`. Each
+supported container object creates a separate item named
+`input-stem__object-name.ext`; blank names fall back to `input-stem__object_INDEX.ext`.
+Object-derived names are conservatively sanitized. Unsupported objects are never read or
+converted; when unsupported inputs are included in the plan, they appear as skipped rows
+with a message where the backend can provide one.
+
+Preserve-structure keeps the input file's relative parent for every expanded item, while
+`--flatten` writes all generated names below the output root. Any duplicate path after
+sanitization or flattening fails planning. Use the object discovery/manifest workflow to
+choose custom `output_name` values; StatConvert does not add suffixes automatically.
+All-object dry-run performs object listing but does not execute dataset reads, write files,
+or create output directories. XLSX/XLS/ODS listing reads container structure without
+loading every sheet. RData/RDA listing may load workspace data to classify which objects
+are supported because `pyreadr` descriptors alone are not always sufficient.
 
 ```bash
 statconvert batch input output --to csv --recursive --dry-run
@@ -452,9 +592,17 @@ statconvert batch input output --to xlsx --validate --strict-validation
 statconvert batch workbooks output --to csv --object Data
 statconvert batch input output --to csv --output-encoding utf-8-sig --csv-delimiter ";"
 statconvert batch rdata output --to parquet --object patients
+statconvert batch incoming converted --to csv --object-manifest objects.csv
+statconvert batch incoming converted --to csv --all-objects
+statconvert batch incoming converted --to parquet --all-objects --recursive
+statconvert batch incoming converted --to parquet --transform --select id --select name
+statconvert batch incoming converted --to csv --all-objects --transform --drop notes
 ```
 
-Batch transformations are not implemented.
+`--transform` requires at least one operation, and transformation options require the
+flag. It works with ordinary batches, `--object`, `--object-manifest`, and
+`--all-objects`. Per-file, per-object, and manifest-row transformation rules are not
+supported. Batch transformation does not append, join, merge, or deduplicate rows.
 
 ## Dataset comparison
 

@@ -7,10 +7,12 @@ from statconvert.backends.excel_constraints import (
 )
 from statconvert.backends.objects import (
     DatasetObjectInfo,
+    NamedDataset,
     dataset_objects_from_names,
     resolve_object_selector,
 )
 
+from collections.abc import Sequence
 from importlib.util import find_spec
 from datetime import date, datetime
 from numbers import Number
@@ -37,6 +39,8 @@ class ExcelBackend(Backend):
         is_container=True,
         object_selection=True,
         object_kind="sheet",
+        multi_object_write=True,
+        output_object_kind="sheet",
     )
 
 
@@ -204,6 +208,74 @@ class ExcelBackend(Backend):
         except Exception as exc:
             raise ConversionError(
                 f"Failed writing Excel file: {exc}"
+            ) from None
+
+
+    def validate_object_names(
+        self,
+        names: Sequence[str],
+        filename: str,
+    ) -> None:
+        """Validate worksheet names before any multi-object data is read."""
+
+        extension = Path(filename).suffix.lower()
+        if extension != ".xlsx":
+            raise ConversionError(
+                f"Writing multiple dataset objects is not supported for "
+                f"{extension or 'this Excel format'}."
+            )
+
+        seen: set[str] = set()
+        for name in names:
+            try:
+                validate_excel_sheet_name(name)
+            except ValueError as exc:
+                label = name or "<blank>"
+                raise ConversionError(
+                    f"Object name is not valid for xlsx output: {label}. {exc}\n"
+                    "Provide an explicit valid output object name; automatic "
+                    "renaming is not supported."
+                ) from None
+            normalized = name.casefold()
+            if normalized in seen:
+                raise ConversionError(
+                    f"Duplicate output object name: {name}\n"
+                    "Provide unique output object names; automatic renaming "
+                    "is not supported."
+                )
+            seen.add(normalized)
+
+
+    def write_objects(
+        self,
+        objects: Sequence[NamedDataset],
+        filename: str,
+        **kwargs,
+    ) -> None:
+        """Write each named dataset to one worksheet in an XLSX workbook."""
+
+        if kwargs:
+            unexpected = ", ".join(sorted(kwargs))
+            raise ConversionError(
+                f"Unsupported multi-object Excel write option(s): {unexpected}."
+            )
+        self.validate_object_names(
+            [item.name for item in objects],
+            filename,
+        )
+        try:
+            with pd.ExcelWriter(filename, engine="xlsxwriter") as workbook:
+                for item in objects:
+                    item.dataset.dataframe.to_excel(
+                        workbook,
+                        sheet_name=item.name,
+                        index=False,
+                    )
+        except ConversionError:
+            raise
+        except Exception as exc:
+            raise ConversionError(
+                f"Failed writing multi-object Excel file: {exc}"
             ) from None
 
 

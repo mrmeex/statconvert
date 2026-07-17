@@ -13,9 +13,13 @@ from statconvert.batch.models import (
     BatchPlan,
     BatchPlanningOptions,
 )
+from statconvert.object_manifest import ObjectManifestRow, read_object_manifest
+from statconvert.output_names import sanitize_output_name
 from statconvert.registry import (
     can_read_format,
+    format_supports_objects,
     format_write_error,
+    list_dataset_objects,
     resolve_format_info,
     supported_extensions,
 )
@@ -151,6 +155,8 @@ def build_batch_plan(
     preserve_structure: bool = True,
     patterns: list[str] | None = None,
     exclude_patterns: list[str] | None = None,
+    object_manifest: str | Path | None = None,
+    all_objects: bool = False,
 ) -> BatchPlan:
     """
     Build a safe, deterministic batch conversion plan.
@@ -170,6 +176,24 @@ def build_batch_plan(
         output_root,
         normalized_target,
     )
+    if object_manifest is not None and all_objects:
+        raise BatchError(
+            "Use either --object-manifest or --all-objects, not both."
+        )
+    if object_manifest is not None:
+        return _build_manifest_plan(
+            input_root=input_root,
+            output_root=output_root,
+            target_extension=normalized_target,
+            manifest_path=Path(object_manifest),
+            recursive=recursive,
+            overwrite=overwrite,
+            include_unsupported=include_unsupported,
+            preserve_structure=preserve_structure,
+            patterns=patterns,
+            exclude_patterns=exclude_patterns,
+        )
+
     discovered_files = discover_input_files(
         input_root,
         recursive=recursive,
@@ -198,10 +222,23 @@ def build_batch_plan(
         preserve_structure=preserve_structure,
         patterns=patterns,
         exclude_patterns=exclude_patterns,
+        all_objects=all_objects,
     )
     items = []
 
     for input_file in discovered_files:
+        if all_objects:
+            items.extend(
+                _build_all_object_items(
+                    input_file=input_file,
+                    input_root=input_root,
+                    output_root=output_root,
+                    target_extension=normalized_target,
+                    include_unsupported=include_unsupported,
+                    preserve_structure=preserve_structure,
+                )
+            )
+            continue
         item = _build_item(
             input_file=input_file,
             input_root=input_root,
@@ -223,14 +260,368 @@ def build_batch_plan(
             "No supported input files were discovered."
         )
 
-    _mark_output_collisions(
-        items
-    )
+    if all_objects:
+        _raise_for_all_objects_output_duplicates(items)
+    else:
+        _mark_output_collisions(
+            items
+        )
 
     return BatchPlan(
         options=options,
         items=items,
     )
+
+
+def _build_all_object_items(
+    *,
+    input_file: Path,
+    input_root: Path,
+    output_root: Path,
+    target_extension: str,
+    include_unsupported: bool,
+    preserve_structure: bool,
+) -> list[BatchItem]:
+    """Expand one discovered file into supported dataset-object tasks."""
+
+    input_extension = input_file.suffix.lower() or None
+    relative_path = _relative_path(input_file, input_root)
+    unsupported_input = input_extension not in supported_extensions()
+    unreadable_input = not unsupported_input and not can_read_format(
+        input_extension or ""
+    )
+    if unsupported_input or unreadable_input:
+        if not include_unsupported:
+            return []
+        return [
+            BatchItem(
+                input_file=input_file,
+                output_file=None,
+                input_extension=input_extension,
+                status=BATCH_STATUS_SKIPPED,
+                reason=(
+                    "Unsupported input format"
+                    if unsupported_input
+                    else "Input format is not readable"
+                ),
+                relative_path=relative_path,
+            )
+        ]
+
+    if not format_supports_objects(input_extension or ""):
+        return [
+            _build_all_objects_dataset_item(
+                input_file=input_file,
+                input_root=input_root,
+                output_root=output_root,
+                relative_path=relative_path,
+                target_extension=target_extension,
+                preserve_structure=preserve_structure,
+            )
+        ]
+
+    try:
+        objects = list_dataset_objects(input_file)
+    except Exception as exc:
+        raise BatchError(
+            f"Unable to list dataset objects for {input_file}: {exc}"
+        ) from None
+
+    items: list[BatchItem] = []
+    for info in objects:
+        selector = _object_selector(info.name, info.index)
+        if not info.supported:
+            if include_unsupported:
+                items.append(
+                    BatchItem(
+                        input_file=input_file,
+                        output_file=None,
+                        input_extension=input_extension,
+                        status=BATCH_STATUS_SKIPPED,
+                        reason=info.message or "Unsupported dataset object",
+                        relative_path=relative_path,
+                        input_object=selector,
+                        object_index=info.index,
+                        object_name=info.name or None,
+                        rows=info.rows,
+                        columns=info.columns,
+                    )
+                )
+            continue
+
+        output_name = _all_objects_output_name(
+            input_file,
+            info.name,
+            info.index,
+        )
+        output_file = _all_objects_output_file(
+            input_root=input_root,
+            output_root=output_root,
+            relative_path=relative_path,
+            output_name=output_name,
+            target_extension=target_extension,
+            preserve_structure=preserve_structure,
+        )
+        same_path = _same_path(input_file, output_file)
+        items.append(
+            BatchItem(
+                input_file=input_file,
+                output_file=output_file,
+                input_extension=input_extension,
+                output_extension=target_extension,
+                status=BATCH_STATUS_BLOCKED if same_path else BATCH_STATUS_PENDING,
+                reason="Input and output path are the same" if same_path else None,
+                relative_path=relative_path,
+                input_object=selector,
+                output_name=output_name,
+                object_index=info.index,
+                object_name=info.name or None,
+                rows=info.rows,
+                columns=info.columns,
+            )
+        )
+
+    if not items and include_unsupported:
+        items.append(
+            BatchItem(
+                input_file=input_file,
+                output_file=None,
+                input_extension=input_extension,
+                status=BATCH_STATUS_SKIPPED,
+                reason="No dataset objects were found",
+                relative_path=relative_path,
+            )
+        )
+    return items
+
+
+def _build_all_objects_dataset_item(
+    *,
+    input_file: Path,
+    input_root: Path,
+    output_root: Path,
+    relative_path: Path,
+    target_extension: str,
+    preserve_structure: bool,
+) -> BatchItem:
+    output_name = sanitize_output_name(input_file.stem, fallback="dataset")
+    output_file = _all_objects_output_file(
+        input_root=input_root,
+        output_root=output_root,
+        relative_path=relative_path,
+        output_name=output_name,
+        target_extension=target_extension,
+        preserve_structure=preserve_structure,
+    )
+    same_path = _same_path(input_file, output_file)
+    return BatchItem(
+        input_file=input_file,
+        output_file=output_file,
+        input_extension=input_file.suffix.lower() or None,
+        output_extension=target_extension,
+        status=BATCH_STATUS_BLOCKED if same_path else BATCH_STATUS_PENDING,
+        reason="Input and output path are the same" if same_path else None,
+        relative_path=relative_path,
+        output_name=output_name,
+    )
+
+
+def _object_selector(name: str, index: int | None) -> str | None:
+    if name and name.strip():
+        return name
+    if index is not None:
+        return str(index)
+    return None
+
+
+def _all_objects_output_name(
+    input_file: Path,
+    object_name: str,
+    object_index: int | None,
+) -> str:
+    normalized_name = object_name.strip() if object_name else ""
+    if normalized_name:
+        candidate = f"{input_file.stem}__{normalized_name}"
+    elif object_index is not None:
+        candidate = f"{input_file.stem}__object_{object_index}"
+    else:
+        candidate = f"{input_file.stem}__object"
+    return sanitize_output_name(candidate, fallback="dataset_object")
+
+
+def _all_objects_output_file(
+    *,
+    input_root: Path,
+    output_root: Path,
+    relative_path: Path,
+    output_name: str,
+    target_extension: str,
+    preserve_structure: bool,
+) -> Path:
+    if input_root.is_file() and output_root.suffix:
+        return output_root
+    relative_parent = relative_path.parent if preserve_structure else Path()
+    return output_root / relative_parent / f"{output_name}{target_extension}"
+
+
+def _raise_for_all_objects_output_duplicates(items: list[BatchItem]) -> None:
+    seen: set[str] = set()
+    for item in items:
+        if item.output_file is None:
+            continue
+        key = _path_key(item.output_file)
+        if key in seen:
+            raise BatchError(
+                f"Duplicate planned output path: {item.output_file}\n"
+                "Use an object manifest with unique output_name values to resolve "
+                "the conflict."
+            )
+        seen.add(key)
+
+
+def _build_manifest_plan(
+    *,
+    input_root: Path,
+    output_root: Path,
+    target_extension: str,
+    manifest_path: Path,
+    recursive: bool,
+    overwrite: bool,
+    include_unsupported: bool,
+    preserve_structure: bool,
+    patterns: list[str] | None,
+    exclude_patterns: list[str] | None,
+) -> BatchPlan:
+    """Build one batch item for every included object-manifest row."""
+
+    _validate_manifest_input_root(input_root)
+    manifest = read_object_manifest(manifest_path)
+    included_rows = manifest.included_rows
+    if not included_rows:
+        raise BatchError("Object manifest contains no included rows.")
+
+    options = BatchPlanningOptions(
+        input_path=input_root,
+        output_path=output_root,
+        target_extension=target_extension,
+        recursive=recursive,
+        overwrite=overwrite,
+        include_unsupported=include_unsupported,
+        preserve_structure=preserve_structure,
+        patterns=patterns,
+        exclude_patterns=exclude_patterns,
+        object_manifest=manifest.path,
+    )
+    items = [
+        _build_manifest_item(
+            row,
+            input_root=input_root,
+            output_root=output_root,
+            target_extension=target_extension,
+            preserve_structure=preserve_structure,
+        )
+        for row in included_rows
+    ]
+    _raise_for_manifest_output_duplicates(items)
+    return BatchPlan(options=options, items=items)
+
+
+def _build_manifest_item(
+    row: ObjectManifestRow,
+    *,
+    input_root: Path,
+    output_root: Path,
+    target_extension: str,
+    preserve_structure: bool,
+) -> BatchItem:
+    input_base = input_root if input_root.is_dir() else input_root.parent
+    manifest_input = Path(row.input_file)
+    input_file = manifest_input if manifest_input.is_absolute() else input_base / manifest_input
+    if not input_file.exists():
+        raise BatchError(
+            f"Object manifest row {row.row_number} input file does not exist: {input_file}"
+        )
+    if not input_file.is_file():
+        raise BatchError(
+            f"Object manifest row {row.row_number} input path is not a file: {input_file}"
+        )
+
+    input_extension = input_file.suffix.lower() or None
+    unsupported_input = input_extension not in supported_extensions()
+    unreadable_input = not unsupported_input and not can_read_format(input_extension or "")
+    if unsupported_input or unreadable_input:
+        detail = "unsupported" if unsupported_input else "not readable"
+        raise BatchError(
+            f"Object manifest row {row.row_number} input format is {detail}: "
+            f"{input_extension or '<none>'}"
+        )
+
+    relative_path = _manifest_relative_path(input_file, input_base)
+    output_name = row.output_name or _manifest_default_output_name(
+        input_file,
+        row.input_object,
+    )
+    relative_parent = relative_path.parent if preserve_structure else Path()
+    output_file = output_root / relative_parent / f"{output_name}{target_extension}"
+    status = BATCH_STATUS_PENDING
+    reason = None
+    if _same_path(input_file, output_file):
+        status = BATCH_STATUS_BLOCKED
+        reason = "Input and output path are the same"
+
+    return BatchItem(
+        input_file=input_file,
+        output_file=output_file,
+        input_extension=input_extension,
+        output_extension=target_extension,
+        status=status,
+        reason=reason,
+        relative_path=relative_path,
+        input_object=row.input_object,
+        output_name=output_name,
+        manifest_row_number=row.row_number,
+    )
+
+
+def _manifest_default_output_name(
+    input_file: Path,
+    input_object: str | None,
+) -> str:
+    candidate = input_file.stem
+    if input_object is not None:
+        candidate = f"{candidate}__{input_object}"
+    return sanitize_output_name(candidate, fallback="dataset")
+
+
+def _manifest_relative_path(input_file: Path, input_base: Path) -> Path:
+    try:
+        return input_file.resolve(strict=False).relative_to(
+            input_base.resolve(strict=False)
+        )
+    except ValueError:
+        return Path(input_file.name)
+
+
+def _validate_manifest_input_root(input_root: Path) -> None:
+    if not input_root.exists():
+        raise BatchError(f"Input path does not exist: {input_root}")
+    if not input_root.is_file() and not input_root.is_dir():
+        raise BatchError(f"Input path is not a file or directory: {input_root}")
+
+
+def _raise_for_manifest_output_duplicates(items: list[BatchItem]) -> None:
+    seen: dict[str, Path] = {}
+    for item in items:
+        if item.output_file is None:
+            continue
+        key = _path_key(item.output_file)
+        if key in seen:
+            raise BatchError(
+                f"Duplicate planned output path: {item.output_file}\n"
+                "Use unique output_name values or --flatten/--preserve-structure "
+                "appropriately."
+            )
+        seen[key] = item.output_file
 
 
 def _build_item(

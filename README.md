@@ -5,6 +5,10 @@ inspecting, validating, batch-processing, comparing, reporting, and logging stat
 datasets. It uses a backend registry and a common `Dataset` model so format-specific code
 stays out of conversion and analysis workflows.
 
+Version 0.2.0 is the batch and object workflow release, adding editable discovery
+manifests, object-aware batch expansion, multi-object XLSX/ODS output, collection, and
+shared batch transformations.
+
 ## Implemented features
 
 - Conversion between registered statistical, spreadsheet, JSON, Arrow, and R formats
@@ -12,9 +16,15 @@ stays out of conversion and analysis workflows.
 - Ordered transformations: select, drop, rename, type conversion, filtering, and recoding
 - Dataset summary, descriptive profiles, frequencies, and missing-value analysis
 - Dataset-quality and target-format validation
-- Deterministic batch planning, parallel execution, validation, progress, and CSV/JSON reports
+- Deterministic batch planning, parallel execution, shared transformation pipelines,
+  validation, progress, and CSV/JSON reports
 - Dataset comparison with terminal, JSON, CSV, and HTML output
-- Generic dataset-object discovery and selection for Excel/ODS sheets and RData objects
+- File and folder dataset-object discovery with manifest-ready CSV/JSON reports, plus
+  selection for Excel/ODS sheets and RData objects
+- Whole-container conversion from XLSX/ODS/RData/RDA/XLS inputs to multi-sheet XLSX or
+  ODS outputs
+- Manifest-controlled collection from multiple input files and selected objects into one
+  XLSX or ODS output container
 - Single-dataset reports in HTML, JSON, and CSV
 - Opt-in file diagnostics across every public command
 - Plain-text installed version, Python version, and runtime dependency status
@@ -52,10 +62,16 @@ command is on `PATH`.
 ```bash
 statconvert formats
 statconvert objects workbook.xlsx
+statconvert objects incoming --recursive --output objects.csv
+statconvert batch incoming converted --to csv --object-manifest objects.csv --create-dirs
+statconvert batch incoming converted --to csv --all-objects
+statconvert batch incoming converted --to parquet --transform --select id --select name
 statconvert peek input.sav
 statconvert convert input.sav output.xlsx
 statconvert convert input.sav new-output/output.xlsx --create-dirs
 statconvert convert workbook.xlsx output.csv --object Data
+statconvert convert workbook.xlsx combined.ods --all-objects
+statconvert collect objects.csv combined.xlsx --base-dir incoming
 statconvert validate input.sav --to parquet
 statconvert compare before.sav after.parquet
 statconvert report input.sav --output report.html
@@ -63,8 +79,15 @@ statconvert batch input-folder output-folder --to parquet
 ```
 
 Commands that write files refuse to replace an existing output unless `--overwrite` is
-used. `convert`, `transform`, `batch`, and `report` accept `--create-dirs` for a missing
+used. `convert`, `collect`, `transform`, `batch`, `report`, and `objects --output` accept
+`--create-dirs` for a missing
 user-specified output directory; dry-run does not create directories or write files.
+
+Batch conversion, including `batch --all-objects` and `batch --transform`, processes each
+planned item independently. By contrast, `convert --all-objects` and `collect` must hold
+their selected datasets in memory before writing one final XLSX or ODS container. For very
+large inputs, prefer separate batch outputs. Object listing is metadata-oriented, although
+RData/RDA discovery may load workspace data because of backend-library limitations.
 
 Use `statconvert capabilities FORMAT` for detailed runtime capabilities. Important output
 restrictions include:

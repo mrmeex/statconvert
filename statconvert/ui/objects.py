@@ -5,6 +5,7 @@ from collections.abc import Sequence
 from rich.table import Table
 
 from statconvert.backends.objects import DatasetObjectInfo
+from statconvert.object_discovery import ObjectDiscoveryReport
 
 from .console import console
 
@@ -39,3 +40,31 @@ def show_objects_not_supported() -> None:
     """Explain that a single-dataset format has no object listing."""
 
     console.print("This format does not expose multiple dataset objects.")
+
+
+def show_object_discovery_report(report: ObjectDiscoveryReport) -> None:
+    """Display manifest-ready discovery rows for one folder or report request."""
+
+    table = Table(title="Object Discovery")
+    table.add_column("Include")
+    table.add_column("Input file", style="cyan")
+    table.add_column("Object")
+    table.add_column("Kind", style="green")
+    table.add_column("Rows", justify="right")
+    table.add_column("Columns", justify="right")
+    table.add_column("Output name")
+    table.add_column("Message")
+
+    for row in report.rows:
+        table.add_row(
+            "yes" if row.include else "no",
+            row.input_file,
+            row.object_name or "",
+            row.object_kind or "",
+            "" if row.rows is None else str(row.rows),
+            "" if row.columns is None else str(row.columns),
+            row.output_name or "",
+            row.message or "",
+        )
+
+    console.print(table)

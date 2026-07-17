@@ -219,8 +219,9 @@ C:\Tools\StatConvert\.venv\Scripts\python.exe -m statconvert --help
 ### Output cannot be written
 
 Choose a writable output folder and close applications that have the destination open,
-including Excel. Existing outputs require `--overwrite` for `convert`, `transform`,
-`batch`, and `report`. Missing user-specified output directories require `--create-dirs`;
+including Excel. Existing outputs require `--overwrite` for `convert`, `collect`, `transform`,
+`batch`, `report`, and `objects --output`. Missing user-specified output directories
+require `--create-dirs`;
 the current directory and existing directories need no flag. Batch creates generated
 preserve-structure subfolders below an existing root automatically. Dry-run creates no
 directories and writes or replaces no files.
@@ -236,6 +237,75 @@ python -m statconvert objects workspace.rdata
 
 See the [Format Guide](formats.md) for container behavior and format limits.
 
+For one container-to-container conversion, use XLSX or ODS output:
+
+```powershell
+python -m statconvert convert workbook.xlsx combined.xlsx --all-objects
+python -m statconvert convert workbook.xlsx combined.ods --all-objects
+```
+
+Support cases should check for duplicate or target-invalid object names. StatConvert does
+not rename output sheets automatically. Unsupported input objects are skipped only when
+at least one supported tabular object remains.
+
+For support cases involving a mixed input folder, collect a discovery report without
+converting data:
+
+```powershell
+python -m statconvert objects incoming --recursive --include-unsupported --output objects.csv
+```
+
+The report uses paths relative to `incoming`. Treat object names and file names as
+potentially sensitive operational metadata when sharing it.
+
+After review, the same report can control a batch run:
+
+```powershell
+python -m statconvert batch incoming converted --to csv --object-manifest objects.csv
+```
+
+Manifest mode trusts included rows as the requested task set but still validates support,
+input existence, safe output names, duplicate outputs, and the normal output-root policy.
+
+For a complete supported-object export without manual editing, use `--all-objects`:
+
+```powershell
+python -m statconvert batch incoming converted --to csv --all-objects
+```
+
+One container can produce several files. Review available disk space and generated names;
+duplicate paths stop planning and should be resolved through an edited object manifest.
+
+The same established transform pipeline can be applied uniformly to every planned item:
+
+```powershell
+python -m statconvert batch incoming converted --to parquet --transform --select id --select name
+```
+
+Transformation failures follow normal per-item and fail-fast behavior. Dry-run parses the
+pipeline but does not read datasets or verify referenced columns.
+
+To place reviewed manifest rows into one workbook instead of separate files, use
+`collect`:
+
+```powershell
+python -m statconvert collect objects.csv combined.xlsx --base-dir incoming --dry-run
+python -m statconvert collect objects.csv combined.xlsx --base-dir incoming
+```
+
+Collection output is limited to XLSX and ODS. Relative paths use `--base-dir` or the
+manifest parent. Existing outputs require `--overwrite` and missing output parents
+require `--create-dirs`; dry-run creates neither. Invalid or duplicate output object
+names and any included row failure stop collection before the final write. Collect does
+not merge or append rows.
+
+Capacity planning differs by workflow. Batch modes release each item after its independent
+write, although multiple workers hold multiple current datasets concurrently.
+`convert --all-objects` and `collect` retain all selected datasets until one final
+container write, so the combined selected data must fit comfortably in memory. RData/RDA
+object discovery can also load workspace data while classifying objects. For large object
+sets, prefer separate batch outputs and conservative worker counts.
+
 ## Release wheel provenance
 
 The wheel attached to a GitHub Release is the supported public installation artifact.
@@ -245,5 +315,5 @@ downloaded filename when recording deployments and support cases.
 ## What is out of scope
 
 The current supported deployment model does not include standalone executable deployment,
-automated offline dependency bundles, central configuration files, or automatic batch
-expansion of every sheet or R object.
+automated offline dependency bundles, central configuration files, or row
+merging/appending during collection.

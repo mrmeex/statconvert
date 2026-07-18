@@ -344,12 +344,22 @@ Compare a before/after pair in the terminal, as JSON, or under strict warning po
 statconvert compare .\input\before.csv .\input\after.csv
 statconvert compare .\input\before.csv .\input\after.csv --json
 statconvert compare .\input\before.csv .\input\after.csv --strict
+statconvert compare .\input\before.csv .\input\after.csv --ignore-columns exported_at,source_file
+statconvert compare .\input\before.csv .\input\after.csv --numeric-tolerance 0.0001
+statconvert compare .\input\before.csv .\input\after.csv --key id
+statconvert compare .\input\before.csv .\input\after.csv --key id,date --numeric-tolerance 0.001
+statconvert compare .\input\before.csv .\input\after.csv --key id --ignore-columns exported_at
+statconvert compare .\input\before.csv .\input\after.csv --max-differences 10
+statconvert compare .\input\before.csv .\input\after.csv --key id --numeric-tolerance 0.001 --max-differences 25
 ```
 
 Compare is useful after conversion or transformation because it checks shape, schema,
 normalized metadata, and positional values by default. A difference can intentionally
-produce exit code `1`. Key-based row matching, numeric tolerance, ignored-column policy,
-and chunked comparison are deferred.
+produce exit code `1`. `--key` aligns unique rows by stable identifiers when physical row
+order should not matter. Ignored non-key columns are removed before comparison, and
+numeric tolerance is absolute and applies only to numeric columns. Detailed examples are
+bounded to 50 by default; use `--max-differences` to change the cap without changing the
+complete difference counts or exit status.
 
 ## Compare selected workbook sheets or RData objects
 

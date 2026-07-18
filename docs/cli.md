@@ -617,6 +617,13 @@ Options:
 - `--values` / `--no-values` - enable/disable cell comparison (enabled by default).
 - `--sample N` - compare only the first N rows of values; incompatible with `--no-values`.
 - `--columns COLUMN` - restrict schema, metadata, and values; repeatable/trailing values.
+- `--ignore-columns TEXT` - ignore comma-separated columns in shape, schema, metadata,
+  and positional value comparison; repeatable.
+- `--numeric-tolerance FLOAT` - absolute tolerance for numeric values (default `0`).
+- `--key TEXT` - match rows by one or more comma-separated key columns instead of
+  physical row position.
+- `--max-differences N` - cap detailed difference examples (default `50`) without
+  changing complete summary counts or comparison status.
 - `--object OBJECT` - apply one selector to both input files.
 - `--left-object OBJECT` - select an object only from the left input.
 - `--right-object OBJECT` - select an object only from the right input.
@@ -628,21 +635,39 @@ Options:
 
 Comparison covers shape, full column membership/order, storage types, display formats,
 measurement levels, normalized variable/value labels and missing metadata, and optional
-cell values. Reports and terminal output expose the same schema-change categories.
+cell values. Ignored columns are removed before those checks. Numeric tolerance applies
+only when both compared columns are numeric; booleans, datetimes, strings, and missing
+versus non-missing values retain exact comparison semantics. Reports and terminal output
+show the applied options.
+Without `--key`, row comparison remains positional. With `--key`, every key column must
+exist on both sides, compound key values must be unique on each side, and key columns
+cannot be ignored. Rows are aligned by exact key values before non-key values are checked;
+numeric tolerance still applies after alignment. A single null key value is allowed, but
+repeated null keys are duplicates.
 `--object` cannot be combined with either side-specific selector; left and right selectors
 may be used independently or together.
 
 ```bash
 statconvert compare before.sav after.parquet
 statconvert compare before.csv after.csv --sample 1000 --strict
+statconvert compare before.csv after.csv --ignore-columns exported_at,source_file
+statconvert compare before.csv after.csv --numeric-tolerance 0.0001
+statconvert compare before.csv after.csv --key id
+statconvert compare before.csv after.csv --key id,date --numeric-tolerance 0.001
+statconvert compare before.csv after.csv --key id --ignore-columns exported_at
+statconvert compare before.csv after.csv --max-differences 10
+statconvert compare before.csv after.csv --key id --numeric-tolerance 0.001 --max-differences 25
 statconvert compare before.csv after.csv --json --report comparison.html
 statconvert compare before.xlsx after.xlsx --object SurveyData
 statconvert compare before.xlsx after.xlsx --left-object Old --right-object New
 statconvert compare before.rdata after.rdata --object patients
 ```
 
-Reports are written even when differences result in exit code `1`. Key-based row matching,
-numeric tolerance, ignored-column policy, and chunked comparison are deferred.
+Reports are written even when differences result in exit code `1`. Key-based reports
+include matching mode, key columns, matched rows, and left-only/right-only row counts.
+Console and HTML output show a bounded first-differences table. CSV includes bounded
+detail rows, while JSON is the most complete machine-readable summary and detail format.
+Chunked comparison remains deferred.
 
 ## Dataset reports
 

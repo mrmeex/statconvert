@@ -374,6 +374,13 @@ selectors when the object names differ:
 
 ```powershell
 statconvert compare before.csv after.csv
+statconvert compare before.csv after.csv --ignore-columns exported_at,source_file
+statconvert compare before.csv after.csv --numeric-tolerance 0.0001
+statconvert compare before.csv after.csv --key id
+statconvert compare before.csv after.csv --key id,date --numeric-tolerance 0.001
+statconvert compare before.csv after.csv --key id --ignore-columns exported_at
+statconvert compare before.csv after.csv --max-differences 10
+statconvert compare before.csv after.csv --key id --numeric-tolerance 0.001 --max-differences 25
 statconvert compare before.xlsx after.xlsx --object Data
 statconvert compare before.xlsx after.xlsx --left-object Old --right-object New
 statconvert compare before.csv after.xlsx --right-object Data
@@ -383,8 +390,16 @@ Comparison checks shape, column membership and order, schema, normalized metadat
 values by default. Use `--no-values` for a structure-and-metadata comparison. `--strict`
 makes warning-level differences fail as well as error-level differences.
 
-The comparison is positional rather than key-based. Key matching, numeric tolerance,
-ignored-column policies, and chunked comparison are not currently implemented. See the
+The comparison is positional unless `--key` supplies one or more comma-separated columns.
+Key matching ignores physical row order, requires the key columns on both sides, and
+rejects duplicate key values. Key columns cannot be ignored. Reports show matched rows
+and rows found only on one side. `--ignore-columns` removes listed non-key columns before
+comparison, including columns present on only one side.
+`--numeric-tolerance` applies one absolute tolerance to numeric columns; strings,
+booleans, datetimes, and missing-value mismatches remain exact. `--max-differences` caps
+stored and displayed examples, not full counts or comparison status. Console and HTML
+show the first differences; JSON provides the most complete machine-readable summary and
+bounded details. See the
 [CLI Reference](cli.md#compare) for sampling, column selection, JSON, and report options.
 
 ## Batch conversion

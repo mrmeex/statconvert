@@ -5,9 +5,9 @@ inspecting, validating, batch-processing, comparing, reporting, and logging stat
 datasets. It uses a backend registry and a common `Dataset` model so format-specific code
 stays out of conversion and analysis workflows.
 
-Version 0.2.0 is the batch and object workflow release, adding editable discovery
-manifests, object-aware batch expansion, multi-object XLSX/ODS output, collection, and
-shared batch transformations.
+Version 0.3.0 is the compare improvements release, adding ignored-column policy, absolute
+numeric tolerance, unique key-based row matching, bounded first-difference details, and
+clearer terminal/CSV/JSON/HTML comparison summaries.
 
 ## Implemented features
 
@@ -18,7 +18,8 @@ shared batch transformations.
 - Dataset-quality and target-format validation
 - Deterministic batch planning, parallel execution, shared transformation pipelines,
   validation, progress, and CSV/JSON reports
-- Dataset comparison with terminal, JSON, CSV, and HTML output
+- Dataset comparison with positional or unique-key row matching, ignored columns,
+  absolute numeric tolerance, bounded details, and terminal/JSON/CSV/HTML output
 - File and folder dataset-object discovery with manifest-ready CSV/JSON reports, plus
   selection for Excel/ODS sheets and RData objects
 - Whole-container conversion from XLSX/ODS/RData/RDA/XLS inputs to multi-sheet XLSX or
@@ -74,6 +75,8 @@ statconvert convert workbook.xlsx combined.ods --all-objects
 statconvert collect objects.csv combined.xlsx --base-dir incoming
 statconvert validate input.sav --to parquet
 statconvert compare before.sav after.parquet
+statconvert compare before.csv after.csv --ignore-columns exported_at --numeric-tolerance 0.001
+statconvert compare before.csv after.csv --key id --max-differences 10
 statconvert report input.sav --output report.html
 statconvert batch input-folder output-folder --to parquet
 ```

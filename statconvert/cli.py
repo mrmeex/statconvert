@@ -14,7 +14,9 @@ from statconvert.batch import (
 )
 from statconvert.compare import (
     CompareError,
+    CompareOptions,
     compare_datasets,
+    comparison_to_json_payload,
     resolve_compare_object_selectors,
     write_compare_report,
 )
@@ -1757,6 +1759,26 @@ def compare(
         "--columns",
         help="Columns for schema, metadata and value comparison.",
     ),
+    ignore_columns: list[str] | None = typer.Option(
+        None,
+        "--ignore-columns",
+        help="Comma-separated columns to ignore during comparison.",
+    ),
+    numeric_tolerance: float = typer.Option(
+        0.0,
+        "--numeric-tolerance",
+        help="Absolute tolerance for numeric value differences.",
+    ),
+    key: str | None = typer.Option(
+        None,
+        "--key",
+        help="Comma-separated key columns used to match rows before comparison.",
+    ),
+    max_differences: int = typer.Option(
+        50,
+        "--max-differences",
+        help="Maximum number of detailed differences to display or report.",
+    ),
     json_output: bool = typer.Option(
         False,
         "--json",
@@ -1798,6 +1820,10 @@ def compare(
                 "values": values,
                 "sample": sample_size,
                 "columns": logged_columns or None,
+                "ignore_columns": ignore_columns,
+                "numeric_tolerance": numeric_tolerance,
+                "key": key,
+                "max_differences": max_differences,
                 "json": json_output,
                 "strict": strict,
                 "report": report,
@@ -1812,6 +1838,12 @@ def compare(
                 raise CompareError("--sample must be greater than 0.")
             if not values and sample_size is not None:
                 raise CompareError("--sample cannot be used with --no-values.")
+            compare_options = CompareOptions(
+                ignore_columns=_parse_ignore_columns(ignore_columns),
+                numeric_tolerance=numeric_tolerance,
+                key_columns=_parse_key_columns(key),
+                max_differences=max_differences,
+            )
 
             left_selector, right_selector = resolve_compare_object_selectors(
                 object_selector,
@@ -1833,6 +1865,7 @@ def compare(
                 compare_values=values,
                 sample_size=sample_size,
                 columns=columns,
+                options=compare_options,
             )
             exit_code = int(
                 comparison.has_errors or (strict and comparison.has_warnings)
@@ -1853,7 +1886,7 @@ def compare(
                 logger.info("Comparison report written: output_file=%s", report)
 
             if json_output:
-                emit_json(asdict(comparison))
+                emit_json(comparison_to_json_payload(comparison))
             else:
                 show_dataset_comparison(comparison)
                 if report is not None:
@@ -1872,6 +1905,36 @@ def compare(
 
     if exit_code:
         raise typer.Exit(exit_code)
+
+
+def _parse_ignore_columns(values: list[str] | None) -> tuple[str, ...]:
+    """Parse repeatable comma-separated ignored column lists."""
+
+    parsed: list[str] = []
+    for value in values or []:
+        items = [item.strip() for item in value.split(",")]
+        if not items or any(not item for item in items):
+            raise CompareError(f"Invalid ignore column list: {value}")
+        for item in items:
+            if item not in parsed:
+                parsed.append(item)
+    return tuple(parsed)
+
+
+def _parse_key_columns(value: str | None) -> tuple[str, ...]:
+    """Parse one comma-separated row key while preserving column order."""
+
+    if value is None:
+        return ()
+    columns = tuple(column.strip() for column in value.split(","))
+    if not columns or any(not column for column in columns):
+        raise CompareError(f"Invalid key column list: {value}")
+    seen: set[str] = set()
+    for column in columns:
+        if column in seen:
+            raise CompareError(f"Duplicate key column specified: {column}")
+        seen.add(column)
+    return columns
 
 
 @app.command(

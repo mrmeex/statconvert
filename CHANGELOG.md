@@ -1,5 +1,43 @@
 # Changelog
 
+## 0.3.0 - 2026-07-18
+
+Compare improvements release.
+
+### Added
+
+- Added `compare --ignore-columns` for excluding nonessential columns from shape,
+  schema, metadata, and value comparison.
+- Added `compare --numeric-tolerance` for one absolute numeric tolerance.
+- Added `compare --key` for row-order-independent matching by one or more comma-separated
+  key columns, with unique-key validation on both datasets.
+- Added `compare --max-differences` for bounded detailed output, defaulting to 50 examples.
+- Added bounded first-difference details for positional/keyed values, side-only rows and
+  columns, and schema changes.
+- Added expanded compare summaries for rows, columns, cells, schema, row matching, and
+  detail truncation.
+
+### Changed
+
+- Compare console output now shows clearer inputs, options, summary counts, and first
+  differences.
+- JSON compare output now includes a richer structured summary and bounded details while
+  retaining the existing full comparison model.
+- CSV and HTML compare reports now include clearer summaries and bounded detail rows.
+- The roadmap now moves the next major work to 0.4.0 large-file/performance improvements.
+
+### Notes
+
+- Without `--key`, row comparison remains positional. With `--key`, physical row order
+  does not matter, but key values must be unique on both sides and key columns cannot be
+  ignored.
+- Numeric tolerance is absolute-only. `--max-differences` caps examples, not complete
+  counts or comparison status.
+- Fuzzy matching, duplicate-key reconciliation, joins, merges, appends, deduplication,
+  and data-repair workflows are not included.
+- Public distribution remains a wheel attached to the GitHub Release; StatConvert is not
+  published to PyPI.
+
 ## 0.2.0 - 2026-07-17
 
 Batch and object workflow release.

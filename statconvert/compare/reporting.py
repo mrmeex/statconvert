@@ -64,17 +64,10 @@ def comparison_to_summary_rows(
 ) -> list[dict[str, Any]]:
     """Return stable high-level summary rows."""
 
-    errors = sum(issue.severity == "error" for issue in comparison.issues)
-    warnings = sum(issue.severity == "warning" for issue in comparison.issues)
-    values = (
-        ("identical", comparison.is_identical),
-        ("compatible", comparison.is_compatible),
-        ("errors", errors),
-        ("warnings", warnings),
-        ("left_source", comparison.left_source),
-        ("right_source", comparison.right_source),
-    )
-    return [_row("summary", metric=metric, left=value) for metric, value in values]
+    return [
+        _row("summary", metric=metric, left=value)
+        for metric, value in _comparison_summary(comparison).items()
+    ]
 
 
 def comparison_to_issue_rows(
@@ -215,6 +208,25 @@ def comparison_to_value_rows(
     return rows
 
 
+def comparison_to_difference_rows(
+    comparison: DatasetComparison,
+) -> list[dict[str, Any]]:
+    """Return the bounded first-difference examples."""
+
+    return [
+        _row(
+            "difference",
+            code=detail.kind,
+            column=detail.column,
+            metric={"row": detail.row, "key": detail.key},
+            left=detail.left,
+            right=detail.right,
+            message=detail.message,
+        )
+        for detail in comparison.differences
+    ]
+
+
 def comparison_to_rows(comparison: DatasetComparison) -> list[dict[str, Any]]:
     """Flatten a comparison into deterministic CSV rows."""
 
@@ -243,6 +255,7 @@ def comparison_to_rows(comparison: DatasetComparison) -> list[dict[str, Any]]:
     rows.extend(comparison_to_schema_rows(comparison))
     rows.extend(comparison_to_metadata_rows(comparison))
     rows.extend(comparison_to_value_rows(comparison))
+    rows.extend(comparison_to_difference_rows(comparison))
     rows.extend(comparison_to_issue_rows(comparison))
     return rows
 
@@ -268,6 +281,7 @@ def _write_json(path: Path, comparison: DatasetComparison) -> None:
         "type": "comparison",
         "summary": _comparison_summary(comparison),
         "comparison": asdict(comparison),
+        "differences": asdict(comparison)["differences"],
     }
     with path.open("w", encoding="utf-8") as report:
         json.dump(
@@ -286,14 +300,46 @@ def _write_html(path: Path, comparison: DatasetComparison) -> None:
 
 
 def _comparison_summary(comparison: DatasetComparison) -> dict[str, Any]:
+    values = comparison.values
     return {
+        "equal": comparison.is_identical,
+        "status": _comparison_status(comparison),
         "identical": comparison.is_identical,
         "compatible": comparison.is_compatible,
         "errors": sum(issue.severity == "error" for issue in comparison.issues),
         "warnings": sum(issue.severity == "warning" for issue in comparison.issues),
         "left_source": comparison.left_source,
         "right_source": comparison.right_source,
+        "ignored_columns": comparison.options.ignore_columns,
+        "columns_compared": comparison.columns_compared,
+        "numeric_tolerance": comparison.options.numeric_tolerance,
+        "max_differences": comparison.options.max_differences,
+        "row_matching_mode": comparison.row_matching_mode,
+        "key_columns": comparison.key_columns,
+        "rows_left": comparison.shape.left_rows,
+        "rows_right": comparison.shape.right_rows,
+        "columns_left": comparison.shape.left_columns,
+        "columns_right": comparison.shape.right_columns,
+        "matched_rows": comparison.matched_rows,
+        "rows_only_left": comparison.rows_only_left,
+        "rows_only_right": comparison.rows_only_right,
+        "columns_compared_count": len(comparison.columns_compared),
+        "cells_compared": values.cells_compared if values is not None else 0,
+        "cells_different": values.differing_cells if values is not None else 0,
+        "schema_differences": _schema_difference_count(comparison),
+        "detailed_differences_total": comparison.detailed_differences_total,
+        "detailed_differences_shown": comparison.detailed_differences_shown,
+        "detailed_differences_truncated": comparison.detailed_differences_truncated,
     }
+
+
+def comparison_to_json_payload(comparison: DatasetComparison) -> dict[str, Any]:
+    """Extend the backward-compatible CLI JSON model with a concise summary."""
+
+    payload = asdict(comparison)
+    payload["equal"] = comparison.is_identical
+    payload["summary"] = _comparison_summary(comparison)
+    return payload
 
 
 def _html_document(comparison: DatasetComparison) -> str:
@@ -327,6 +373,18 @@ def _html_document(comparison: DatasetComparison) -> str:
             ("Sampled", values.sampled),
         ]
     )
+    difference_rows = [
+        (
+            detail.kind,
+            _difference_location(detail.row, detail.key),
+            detail.column or "",
+            detail.left,
+            detail.right,
+            detail.message or "",
+        )
+        for detail in comparison.differences
+    ]
+    difference_note = _difference_note(comparison)
     return f"""<!doctype html>
 <html lang="en">
 <head><meta charset="utf-8"><title>StatConvert Comparison Report</title>
@@ -338,11 +396,14 @@ th{{background:#f2f2f2}}h1,h2{{color:#244b66}}.status{{font-weight:bold}}</style
 <p><strong>Right source:</strong> {_html_value(comparison.right_source)}</p>
 <p class="status">Status: {escape(status)}</p>
 {_html_table("Summary", ("Metric", "Value"), list(summary.items()))}
+{_html_table("Comparison Options", ("Option", "Value"), [("Row matching", comparison.row_matching_mode), ("Key columns", comparison.key_columns), ("Matched rows", comparison.matched_rows), ("Rows only in left", comparison.rows_only_left), ("Rows only in right", comparison.rows_only_right), ("Ignored columns", comparison.options.ignore_columns), ("Columns compared", comparison.columns_compared), ("Numeric tolerance", comparison.options.numeric_tolerance), ("Max differences", comparison.options.max_differences)])}
 {_html_table("Shape", ("Metric", "Left", "Right"), [("Rows", comparison.shape.left_rows, comparison.shape.right_rows), ("Columns", comparison.shape.left_columns, comparison.shape.right_columns)])}
 {_html_table("Columns", ("Metric", "Value"), [("Same columns", comparison.columns.same_columns), ("Same order", comparison.columns.same_order), ("Left only", comparison.columns.left_only_columns), ("Right only", comparison.columns.right_only_columns)])}
 {_html_table("Schema Changes", ("Change type", "Column", "Left", "Right"), schema_rows, "No schema changes.")}
 {_html_table("Metadata Summary", ("Change type", "Columns"), [("Variable labels", len(comparison.metadata.variable_label_changes)), ("Value labels", len(comparison.metadata.value_label_changes)), ("Missing values", len(comparison.metadata.missing_value_changes))])}
 {_html_table("Values", ("Metric", "Value"), value_rows)}
+{_html_table("First Differences", ("Kind", "Row / key", "Column", "Left", "Right", "Message"), difference_rows, "No detailed differences.")}
+{difference_note}
 {_html_table("Issues", ("Severity", "Code", "Column", "Message"), issue_rows, "No comparison issues found.")}
 </body></html>\n"""
 
@@ -369,6 +430,33 @@ def _comparison_status(comparison: DatasetComparison) -> str:
     if comparison.is_identical:
         return "Identical"
     return "Differences found"
+
+
+def _schema_difference_count(comparison: DatasetComparison) -> int:
+    return sum(
+        len(changes)
+        for changes in (
+            comparison.schema.storage_type_changes,
+            comparison.schema.display_format_changes,
+            comparison.schema.measurement_level_changes,
+        )
+    )
+
+
+def _difference_location(row: int | None, key: dict[str, Any] | None) -> Any:
+    if key is not None:
+        return key
+    return row if row is not None else ""
+
+
+def _difference_note(comparison: DatasetComparison) -> str:
+    if not comparison.detailed_differences_truncated:
+        return ""
+    return (
+        "<p><strong>Showing first "
+        f"{comparison.detailed_differences_shown} of "
+        f"{comparison.detailed_differences_total} detailed differences.</strong></p>"
+    )
 
 
 def _html_value(value: Any) -> str:

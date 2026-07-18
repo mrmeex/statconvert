@@ -11,12 +11,58 @@ def show_dataset_comparison(comparison: DatasetComparison) -> None:
     """Display a compact, complete dataset comparison."""
 
     _show_summary(comparison)
+    _show_inputs(comparison)
+    _show_options(comparison)
     _show_shape(comparison)
     _show_columns(comparison)
     _show_schema(comparison)
     _show_metadata(comparison)
     _show_values(comparison)
+    _show_first_differences(comparison)
     _show_issues(comparison)
+
+
+def _show_inputs(comparison: DatasetComparison) -> None:
+    if comparison.left_source is None and comparison.right_source is None:
+        return
+    table = Table(title="Inputs")
+    table.add_column("Side", style="cyan")
+    table.add_column("Source")
+    table.add_row("Left", comparison.left_source or "-")
+    table.add_row("Right", comparison.right_source or "-")
+    console.print(table)
+
+
+def _show_options(comparison: DatasetComparison) -> None:
+    options = comparison.options
+    if (
+        not options.ignore_columns
+        and options.numeric_tolerance == 0
+        and not options.key_columns
+        and options.max_differences == 50
+    ):
+        return
+
+    table = Table(title="Comparison Options")
+    table.add_column("Option", style="cyan")
+    table.add_column("Value")
+    table.add_row("Row matching", comparison.row_matching_mode)
+    if options.key_columns:
+        table.add_row(
+            "Key columns",
+            _format_column_list(list(options.key_columns)),
+        )
+        table.add_row("Matched rows", f"{comparison.matched_rows:,}")
+        table.add_row("Rows only in left", f"{comparison.rows_only_left:,}")
+        table.add_row("Rows only in right", f"{comparison.rows_only_right:,}")
+    table.add_row(
+        "Ignored columns",
+        _format_column_list(list(options.ignore_columns)),
+    )
+    table.add_row("Columns compared", str(len(comparison.columns_compared)))
+    table.add_row("Numeric tolerance", f"{options.numeric_tolerance:g}")
+    table.add_row("Max differences", f"{options.max_differences:,}")
+    console.print(table)
 
 
 def _show_summary(comparison: DatasetComparison) -> None:
@@ -39,6 +85,21 @@ def _show_summary(comparison: DatasetComparison) -> None:
     table.add_row("Compatible", _yes_no(comparison.is_compatible))
     table.add_row("Errors", str(error_count))
     table.add_row("Warnings", str(warning_count))
+    table.add_row("Row matching", comparison.row_matching_mode)
+    table.add_row(
+        "Rows left / right",
+        f"{comparison.shape.left_rows:,} / {comparison.shape.right_rows:,}",
+    )
+    table.add_row("Matched rows", f"{comparison.matched_rows:,}")
+    table.add_row(
+        "Rows only left / right",
+        f"{comparison.rows_only_left:,} / {comparison.rows_only_right:,}",
+    )
+    table.add_row("Columns compared", f"{len(comparison.columns_compared):,}")
+    if comparison.values is not None:
+        table.add_row("Cells compared", f"{comparison.values.cells_compared:,}")
+        table.add_row("Cells different", f"{comparison.values.differing_cells:,}")
+    table.add_row("Max differences shown", f"{comparison.options.max_differences:,}")
     console.print(table)
 
 
@@ -160,6 +221,33 @@ def _show_values(comparison: DatasetComparison) -> None:
         console.print(detail)
 
 
+def _show_first_differences(comparison: DatasetComparison) -> None:
+    if not comparison.differences:
+        return
+
+    table = Table(title="First Differences")
+    table.add_column("Kind", style="cyan")
+    table.add_column("Row / key")
+    table.add_column("Column")
+    table.add_column("Left")
+    table.add_column("Right")
+    for detail in comparison.differences:
+        table.add_row(
+            detail.kind,
+            _format_difference_location(detail.row, detail.key),
+            detail.column or "-",
+            _format_detail_value(detail.left),
+            _format_detail_value(detail.right),
+        )
+    console.print(table)
+    if comparison.detailed_differences_truncated:
+        console.print(
+            "[yellow]Showing first "
+            f"{comparison.detailed_differences_shown:,} of "
+            f"{comparison.detailed_differences_total:,} detailed differences.[/yellow]"
+        )
+
+
 def _show_issues(comparison: DatasetComparison) -> None:
     if not comparison.issues:
         console.print("[green]No comparison issues found.[/green]")
@@ -186,6 +274,19 @@ def _format_column_list(columns: list[str], limit: int = 8) -> str:
     displayed = ", ".join(columns[:limit])
     remaining = len(columns) - limit
     return f"{displayed} ... (+{remaining} more)" if remaining > 0 else displayed
+
+
+def _format_difference_location(
+    row: int | None,
+    key: dict[str, object] | None,
+) -> str:
+    if key is not None:
+        return ", ".join(f"{column}={value!r}" for column, value in key.items())
+    return str(row) if row is not None else "-"
+
+
+def _format_detail_value(value: object) -> str:
+    return "-" if value is None else repr(value)
 
 
 def _format_severity(severity: str) -> str:

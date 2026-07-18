@@ -300,7 +300,9 @@ names and any included row failure stop collection before the final write. Colle
 not merge or append rows.
 
 Capacity planning differs by workflow. Batch modes release each item after its independent
-write, although multiple workers hold multiple current datasets concurrently.
+write, although multiple workers hold multiple current datasets concurrently. Batch
+dry-run reports unique-file counts, total/largest input sizes, and worker settings without
+predicting decoded memory. Use `--workers 1` for huge or memory-constrained runs.
 `convert --all-objects` and `collect` retain all selected datasets until one final
 container write, so the combined selected data must fit comfortably in memory. RData/RDA
 object discovery can also load workspace data while classifying objects. For large object

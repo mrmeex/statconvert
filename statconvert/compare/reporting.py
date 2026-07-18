@@ -277,11 +277,12 @@ def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
 
 
 def _write_json(path: Path, comparison: DatasetComparison) -> None:
+    comparison_payload = asdict(comparison)
     payload = {
         "type": "comparison",
         "summary": _comparison_summary(comparison),
-        "comparison": asdict(comparison),
-        "differences": asdict(comparison)["differences"],
+        "comparison": comparison_payload,
+        "differences": comparison_payload["differences"],
     }
     with path.open("w", encoding="utf-8") as report:
         json.dump(

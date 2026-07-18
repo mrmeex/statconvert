@@ -530,8 +530,13 @@ root must exist unless `--create-dirs` is used. Recursive runs preserve relative
 by default, and generated subfolders below an existing root are created automatically.
 Existing item outputs fail during execution unless `--overwrite` is used, following the
 normal fail-fast policy. Result and report order follows plan order even with multiple
-workers. With `--transform`, each item is read, transformed, optionally validated, and
-then written. The same transformation specification applies to every item; transformation
+workers. Dry-run and JSON planning output include planned item/file counts, supported and
+skipped file counts, total input bytes, largest input size, worker count, target, structure,
+transform/validation state, and object mode. These are filesystem facts, not peak-memory
+estimates. When workers exceed one, console output notes that each worker may hold one
+dataset in memory; use `--workers 1` for very large files. With `--transform`, each item
+is read, transformed, optionally validated, and then written. The same transformation
+specification applies to every item; transformation
 failures use normal item-failure and fail-fast behavior. Dry-run parses the specification
 but does not read data, apply transformations, check dataset columns, create directories,
 or write or replace files. In ordinary and shared-`--object` mode, object selection happens

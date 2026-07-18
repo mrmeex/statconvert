@@ -5,9 +5,10 @@ inspecting, validating, batch-processing, comparing, reporting, and logging stat
 datasets. It uses a backend registry and a common `Dataset` model so format-specific code
 stays out of conversion and analysis workflows.
 
-Version 0.3.0 is the compare improvements release, adding ignored-column policy, absolute
-numeric tolerance, unique key-based row matching, bounded first-difference details, and
-clearer terminal/CSV/JSON/HTML comparison summaries.
+Version 0.4.0 is the performance and large-file hardening release. It adds reproducible
+benchmark tooling, bounded JSON-family serialization, conservative compare/report overhead
+reductions, and batch workload plus worker-memory visibility without changing conversion,
+comparison, or default-worker semantics.
 
 ## Implemented features
 
@@ -17,7 +18,7 @@ clearer terminal/CSV/JSON/HTML comparison summaries.
 - Dataset summary, descriptive profiles, frequencies, and missing-value analysis
 - Dataset-quality and target-format validation
 - Deterministic batch planning, parallel execution, shared transformation pipelines,
-  validation, progress, and CSV/JSON reports
+  validation, progress, workload summaries, worker-memory guidance, and CSV/JSON reports
 - Dataset comparison with positional or unique-key row matching, ignored columns,
   absolute numeric tolerance, bounded details, and terminal/JSON/CSV/HTML output
 - File and folder dataset-object discovery with manifest-ready CSV/JSON reports, plus
@@ -29,6 +30,8 @@ clearer terminal/CSV/JSON/HTML comparison summaries.
 - Single-dataset reports in HTML, JSON, and CSV
 - Opt-in file diagnostics across every public command
 - Plain-text installed version, Python version, and runtime dependency status
+- Reproducible private benchmark data generation, subprocess measurement, optional
+  `psutil` peak-RSS sampling, and Markdown/CSV result summaries
 
 Dataset comparison is provided by `statconvert compare`. There is currently no separate
 `statconvert diff` alias.
@@ -58,6 +61,10 @@ plus each important runtime dependency. Missing dependencies are shown as
 `not installed`. The equivalent `statconvert --version` form works when the console
 command is on `PATH`.
 
+Repository source and editable installations are private maintainer workflows, not
+public installation methods. Contributors should use the
+[Developer Guide](docs/developer-guide.md).
+
 ## Quick start
 
 ```bash
@@ -79,6 +86,7 @@ statconvert compare before.csv after.csv --ignore-columns exported_at --numeric-
 statconvert compare before.csv after.csv --key id --max-differences 10
 statconvert report input.sav --output report.html
 statconvert batch input-folder output-folder --to parquet
+statconvert batch input-folder output-folder --to parquet --workers 2 --dry-run
 ```
 
 Commands that write files refuse to replace an existing output unless `--overwrite` is
@@ -87,9 +95,12 @@ used. `convert`, `collect`, `transform`, `batch`, `report`, and `objects --outpu
 user-specified output directory; dry-run does not create directories or write files.
 
 Batch conversion, including `batch --all-objects` and `batch --transform`, processes each
-planned item independently. By contrast, `convert --all-objects` and `collect` must hold
+planned item independently. Dry-run reports planned workload size and worker settings;
+each active worker may hold one dataset in memory, so use `--workers 1` for huge or
+memory-constrained runs. By contrast, `convert --all-objects` and `collect` must hold
 their selected datasets in memory before writing one final XLSX or ODS container. For very
-large inputs, prefer separate batch outputs. Object listing is metadata-oriented, although
+large inputs, prefer separate Parquet/Feather batch outputs over JSON/Excel/ODS where
+practical. Object listing is metadata-oriented, although
 RData/RDA discovery may load workspace data because of backend-library limitations.
 
 Use `statconvert capabilities FORMAT` for detailed runtime capabilities. Important output
@@ -109,9 +120,16 @@ See [Examples and Recipes](docs/examples.md) for copyable workflows, the
 
 - [User Guide](docs/user-guide.md) - practical end-user manual for everyday workflows
 - [Administrator Guide](docs/admin-guide.md) - installation, managed deployment, and support
+- [Developer Guide](docs/developer-guide.md) - maintainer setup, architecture, and safe changes
 - [Examples and Recipes](docs/examples.md) - copyable workflows for common tasks
 - [CLI Reference](docs/cli.md) - commands, options, output, and exit behavior
 - [Format Guide](docs/formats.md) - format-specific usage, capabilities, metadata, and caveats
+- [Packaging Guide](docs/packaging.md) - builds, clean installs, and release checks
+- [Testing Guide](docs/testing.md) - test strategy and commands
+- [Architecture](docs/architecture.md) - technical design and package boundaries
+- [Performance](docs/performance.md) - benchmarks and performance notes
+- [Roadmap](docs/roadmap.md) - project status, planned versions, and deferred work
+- [Contributing](CONTRIBUTING.md) - contribution rules and review checklist
 
 ## License
 

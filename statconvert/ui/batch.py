@@ -139,6 +139,7 @@ def show_batch_plan(
             plan.blocked_count
         ),
     )
+    _add_workload_rows(summary, plan.workload)
     summary.add_row(
         "Target extension",
         plan.options.target_extension,
@@ -183,6 +184,7 @@ def show_batch_plan(
     console.print(
         summary
     )
+    _show_memory_note(plan.workload.memory_note)
 
     table = Table(
         title="Batch Plan Items"
@@ -269,10 +271,12 @@ def show_batch_result(
             result.blocked_count
         ),
     )
+    _add_workload_rows(summary, result.workload)
 
     console.print(
         summary
     )
+    _show_memory_note(result.workload.memory_note)
 
     table = Table(
         title="Batch Result Items"
@@ -321,6 +325,37 @@ def _format_count(
     """
 
     return f"{value:,}"
+
+
+def _add_workload_rows(summary: Table, workload) -> None:
+    """Add lightweight workload and concurrency metadata to a summary table."""
+
+    summary.add_row("Planned files", _format_count(workload.planned_files))
+    summary.add_row("Supported files", _format_count(workload.supported_files))
+    summary.add_row("Skipped files", _format_count(workload.skipped_files))
+    summary.add_row("Workers", _format_count(workload.workers))
+    summary.add_row("Total input size", _format_bytes(workload.total_input_bytes))
+    summary.add_row(
+        "Largest input file",
+        _format_bytes(workload.largest_input_file_bytes),
+    )
+    summary.add_row("Object mode", workload.object_mode)
+    summary.add_row("Transform", _format_bool(workload.transform_enabled))
+    summary.add_row("Validation", _format_bool(workload.validation_enabled))
+
+
+def _show_memory_note(message: str | None) -> None:
+    if message:
+        console.print(f"[cyan]Note:[/cyan] {message}")
+
+
+def _format_bytes(value: int) -> str:
+    size = float(value)
+    for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
+        if size < 1024 or unit == "TiB":
+            return f"{int(size)} {unit}" if unit == "B" else f"{size:.1f} {unit}"
+        size /= 1024
+    return f"{size:.1f} TiB"
 
 
 def _format_bool(

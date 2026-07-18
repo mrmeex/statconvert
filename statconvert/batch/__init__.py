@@ -5,10 +5,12 @@ from statconvert.batch.models import (
     BATCH_STATUS_PENDING,
     BATCH_STATUS_SKIPPED,
     BATCH_STATUS_SUCCESS,
+    MULTI_WORKER_MEMORY_NOTE,
     BatchItem,
     BatchPlan,
     BatchPlanningOptions,
     BatchResult,
+    BatchWorkloadSummary,
 )
 from statconvert.batch.execution import execute_batch_plan
 from statconvert.batch.reporting import (
@@ -31,11 +33,13 @@ __all__ = [
     "BATCH_STATUS_PENDING",
     "BATCH_STATUS_SKIPPED",
     "BATCH_STATUS_SUCCESS",
+    "MULTI_WORKER_MEMORY_NOTE",
     "BatchError",
     "BatchItem",
     "BatchPlan",
     "BatchPlanningOptions",
     "BatchResult",
+    "BatchWorkloadSummary",
     "build_batch_plan",
     "discover_input_files",
     "execute_batch_plan",

@@ -23,7 +23,8 @@ features such as formatting, formulas, macros, charts, or existing sheets.
 
 StatConvert requires Python 3.11 or newer. Install the downloaded release wheel from the
 GitHub Releases page; installation, upgrades, and managed deployment are covered by the
-[Administrator Guide](admin-guide.md).
+[Administrator Guide](admin-guide.md). Build and artifact validation are private
+maintainer workflows covered by the [Packaging Guide](packaging.md).
 
 Verify the installed command and list the formats available in the current environment:
 
@@ -415,7 +416,10 @@ statconvert batch input-folder output-folder --to xlsx --dry-run
 ```
 
 `--recursive` includes subdirectories. A dry run previews the deterministic file and
-output plan without converting data, creating directories, or replacing files. The root
+output plan without converting data, creating directories, or replacing files. It also
+shows worker count, planned workload size, total input bytes, largest input file, and the
+active object/transform/validation modes. These values come from planning and filesystem
+metadata; they are not predictions of peak memory. The root
 output folder must already exist unless `--create-dirs` is supplied. Preserve-structure
 subfolders generated below an existing root are created automatically during execution.
 Because dry runs do not read container contents,
@@ -511,7 +515,10 @@ verify referenced columns against dataset contents.
 Normal batch, manifest batch, all-object batch, and batch transformation execution handle
 each item independently and retain only lightweight status, shape, and error metadata
 afterward. Worker count can increase concurrent memory use because each active worker owns
-its current dataset. Broad chunking and streaming are deferred to a later
+its current dataset. Throughput improves only when memory, CPU, storage, and backend I/O
+provide enough headroom. Use `--workers 1` for huge files and run `--dry-run` before a
+large batch. JSON, Excel, and ODS targets can be memory-heavy; Parquet and Feather are
+generally better large-file targets. Broad chunking and streaming are deferred to a later
 performance-focused release.
 
 ## JSON output
@@ -606,3 +613,5 @@ PDF output is not supported. Generate an HTML, JSON, or CSV report instead.
 - [CLI Reference](cli.md) for every command option and exit policy
 - [Format Guide](formats.md) for the capability matrix and format caveats
 - [Administrator Guide](admin-guide.md) for installation, updates, and deployment
+- [Developer Guide](developer-guide.md) for contributing and maintenance
+- [Packaging Guide](packaging.md) for builds and clean-install validation

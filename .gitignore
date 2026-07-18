@@ -47,6 +47,8 @@ validation-results/
 !tests/fixtures/**/*.statconvert-metadata.json
 
 # Generated performance data and results (framework sources remain tracked)
+.benchdata/
+.benchmarks/
 benchmarks/data/generated/
 benchmarks/output/
 benchmarks/results/

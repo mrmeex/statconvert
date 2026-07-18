@@ -157,10 +157,17 @@ def build_batch_plan(
     exclude_patterns: list[str] | None = None,
     object_manifest: str | Path | None = None,
     all_objects: bool = False,
+    workers: int = 1,
+    transform_enabled: bool = False,
+    validation_enabled: bool = False,
+    object_mode: str | None = None,
 ) -> BatchPlan:
     """
     Build a safe, deterministic batch conversion plan.
     """
+
+    if workers < 1:
+        raise BatchError("Workers must be 1 or greater.")
 
     normalized_target = normalize_target_extension(
         target_extension
@@ -192,6 +199,10 @@ def build_batch_plan(
             preserve_structure=preserve_structure,
             patterns=patterns,
             exclude_patterns=exclude_patterns,
+            workers=workers,
+            transform_enabled=transform_enabled,
+            validation_enabled=validation_enabled,
+            object_mode=object_mode or "manifest",
         )
 
     discovered_files = discover_input_files(
@@ -223,6 +234,10 @@ def build_batch_plan(
         patterns=patterns,
         exclude_patterns=exclude_patterns,
         all_objects=all_objects,
+        workers=workers,
+        transform_enabled=transform_enabled,
+        validation_enabled=validation_enabled,
+        object_mode=object_mode or ("all_objects" if all_objects else "none"),
     )
     items = []
 
@@ -491,6 +506,10 @@ def _build_manifest_plan(
     preserve_structure: bool,
     patterns: list[str] | None,
     exclude_patterns: list[str] | None,
+    workers: int,
+    transform_enabled: bool,
+    validation_enabled: bool,
+    object_mode: str,
 ) -> BatchPlan:
     """Build one batch item for every included object-manifest row."""
 
@@ -511,6 +530,10 @@ def _build_manifest_plan(
         patterns=patterns,
         exclude_patterns=exclude_patterns,
         object_manifest=manifest.path,
+        workers=workers,
+        transform_enabled=transform_enabled,
+        validation_enabled=validation_enabled,
+        object_mode=object_mode,
     )
     items = [
         _build_manifest_item(

@@ -11,6 +11,32 @@ BATCH_STATUS_SUCCESS = "success"
 BATCH_STATUS_FAILED = "failed"
 
 
+MULTI_WORKER_MEMORY_NOTE = (
+    "Each worker may hold one dataset in memory. "
+    "For very large files, reduce --workers."
+)
+
+
+@dataclass
+class BatchWorkloadSummary:
+    """Lightweight planning metadata derived without reading datasets."""
+
+    planned_items: int = 0
+    planned_files: int = 0
+    supported_files: int = 0
+    skipped_files: int = 0
+    total_input_bytes: int = 0
+    largest_input_file_bytes: int = 0
+    workers: int = 1
+    recursive: bool = False
+    preserve_structure: bool = True
+    target_format: str = ""
+    transform_enabled: bool = False
+    validation_enabled: bool = False
+    object_mode: str = "none"
+    memory_note: str | None = None
+
+
 @dataclass
 class BatchPlanningOptions:
     """
@@ -28,6 +54,10 @@ class BatchPlanningOptions:
     exclude_patterns: list[str] | None = None
     object_manifest: Path | None = None
     all_objects: bool = False
+    workers: int = 1
+    transform_enabled: bool = False
+    validation_enabled: bool = False
+    object_mode: str = "none"
 
 
 @dataclass
@@ -67,6 +97,11 @@ class BatchPlan:
 
     options: BatchPlanningOptions
     items: list[BatchItem] = field(default_factory=list)
+    workload: BatchWorkloadSummary = field(init=False)
+
+
+    def __post_init__(self) -> None:
+        self.workload = _build_workload_summary(self.options, self.items)
 
 
     @property
@@ -166,6 +201,12 @@ class BatchResult:
 
     plan: BatchPlan
     items: list[BatchItem] = field(default_factory=list)
+    workload: BatchWorkloadSummary | None = None
+
+
+    def __post_init__(self) -> None:
+        if self.workload is None:
+            self.workload = self.plan.workload
 
 
     @property
@@ -303,3 +344,48 @@ class BatchResult:
             for item in self.items
             if item.status == BATCH_STATUS_BLOCKED
         ]
+
+
+def _build_workload_summary(
+    options: BatchPlanningOptions,
+    items: list[BatchItem],
+) -> BatchWorkloadSummary:
+    """Summarize unique input files using filesystem metadata only."""
+
+    grouped: dict[str, list[BatchItem]] = {}
+    paths: dict[str, Path] = {}
+    for item in items:
+        key = str(item.input_file.resolve()).casefold()
+        grouped.setdefault(key, []).append(item)
+        paths.setdefault(key, item.input_file)
+
+    total_input_bytes = 0
+    largest_input_file_bytes = 0
+    for path in paths.values():
+        try:
+            size = path.stat().st_size if path.is_file() else 0
+        except OSError:
+            size = 0
+        total_input_bytes += size
+        largest_input_file_bytes = max(largest_input_file_bytes, size)
+
+    skipped_files = sum(
+        all(item.status == BATCH_STATUS_SKIPPED for item in file_items)
+        for file_items in grouped.values()
+    )
+    return BatchWorkloadSummary(
+        planned_items=len(items),
+        planned_files=len(grouped),
+        supported_files=len(grouped) - skipped_files,
+        skipped_files=skipped_files,
+        total_input_bytes=total_input_bytes,
+        largest_input_file_bytes=largest_input_file_bytes,
+        workers=options.workers,
+        recursive=options.recursive,
+        preserve_structure=options.preserve_structure,
+        target_format=options.target_extension,
+        transform_enabled=options.transform_enabled,
+        validation_enabled=options.validation_enabled,
+        object_mode=options.object_mode,
+        memory_note=(MULTI_WORKER_MEMORY_NOTE if options.workers > 1 else None),
+    )

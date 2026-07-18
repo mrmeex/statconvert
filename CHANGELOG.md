@@ -1,5 +1,46 @@
 # Changelog
 
+## 0.4.0 - 2026-07-18
+
+Performance and large-file hardening release.
+
+### Added
+
+- Added reproducible benchmark tooling under `tools/performance/` with deterministic tiny,
+  small, medium, and explicitly enabled large synthetic-data profiles.
+- Added subprocess benchmark runs and Markdown/CSV summaries covering elapsed time, output
+  size, success/skip state, environment details, and optional `psutil` peak RSS.
+- Added batch workload summaries with planned item/file counts, input sizes, worker count,
+  target/structure settings, transform and validation state, and object mode.
+- Added multi-worker memory guidance and worker-count benchmark comparisons for CSV to
+  Parquet and JSON workloads.
+
+### Changed
+
+- JSON, JSONL, and NDJSON record writes now serialize bounded row chunks while preserving
+  their existing output structures.
+- The measured medium CSV-to-JSON benchmark used about 51% less peak RSS in the 0.4.0b
+  before/after run; timings and memory remain machine- and workload-dependent.
+- Compare paths avoid unnecessary full Python mask materialization and repeated JSON
+  dataclass serialization without changing comparison semantics.
+- Feather writing avoids an unnecessary index copy for the default `RangeIndex` path.
+- Missing benchmark-profile errors now report required, detected, and missing profiles
+  plus an exact data-generation command.
+- Documentation now includes safer large-file, dry-run, and batch-worker guidance.
+
+### Notes
+
+- `psutil` remains optional and is used only by benchmark tooling for peak-RSS sampling.
+- StatConvert remains DataFrame-based for most operations; JSON can still be memory-heavy,
+  and Excel/ODS remain poor choices for very large datasets.
+- Prefer Parquet or Feather for large tabular workflows where practical.
+- Each active batch worker may hold one dataset in memory. Use `--workers 1` for huge files
+  or memory-constrained runs and inspect `batch --dry-run` first.
+- 0.4.0 does not add universal streaming/chunking, dynamic worker throttling, or automatic
+  memory scheduling. The default batch worker count is unchanged.
+- Public distribution remains a wheel attached to the GitHub Release; StatConvert is not
+  published to PyPI.
+
 ## 0.3.0 - 2026-07-18
 
 Compare improvements release.

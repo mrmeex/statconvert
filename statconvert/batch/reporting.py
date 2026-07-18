@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+from dataclasses import asdict
 import json
 from pathlib import Path
 from typing import Any
@@ -98,6 +99,7 @@ def write_batch_plan_report(
             "pending": plan.pending_count,
             "skipped": plan.skipped_count,
             "blocked": plan.blocked_count,
+            "workload": asdict(plan.workload),
         },
         "items": batch_plan_to_rows(plan),
     }
@@ -119,6 +121,7 @@ def write_batch_result_report(
             "failed": result.failed_count,
             "skipped": result.skipped_count,
             "blocked": result.blocked_count,
+            "workload": asdict(result.workload),
         },
         "items": batch_result_to_rows(result),
     }

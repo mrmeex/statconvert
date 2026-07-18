@@ -121,9 +121,17 @@ class ArrowBackend(Backend):
                 )
 
             elif extension == ".feather":
-                dataframe = dataset.dataframe.reset_index(
-                    drop=True
-                )
+                dataframe = dataset.dataframe
+                index = dataframe.index
+                if not (
+                    isinstance(index, pd.RangeIndex)
+                    and index.start == 0
+                    and index.step == 1
+                    and index.name is None
+                ):
+                    dataframe = dataframe.reset_index(
+                        drop=True
+                    )
 
                 dataframe.to_feather(
                     filename,

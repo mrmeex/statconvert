@@ -208,8 +208,8 @@ def _compare_aligned_values(
     details: list[DifferenceDetail] = []
 
     for column in selected:
-        left_values = alignment.left[column].iloc[:compared_rows].reset_index(drop=True)
-        right_values = alignment.right[column].iloc[:compared_rows].reset_index(drop=True)
+        left_values = alignment.left[column].iloc[:compared_rows]
+        right_values = alignment.right[column].iloc[:compared_rows]
         difference_count, positions = _difference_summary(
             left_values,
             right_values,
@@ -622,11 +622,10 @@ def _difference_summary(
         unequal = left.ne(right).fillna(False)
         difference_mask = one_missing | (unequal & ~both_missing)
         count = int(difference_mask.sum())
-        positions = [
-            position
-            for position, differs in enumerate(difference_mask.fillna(False).tolist())
-            if bool(differs)
-        ][:position_limit]
+        positions = _bounded_true_positions(
+            difference_mask.fillna(False),
+            limit=position_limit,
+        )
         return count, positions
     except (TypeError, ValueError):
         count = 0
@@ -638,6 +637,33 @@ def _difference_summary(
             if len(positions) < position_limit:
                 positions.append(position)
         return count, positions
+
+
+def _bounded_true_positions(
+    mask: pd.Series,
+    *,
+    limit: int,
+    block_size: int = 8_192,
+) -> list[int]:
+    """Return at most ``limit`` true positions without a full Python list."""
+
+    if limit <= 0:
+        return []
+    positions: list[int] = []
+    for start in range(0, len(mask), block_size):
+        block = mask.iloc[start : start + block_size].to_numpy(
+            dtype=bool,
+            na_value=False,
+            copy=False,
+        )
+        local_positions = block.nonzero()[0]
+        remaining = limit - len(positions)
+        positions.extend(
+            int(start + position) for position in local_positions[:remaining]
+        )
+        if len(positions) == limit:
+            break
+    return positions
 
 
 def _uses_numeric_tolerance(left: pd.Series, right: pd.Series) -> bool:

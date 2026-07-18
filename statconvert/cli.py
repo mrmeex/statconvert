@@ -2450,6 +2450,15 @@ def batch(
                 raise BatchError(
                     "Use either --object-manifest or --all-objects, not both."
                 )
+            object_mode = (
+                "manifest"
+                if object_manifest is not None
+                else "all_objects"
+                if all_objects
+                else "object"
+                if object_selector is not None
+                else "none"
+            )
             plan = build_batch_plan(
                 input_path=input_path,
                 output_path=output_path,
@@ -2462,6 +2471,10 @@ def batch(
                 exclude_patterns=exclude_patterns,
                 object_manifest=object_manifest,
                 all_objects=all_objects,
+                workers=workers,
+                transform_enabled=transform_items,
+                validation_enabled=validate_inputs,
+                object_mode=object_mode,
             )
             input_path_value = Path(input_path)
             output_path_value = Path(output_path)

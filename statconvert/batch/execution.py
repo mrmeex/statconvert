@@ -14,6 +14,7 @@ from statconvert.batch.models import (
     BATCH_STATUS_PENDING,
     BATCH_STATUS_SKIPPED,
     BATCH_STATUS_SUCCESS,
+    MULTI_WORKER_MEMORY_NOTE,
     BatchItem,
     BatchPlan,
     BatchResult,
@@ -102,6 +103,11 @@ def execute_batch_plan(
     return BatchResult(
         plan=plan,
         items=result_items,
+        workload=replace(
+            plan.workload,
+            workers=workers,
+            memory_note=MULTI_WORKER_MEMORY_NOTE if workers > 1 else None,
+        ),
     )
 
 

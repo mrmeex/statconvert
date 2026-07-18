@@ -395,7 +395,13 @@ The output extension comes from `--to`. Planning and result order are determinis
 when several workers are used. The output root must exist unless `--create-dirs` is used;
 generated preserve-structure folders below an existing root are automatic. A dry run
 does not read datasets, create directories, write files, or replace existing outputs; it
-previews paths, capabilities, collisions, and other plan information.
+previews paths, capabilities, collisions, unique-file counts, total/largest input sizes,
+worker count, target/structure settings, and object/transform/validation modes. Multiple
+workers may hold multiple datasets concurrently, so use `--workers 1` for huge files.
+
+```powershell
+statconvert batch .\input .\output --to parquet --recursive --workers 2 --dry-run
+```
 
 Single-file output policy is the same for conversion, transformation, and reports:
 

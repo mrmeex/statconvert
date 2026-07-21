@@ -24,6 +24,7 @@ validate      Validate quality and conversion readiness.
 compare       Compare two datasets and optionally write a report.
 report        Generate a single-dataset profile report.
 batch         Plan and execute many conversions.
+config        Create, validate, or run one-command TOML workflow configurations.
 peek          Preview the first rows.
 ```
 
@@ -51,6 +52,64 @@ python -m statconvert --version
 Version status is plain text without Rich styling. Dependencies that cannot be imported
 are shown as `not installed`. Use the `python -m` form when `statconvert` is not on
 `PATH`.
+
+## Repeatable workflow configuration
+
+Each TOML workflow config maps to exactly one existing StatConvert command. Config field
+names use snake_case and preserve CLI behavior; they do not define multi-step workflows.
+Parsing uses Python 3.11's standard-library `tomllib`, so config support adds no required
+dependency.
+
+### `config init`
+
+```bash
+statconvert config init COMMAND --output workflow.toml [--overwrite] [--create-dirs]
+```
+
+Creates a validated starter file for `convert`, `transform`, `batch`, `compare`,
+`report`, or `collect`. Existing files are protected unless `--overwrite` is supplied,
+and missing parent directories require `--create-dirs`.
+
+### `config validate`
+
+```bash
+statconvert config validate CONFIG_FILE
+```
+
+Reads TOML and reports missing or unknown fields, basic type errors, invalid values, and
+command-specific conflicts without running the command.
+
+### `config run`
+
+```bash
+statconvert config run CONFIG_FILE
+```
+
+`config run` executes `convert`, `transform`, `batch`, `compare`, `report`, and `collect`
+through their existing command and service paths. Output safety, transformation behavior,
+batch planning, comparison exit policy, reports, collection naming, JSON, and progress
+behavior remain unchanged.
+
+### Writing configs from commands
+
+`convert`, `transform`, `batch`, `compare`, `report`, and `collect` accept
+`--write-config FILE`. The command writes one validated TOML file and returns without
+running the workflow. Use
+`--overwrite-config` to replace that TOML file; ordinary `--overwrite` remains the saved
+workflow's output policy and never authorizes config replacement. Where the command
+supports `--create-dirs`, it may create the config parent and is also preserved in the
+generated workflow.
+
+```bash
+statconvert convert input.csv output.parquet --write-config convert.toml
+statconvert transform input.csv output.parquet --select id --write-config transform.toml
+statconvert batch incoming converted --to parquet --workers 1 --write-config batch.toml
+statconvert compare old.csv new.csv --key id --write-config compare.toml
+statconvert report input.csv --output report.html --preset quick --write-config report.toml
+statconvert collect manifest.csv workbook.xlsx --write-config collect.toml
+statconvert config validate batch.toml
+statconvert config run batch.toml
+```
 
 ## Logging options
 
@@ -117,10 +176,12 @@ Options:
 
 - `--object OBJECT` selects an Excel/ODS sheet or RData/RDA object by exact name or
   zero-based index.
-- `--all-objects` converts every supported input object into one multi-object output.
+- `--all-objects` converts every supported input object into one XLSX or ODS container.
   It conflicts with `--object`.
 - `--overwrite` replaces an existing output.
 - `--create-dirs` creates a missing output parent directory.
+- `--write-config FILE` writes this invocation as TOML without converting data.
+- `--overwrite-config` permits replacement of the selected config file only.
 - `--validate` validates the loaded dataset for the output extension before writing.
 - `--strict-validation` implies validation and makes warnings write-blocking.
 - `--input-encoding TEXT` selects the text encoding for supported input formats.
@@ -158,8 +219,8 @@ RData, or RDA input becomes one XLSX or ODS output with one sheet per supported 
 object. It preserves input object order and names. Unsupported input objects are skipped
 with warnings when at least one supported dataset object remains; zero supported objects
 is an error. Empty, invalid, or duplicate target sheet names fail without automatic
-renaming. Single-dataset inputs must omit `--all-objects`, and XLS, RData/RDA, CSV, and
-other single-dataset outputs are not multi-object targets.
+renaming. Single-dataset inputs must omit `--all-objects`, and the destination must be
+XLSX or ODS.
 
 This differs from `batch --all-objects`, which expands objects into separate output
 files. `convert --all-objects` validates output safety and object names first, then reads
@@ -187,6 +248,8 @@ Options:
 - `--strict-validation` implies validation and makes warnings write-blocking.
 - `--input-encoding`, `--output-encoding`, `--csv-delimiter`, and `--csv-decimal` use
   the shared dataset I/O option behavior.
+- `--write-config FILE` writes this invocation as TOML without collecting data.
+- `--overwrite-config` permits replacement of the selected config file only.
 - Common logging options.
 
 ```bash
@@ -206,8 +269,7 @@ reads. A blank `input_object` uses normal single-dataset behavior and remains am
 for a multi-object input. Any included read or validation failure stops the whole
 collection before its final write. Collect does not append, join, merge, deduplicate, or
 transform rows. Because partial container output is intentionally avoided, all selected
-datasets are retained in memory until the final XLSX or ODS write. XLS and RData/RDA
-remain unsupported collection outputs.
+datasets are retained in memory until the final XLSX or ODS write.
 
 ### `transform`
 
@@ -238,6 +300,8 @@ Options:
 - `--input-encoding TEXT` and `--output-encoding TEXT` control supported input and output
   backends independently.
 - `--csv-delimiter TEXT` and `--csv-decimal TEXT` control CSV input/output paths.
+- `--write-config FILE` writes this invocation as TOML without transforming data.
+- `--overwrite-config` permits replacement of the selected config file only.
 - Common logging options.
 
 Filter operators are `eq`, `ne`, `gt`, `gte`, `lt`, `lte`, `in`, `not_in`, `contains`,
@@ -354,9 +418,9 @@ statconvert convert workspace.rdata patients.csv --object patients
 Every command that reads exactly one dataset exposes `--object`: convert, transform, info,
 peek, schema, labels, metadata, summary, describe, frequencies, missing, validate, and
 report. Compare provides shared and side-specific selectors, and batch applies one shared
-selector to every input file. Choosing an output workbook sheet or R object name remains
-deferred at the CLI level. The Excel backend accepts an output `object_selector` for
-internal/API callers without changing this input-selector convention.
+selector to every input file. Choosing an output workbook sheet name is not exposed at the
+CLI level. The Excel backend accepts an output `object_selector` for internal/API callers
+without changing this input-selector convention.
 
 ### `info`
 
@@ -522,6 +586,8 @@ Options:
 - `--input-encoding TEXT` and `--output-encoding TEXT` control supported batch readers
   and writers independently.
 - `--csv-delimiter TEXT` and `--csv-decimal TEXT` control CSV input/output paths.
+- `--write-config FILE` writes this invocation as TOML without running the batch.
+- `--overwrite-config` permits replacement of the selected config file only.
 - Common logging options.
 
 Planning is deterministic. It detects unsupported inputs, output-path collisions, nested
@@ -636,6 +702,8 @@ Options:
 - `--strict` - make warning-level differences fail.
 - `--report FILE` - write CSV, JSON, or HTML.
 - `--report-format csv|json|html` - override suffix inference.
+- `--write-config FILE` writes this invocation as TOML without comparing data.
+- `--overwrite-config` permits replacement of the selected config file only.
 - Common logging options.
 
 Comparison covers shape, full column membership/order, storage types, display formats,
@@ -705,6 +773,8 @@ Options:
 - `--strict-validation` - use strict validation severity in the report.
 - `--json` - print a concise JSON summary after writing.
 - `--quiet` - suppress the normal Rich completion summary.
+- `--write-config FILE` writes this invocation as TOML without generating the report.
+- `--overwrite-config` permits replacement of the selected config file only.
 - Common logging options.
 
 Default sections are summary, schema, metadata, labels, missing, describe, and validation.
@@ -721,5 +791,3 @@ statconvert report input.sav --output reports/report.html --create-dirs
 statconvert report input.sav --output report.json --preset full
 statconvert report input.sav --output report.csv --section summary --section validation
 ```
-
-PDF reports are not implemented.

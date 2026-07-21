@@ -316,6 +316,5 @@ downloaded filename when recording deployments and support cases.
 
 ## What is out of scope
 
-The current supported deployment model does not include standalone executable deployment,
-automated offline dependency bundles, central configuration files, or row
-merging/appending during collection.
+The current supported deployment model does not include automated offline dependency
+bundles or row merging/appending during collection.

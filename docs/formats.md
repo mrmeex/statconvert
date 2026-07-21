@@ -47,7 +47,7 @@ metadata. Other applications usually ignore this sidecar.
 | `.parquet` | Apache Parquet | Yes | Yes | Sidecar | None | Typed columnar data; Snappy compression is used by default. |
 | `.feather` | Apache Feather | Yes | Yes | Sidecar | None | Typed columnar data; the pandas index is reset on write. |
 | `.rds` | R serialized object | Yes | Yes | Sidecar | Single object | The one object must be tabular/DataFrame-like; `--object` is not accepted. |
-| `.rdata` | R workspace | Yes | Yes | Sidecar | R object | Selects named tabular objects; writes one DataFrame named `data`. |
+| `.rdata` | R workspace | Yes | Yes | Sidecar | R object | Selects named tabular objects. |
 | `.rda` | R workspace | Yes | Yes | Sidecar | R object | Same behavior as `.rdata`. |
 
 `Yes` describes the normal installation, which includes dependencies for every advertised
@@ -121,13 +121,13 @@ sides. It does not add joins, appends, merges, or per-object rules.
 one multi-sheet XLSX or ODS output. Supported input objects retain their names and order.
 Unsupported input objects are skipped if another supported object remains. Invalid or
 duplicate output sheet names fail without renaming. Single-dataset inputs reject the
-option, and XLS/RData/RDA are not multi-object output targets.
+option, and the destination must be XLSX or ODS.
 
 `collect` uses the same XLSX/ODS multi-object writer for a different input shape: included
 manifest rows may point to several files and selected objects. Each becomes one output
 sheet. The output name priority is `output_object`, `output_name`, `input_object`, then
 the input file stem. Invalid or duplicate target names fail without automatic renaming.
-XLS and RData/RDA remain unsupported collection outputs.
+Collection output is limited to XLSX and ODS.
 
 XLSX/XLS/ODS object listing normally inspects workbook structure without loading sheet
 contents. RData/RDA listing may load workspace data because `pyreadr` descriptors do not
@@ -341,9 +341,8 @@ Unsupported objects are listed with an explanation when pyreadr can describe the
 object types may not be exposed at all and therefore cannot appear in the listing. There
 is no automatic first-object fallback when several supported tables exist.
 
-Writing `.rdata` or `.rda` creates one DataFrame named `data`. They are not
-multi-object output targets. A workspace can be used as a `convert --all-objects` input
-when the destination is XLSX or ODS. Normalized metadata for normal single-object output
+A workspace can be used as a `convert --all-objects` input when the destination is XLSX
+or ODS. Normalized metadata for normal single-object output
 is stored in a sidecar.
 
 ## Metadata preservation
@@ -448,9 +447,10 @@ StatConvert does not currently provide:
 - arbitrary nested JSON flattening;
 - spreadsheet formatting, chart, macro, or formula preservation;
 - formula recalculation;
-- PDF reports;
 - row appending, joining, merging, or deduplication during object collection;
-- key-based, tolerance-based, ignored-column, or chunked comparison options; or
+- fuzzy or many-to-many compare matching, duplicate-key reconciliation, per-column or
+  relative tolerances, or chunked comparison; or
 - human-readable descriptions of raw display-format codes.
 
-Unsupported features are rejected rather than silently approximated.
+See the [CLI Reference](cli.md) for command boundaries and [Examples and
+Recipes](examples.md) for supported workflows.

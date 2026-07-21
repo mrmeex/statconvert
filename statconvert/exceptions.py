@@ -14,6 +14,10 @@ class OutputPathError(ConversionError):
     """An output path conflicts with the selected write policy."""
 
 
+class ConfigError(StatConvertError):
+    """A workflow configuration is invalid or cannot be accessed."""
+
+
 class ObjectSelectionError(StatConvertError):
     """A dataset object could not be selected."""
 

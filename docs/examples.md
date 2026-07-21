@@ -35,6 +35,36 @@ statconvert --version
 Use `python -m statconvert --version` when the console command is not on `PATH`. Missing
 dependencies appear as `not installed`.
 
+## Create and validate a repeatable workflow config
+
+Create a single-command TOML starter, inspect or edit it, and validate it:
+
+```powershell
+statconvert config init batch --output .\batch.toml
+statconvert config validate .\batch.toml
+statconvert config run .\batch.toml
+```
+
+`config run` executes `convert`, `transform`, `batch`, `compare`, `report`, and `collect`
+configs.
+
+Generate a runnable config from an existing command without executing the workflow:
+
+```powershell
+statconvert convert .\input\data.csv .\output\data.parquet --write-config .\convert.toml
+statconvert transform .\input\data.csv .\output\selected.parquet --select id --write-config .\transform.toml
+statconvert batch .\input .\output --to parquet --workers 1 --write-config .\batch.toml
+statconvert compare .\input\old.csv .\input\new.csv --key id --write-config .\compare.toml
+statconvert report .\input\data.csv --output .\reports\data.html --preset quick --write-config .\report.toml
+statconvert collect .\manifest.csv .\output\combined.xlsx --write-config .\collect.toml
+statconvert config validate .\batch.toml
+statconvert config run .\batch.toml
+```
+
+Add `--overwrite-config` only when replacing the TOML file intentionally. The normal
+`--overwrite` flag is saved for future data-output replacement and does not overwrite the
+config itself.
+
 ## Example files and paths
 
 Most recipes use these folders:
@@ -333,7 +363,7 @@ statconvert report .\input\data.sav --output .\reports\data.csv
 ```
 
 HTML is convenient for review and sharing. JSON retains the complete report model for
-automation, while CSV provides table-oriented output. PDF report output is not supported.
+automation, while CSV provides table-oriented output.
 Use `statconvert report --help` for presets and section controls.
 
 ## Compare two datasets

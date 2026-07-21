@@ -5,10 +5,9 @@ inspecting, validating, batch-processing, comparing, reporting, and logging stat
 datasets. It uses a backend registry and a common `Dataset` model so format-specific code
 stays out of conversion and analysis workflows.
 
-Version 0.4.0 is the performance and large-file hardening release. It adds reproducible
-benchmark tooling, bounded JSON-family serialization, conservative compare/report overhead
-reductions, and batch workload plus worker-memory visibility without changing conversion,
-comparison, or default-worker semantics.
+Version 0.5.0 adds repeatable TOML workflow configuration for conversion,
+transformation, batch, comparison, reporting, and collection workflows. Each config file
+describes exactly one existing command and preserves its normal CLI behavior.
 
 ## Implemented features
 
@@ -30,6 +29,7 @@ comparison, or default-worker semantics.
 - Single-dataset reports in HTML, JSON, and CSV
 - Opt-in file diagnostics across every public command
 - Plain-text installed version, Python version, and runtime dependency status
+- TOML starter generation and validation for repeatable single-command workflows
 - Reproducible private benchmark data generation, subprocess measurement, optional
   `psutil` peak-RSS sampling, and Markdown/CSV result summaries
 
@@ -61,9 +61,8 @@ plus each important runtime dependency. Missing dependencies are shown as
 `not installed`. The equivalent `statconvert --version` form works when the console
 command is on `PATH`.
 
-Repository source and editable installations are private maintainer workflows, not
-public installation methods. Contributors should use the
-[Developer Guide](docs/developer-guide.md).
+Repository source and editable installations are maintainer workflows, not public
+installation methods.
 
 ## Quick start
 
@@ -87,7 +86,22 @@ statconvert compare before.csv after.csv --key id --max-differences 10
 statconvert report input.sav --output report.html
 statconvert batch input-folder output-folder --to parquet
 statconvert batch input-folder output-folder --to parquet --workers 2 --dry-run
+statconvert config init batch --output batch.toml
+statconvert config validate batch.toml
+statconvert config run batch.toml
+statconvert convert input.csv output.parquet --write-config convert.toml
+statconvert transform input.csv output.parquet --select id --write-config transform.toml
+statconvert batch incoming converted --to parquet --workers 1 --write-config batch.toml
+statconvert compare old.csv new.csv --key id --write-config compare.toml
+statconvert report input.csv --output report.html --preset quick --write-config report.toml
+statconvert collect manifest.csv workbook.xlsx --write-config collect.toml
 ```
+
+`config run` executes `convert`, `transform`, `batch`, `compare`, `report`, and `collect`
+workflows. Each matching command accepts `--write-config FILE`, which writes validated
+TOML and does not run the workflow; use `--overwrite-config` to replace an existing
+config. Config loading uses Python 3.11's standard-library `tomllib` and adds no required
+dependency.
 
 Commands that write files refuse to replace an existing output unless `--overwrite` is
 used. `convert`, `collect`, `transform`, `batch`, `report`, and `objects --output` accept
@@ -120,16 +134,9 @@ See [Examples and Recipes](docs/examples.md) for copyable workflows, the
 
 - [User Guide](docs/user-guide.md) - practical end-user manual for everyday workflows
 - [Administrator Guide](docs/admin-guide.md) - installation, managed deployment, and support
-- [Developer Guide](docs/developer-guide.md) - maintainer setup, architecture, and safe changes
 - [Examples and Recipes](docs/examples.md) - copyable workflows for common tasks
 - [CLI Reference](docs/cli.md) - commands, options, output, and exit behavior
 - [Format Guide](docs/formats.md) - format-specific usage, capabilities, metadata, and caveats
-- [Packaging Guide](docs/packaging.md) - builds, clean installs, and release checks
-- [Testing Guide](docs/testing.md) - test strategy and commands
-- [Architecture](docs/architecture.md) - technical design and package boundaries
-- [Performance](docs/performance.md) - benchmarks and performance notes
-- [Roadmap](docs/roadmap.md) - project status, planned versions, and deferred work
-- [Contributing](CONTRIBUTING.md) - contribution rules and review checklist
 
 ## License
 

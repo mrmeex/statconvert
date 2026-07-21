@@ -1,7 +1,7 @@
 from dataclasses import asdict
 import logging as py_logging
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 
@@ -28,6 +28,13 @@ from statconvert.collection import (
     CollectionPlanItem,
     build_collection_plan,
     execute_collection_plan,
+)
+from statconvert.config import (
+    config_from_options,
+    create_template,
+    execute_config,
+    load_config,
+    write_config,
 )
 from statconvert.dataset_options import DatasetReadOptions, DatasetWriteOptions
 from statconvert.inspection import (
@@ -65,7 +72,11 @@ from statconvert.registry import (
     resolve_format_info,
     resolve_format_or_backend,
 )
-from statconvert.exceptions import ConversionError, ObjectSelectionNotSupportedError
+from statconvert.exceptions import (
+    ConfigError,
+    ConversionError,
+    ObjectSelectionNotSupportedError,
+)
 from statconvert.transformer import transform_file
 from statconvert.transformations.cli_parsing import build_pipeline_from_cli_options
 from statconvert.version import format_version_status
@@ -80,6 +91,9 @@ from statconvert.ui import (
     show_capabilities_panel,
     show_collection_plan,
     show_collection_result,
+    show_config_created,
+    show_config_valid,
+    show_config_written,
     show_dataset_header,
     show_dataset_comparison,
     show_dataset_info,
@@ -113,6 +127,12 @@ app = typer.Typer(
     name="statconvert",
     help="Universal statistical data converter"
 )
+config_app = typer.Typer(
+    name="config",
+    help="Create, validate and run repeatable TOML workflow configurations.",
+    no_args_is_help=True,
+)
+app.add_typer(config_app, name="config")
 
 LogFileOption = Annotated[
     str | None,
@@ -220,6 +240,198 @@ CreateDirsOption = Annotated[
         help="Create missing output directories when writing files.",
     ),
 ]
+WriteConfigOption = Annotated[
+    str | None,
+    typer.Option(
+        "--write-config",
+        help="Write this command as TOML without running it.",
+    ),
+]
+OverwriteConfigOption = Annotated[
+    bool,
+    typer.Option(
+        "--overwrite-config",
+        help="Replace the --write-config file if it already exists.",
+    ),
+]
+
+
+@config_app.command("init")
+def config_init(
+    command: str,
+    output_file: str = typer.Option(
+        "workflow.toml",
+        "--output",
+        "-o",
+        help="TOML file to create.",
+    ),
+    overwrite: OverwriteOption = False,
+    create_dirs: CreateDirsOption = False,
+):
+    """Create a validated starter config for one command."""
+
+    try:
+        template = create_template(command)
+        path = write_config(
+            template,
+            output_file,
+            overwrite=overwrite,
+            create_dirs=create_dirs,
+        )
+        show_config_created(path, template.command)
+    except Exception as exc:
+        handle_exception(exc)
+        raise typer.Exit(1)
+
+
+@config_app.command("validate")
+def config_validate(config_file: str):
+    """Validate a TOML workflow config without executing it."""
+
+    try:
+        config = load_config(config_file)
+        show_config_valid(Path(config_file), config.command)
+    except Exception as exc:
+        handle_exception(exc)
+        raise typer.Exit(1)
+
+
+@config_app.command("run")
+def config_run(config_file: str):
+    """Validate and run a supported single-command workflow config."""
+
+    try:
+        config = load_config(config_file)
+        execute_config(
+            config,
+            {
+                "convert": convert,
+                "transform": transform,
+                "batch": _run_batch_config,
+                "compare": _run_compare_config,
+                "report": _run_report_config,
+                "collect": collect,
+            },
+        )
+    except typer.Exit:
+        raise
+    except Exception as exc:
+        handle_exception(exc)
+        raise typer.Exit(1)
+
+
+def _run_batch_config(
+    *,
+    _config_option_names: frozenset[str],
+    **arguments: Any,
+) -> None:
+    """Adapt config field presence to batch's existing CLI-source validation."""
+
+    parameter_names = {
+        "select": "select",
+        "drop": "drop",
+        "rename": "rename",
+        "type": "type_items",
+        "type_errors": "type_errors",
+        "datetime_format": "datetime_format",
+        "filter": "filter_items",
+        "filter_mode": "filter_mode",
+        "recode": "recode",
+        "recode_default": "recode_default",
+        "update_value_labels": "update_value_labels",
+        "ignore_missing_columns": "ignore_missing_columns",
+        "reset_index": "reset_index",
+    }
+    supplied_parameters = {
+        parameter_name
+        for config_name, parameter_name in parameter_names.items()
+        if config_name in _config_option_names
+    }
+    batch_context = _ConfigBatchContext(supplied_parameters)
+    batch(ctx=batch_context, **arguments)
+
+
+def _run_compare_config(**arguments: Any) -> None:
+    compare(ctx=_ConfigArgsContext(), **arguments)
+
+
+def _run_report_config(**arguments: Any) -> None:
+    report(ctx=_ConfigArgsContext(), **arguments)
+
+
+class _ConfigParameterSource:
+    name = "COMMANDLINE"
+
+
+class _ConfigArgsContext:
+    """Minimal extra-argument view required by selected command callbacks."""
+
+    args: tuple[str, ...] = ()
+
+
+class _ConfigBatchContext(_ConfigArgsContext):
+    """Minimal parameter-source view required by the batch callback."""
+
+    def __init__(self, supplied_parameters: set[str]) -> None:
+        self.supplied_parameters = supplied_parameters
+
+    def get_parameter_source(self, name: str) -> _ConfigParameterSource | None:
+        if name in self.supplied_parameters:
+            return _ConfigParameterSource()
+        return None
+
+
+_BATCH_TRANSFORM_PARAMETER_NAMES = (
+    "select",
+    "drop",
+    "rename",
+    "type_items",
+    "type_errors",
+    "datetime_format",
+    "filter_items",
+    "filter_mode",
+    "recode",
+    "recode_default",
+    "update_value_labels",
+    "ignore_missing_columns",
+    "reset_index",
+)
+
+
+def _batch_transform_options_supplied(ctx: Any) -> bool:
+    return any(
+        (source := ctx.get_parameter_source(option_name)) is not None
+        and source.name == "COMMANDLINE"
+        for option_name in _BATCH_TRANSFORM_PARAMETER_NAMES
+    )
+
+
+def _write_command_config(
+    command: str,
+    config_file: str,
+    *,
+    overwrite_config: bool,
+    create_config_dirs: bool,
+    **options: Any,
+) -> None:
+    """Serialize one command invocation and show the standard completion message."""
+
+    config = config_from_options(command, **options)
+    path = write_config(
+        config,
+        config_file,
+        overwrite=overwrite_config,
+        create_dirs=create_config_dirs,
+    )
+    show_config_written(path, command)
+
+
+def _validate_write_config_options(
+    write_config_file: str | None,
+    overwrite_config: bool,
+) -> None:
+    if overwrite_config and write_config_file is None:
+        raise ConfigError("--overwrite-config requires --write-config PATH.")
 
 
 def _version_callback(value: bool) -> None:
@@ -387,6 +599,8 @@ def convert(
     ),
     overwrite: OverwriteOption = False,
     create_dirs: CreateDirsOption = False,
+    write_config_file: WriteConfigOption = None,
+    overwrite_config: OverwriteConfigOption = False,
     validate_inputs: bool = typer.Option(
         False,
         "--validate",
@@ -413,6 +627,31 @@ def convert(
     validation_failure: ValidationFailedError | None = None
 
     try:
+        _validate_write_config_options(write_config_file, overwrite_config)
+        if write_config_file is not None:
+            _write_command_config(
+                "convert",
+                write_config_file,
+                overwrite_config=overwrite_config,
+                create_config_dirs=create_dirs,
+                input_file=input_file,
+                output_file=output_file,
+                object_selector=object_selector,
+                all_objects=all_objects,
+                overwrite=overwrite,
+                create_dirs=create_dirs,
+                validate_inputs=validate_inputs,
+                strict_validation=strict_validation,
+                input_encoding=input_encoding,
+                output_encoding=output_encoding,
+                csv_delimiter=csv_delimiter,
+                csv_decimal=csv_decimal,
+                log_file=log_file,
+                log_level=log_level,
+                log_append=log_append,
+                developer_log=developer_log,
+            )
+            return
         with command_log_wrapper(
             command="convert",
             parameters={
@@ -563,6 +802,8 @@ def collect(
     ),
     overwrite: OverwriteOption = False,
     create_dirs: CreateDirsOption = False,
+    write_config_file: WriteConfigOption = None,
+    overwrite_config: OverwriteConfigOption = False,
     dry_run: bool = typer.Option(
         False,
         "--dry-run",
@@ -592,6 +833,31 @@ def collect(
     validation_failure: ValidationFailedError | None = None
 
     try:
+        _validate_write_config_options(write_config_file, overwrite_config)
+        if write_config_file is not None:
+            _write_command_config(
+                "collect",
+                write_config_file,
+                overwrite_config=overwrite_config,
+                create_config_dirs=create_dirs,
+                manifest=manifest,
+                output_file=output_file,
+                base_dir=base_dir,
+                overwrite=overwrite,
+                create_dirs=create_dirs,
+                dry_run=dry_run,
+                validate_inputs=validate_inputs,
+                strict_validation=strict_validation,
+                input_encoding=input_encoding,
+                output_encoding=output_encoding,
+                csv_delimiter=csv_delimiter,
+                csv_decimal=csv_decimal,
+                log_file=log_file,
+                log_level=log_level,
+                log_append=log_append,
+                developer_log=developer_log,
+            )
+            return
         with command_log_wrapper(
             command="collect",
             parameters={
@@ -758,6 +1024,8 @@ def transform(
     ),
     overwrite: OverwriteOption = False,
     create_dirs: CreateDirsOption = False,
+    write_config_file: WriteConfigOption = None,
+    overwrite_config: OverwriteConfigOption = False,
     dry_run: bool = typer.Option(
         False,
         "--dry-run",
@@ -789,6 +1057,64 @@ def transform(
     validation_failure: ValidationFailedError | None = None
 
     try:
+        _validate_write_config_options(write_config_file, overwrite_config)
+        if write_config_file is not None:
+            select, drop = _attach_extra_column_args(
+                extra_columns=extra_columns,
+                select=select,
+                drop=drop,
+            )
+            build_pipeline_from_cli_options(
+                select_columns=select,
+                drop_columns=drop,
+                rename_items=rename,
+                type_items=type_items,
+                type_errors=type_errors,
+                datetime_format=datetime_format,
+                filter_items=filter_items,
+                filter_mode=filter_mode,
+                recode_items=recode,
+                recode_default=recode_default,
+                update_value_labels=update_value_labels,
+                ignore_missing_columns=ignore_missing_columns,
+                reset_index=reset_index,
+            )
+            _write_command_config(
+                "transform",
+                write_config_file,
+                overwrite_config=overwrite_config,
+                create_config_dirs=create_dirs,
+                input_file=input_file,
+                output_file=output_file,
+                object_selector=object_selector,
+                select=select,
+                drop=drop,
+                rename=rename,
+                type_items=type_items,
+                type_errors=type_errors,
+                datetime_format=datetime_format,
+                filter_items=filter_items,
+                filter_mode=filter_mode,
+                recode=recode,
+                recode_default=recode_default,
+                update_value_labels=update_value_labels,
+                ignore_missing_columns=ignore_missing_columns,
+                reset_index=reset_index,
+                overwrite=overwrite,
+                create_dirs=create_dirs,
+                dry_run=dry_run,
+                validate_inputs=validate_inputs,
+                strict_validation=strict_validation,
+                input_encoding=input_encoding,
+                output_encoding=output_encoding,
+                csv_delimiter=csv_delimiter,
+                csv_decimal=csv_decimal,
+                log_file=log_file,
+                log_level=log_level,
+                log_append=log_append,
+                developer_log=developer_log,
+            )
+            return
         with command_log_wrapper(
             command="transform",
             parameters={
@@ -1799,6 +2125,8 @@ def compare(
         "--report-format",
         help="Report format override: csv, json or html.",
     ),
+    write_config_file: WriteConfigOption = None,
+    overwrite_config: OverwriteConfigOption = False,
     log_file: LogFileOption = None,
     log_level: LogLevelOption = "info",
     log_append: LogAppendOption = False,
@@ -1808,6 +2136,42 @@ def compare(
 
     exit_code = 0
     try:
+        _validate_write_config_options(write_config_file, overwrite_config)
+        if write_config_file is not None:
+            columns = _attach_extra_describe_columns(list(ctx.args), columns)
+            if sample_size is not None and sample_size <= 0:
+                raise CompareError("--sample must be greater than 0.")
+            if not values and sample_size is not None:
+                raise CompareError("--sample cannot be used with --no-values.")
+            _parse_ignore_columns(ignore_columns)
+            _parse_key_columns(key)
+            _write_command_config(
+                "compare",
+                write_config_file,
+                overwrite_config=overwrite_config,
+                create_config_dirs=False,
+                left_file=left_file,
+                right_file=right_file,
+                object_selector=object_selector,
+                left_object_selector=left_object_selector,
+                right_object_selector=right_object_selector,
+                values=values,
+                sample_size=sample_size,
+                columns=columns,
+                ignore_columns=ignore_columns,
+                numeric_tolerance=numeric_tolerance,
+                key=key,
+                max_differences=max_differences,
+                json_output=json_output,
+                strict=strict,
+                report=report,
+                report_format=report_format,
+                log_file=log_file,
+                log_level=log_level,
+                log_append=log_append,
+                developer_log=developer_log,
+            )
+            return
         logged_columns = list(columns or []) + list(ctx.args)
         with command_log_wrapper(
             command="compare",
@@ -1960,6 +2324,8 @@ def report(
     ),
     overwrite: OverwriteOption = False,
     create_dirs: CreateDirsOption = False,
+    write_config_file: WriteConfigOption = None,
+    overwrite_config: OverwriteConfigOption = False,
     preset: str | None = typer.Option(
         None,
         "--preset",
@@ -2036,6 +2402,66 @@ def report(
     """Generate a profile report for one dataset."""
 
     try:
+        _validate_write_config_options(write_config_file, overwrite_config)
+        if write_config_file is not None:
+            _validate_positive_option("--frequency-top", frequency_top)
+            if frequency_max_unique is not None:
+                _validate_positive_option(
+                    "--frequency-max-unique",
+                    frequency_max_unique,
+                )
+            resolve_report_options(
+                preset=preset,
+                sections=sections,
+                no_summary=no_summary,
+                no_schema=no_schema,
+                no_metadata=no_metadata,
+                no_labels=no_labels,
+                no_missing=no_missing,
+                no_describe=no_describe,
+                frequencies=frequencies,
+                no_validation=no_validation,
+                max_table_rows=max_table_rows,
+                max_preview_values=max_preview_values,
+            )
+            columns = _attach_extra_describe_columns(list(ctx.args), columns)
+            _write_command_config(
+                "report",
+                write_config_file,
+                overwrite_config=overwrite_config,
+                create_config_dirs=create_dirs,
+                input_file=input_file,
+                object_selector=object_selector,
+                output_file=output_file,
+                output_format=output_format,
+                overwrite=overwrite,
+                create_dirs=create_dirs,
+                preset=preset,
+                sections=sections,
+                no_summary=no_summary,
+                no_schema=no_schema,
+                no_metadata=no_metadata,
+                no_labels=no_labels,
+                no_missing=no_missing,
+                no_describe=no_describe,
+                frequencies=frequencies,
+                no_validation=no_validation,
+                columns=columns,
+                frequency_top=frequency_top,
+                frequency_include_missing=frequency_include_missing,
+                frequency_max_unique=frequency_max_unique,
+                max_table_rows=max_table_rows,
+                max_preview_values=max_preview_values,
+                target_format=target_format,
+                strict_validation=strict_validation,
+                json_output=json_output,
+                quiet=quiet,
+                log_file=log_file,
+                log_level=log_level,
+                log_append=log_append,
+                developer_log=developer_log,
+            )
+            return
         logged_columns = list(columns or []) + list(ctx.args)
         with command_log_wrapper(
             command="report",
@@ -2253,6 +2679,8 @@ def batch(
     ),
     overwrite: OverwriteOption = False,
     create_dirs: CreateDirsOption = False,
+    write_config_file: WriteConfigOption = None,
+    overwrite_config: OverwriteConfigOption = False,
     preserve_structure: bool = typer.Option(
         True,
         "--preserve-structure/--flatten",
@@ -2339,6 +2767,87 @@ def batch(
     exit_code = 0
 
     try:
+        _validate_write_config_options(write_config_file, overwrite_config)
+        if write_config_file is not None:
+            transform_pipeline = build_pipeline_from_cli_options(
+                select_columns=select,
+                drop_columns=drop,
+                rename_items=rename,
+                type_items=type_items,
+                type_errors=type_errors,
+                datetime_format=datetime_format,
+                filter_items=filter_items,
+                filter_mode=filter_mode,
+                recode_items=recode,
+                recode_default=recode_default,
+                update_value_labels=update_value_labels,
+                ignore_missing_columns=ignore_missing_columns,
+                reset_index=reset_index,
+            )
+            transform_options_supplied = _batch_transform_options_supplied(ctx)
+            if transform_items and transform_pipeline.is_empty():
+                raise BatchError(
+                    "--transform requires at least one transformation option."
+                )
+            if not transform_items and transform_options_supplied:
+                raise BatchError("Transformation options require --transform.")
+            transform_config_options: dict[str, Any] = {}
+            if transform_items:
+                transform_config_options = {
+                    "select": select,
+                    "drop": drop,
+                    "rename": rename,
+                    "type_items": type_items,
+                    "type_errors": type_errors,
+                    "datetime_format": datetime_format,
+                    "filter_items": filter_items,
+                    "filter_mode": filter_mode,
+                    "recode": recode,
+                    "recode_default": recode_default,
+                    "update_value_labels": update_value_labels,
+                    "ignore_missing_columns": ignore_missing_columns,
+                    "reset_index": reset_index,
+                }
+            _write_command_config(
+                "batch",
+                write_config_file,
+                overwrite_config=overwrite_config,
+                create_config_dirs=create_dirs,
+                input_path=input_path,
+                output_path=output_path,
+                to_format=to_format,
+                object_selector=object_selector,
+                object_manifest=object_manifest,
+                all_objects=all_objects,
+                transform_items=transform_items,
+                recursive=recursive,
+                overwrite=overwrite,
+                create_dirs=create_dirs,
+                preserve_structure=preserve_structure,
+                include_unsupported=include_unsupported,
+                patterns=patterns,
+                exclude_patterns=exclude_patterns,
+                dry_run=dry_run,
+                fail_fast=fail_fast,
+                allow_blocked=allow_blocked,
+                json_output=json_output,
+                report=report,
+                report_format=report_format,
+                no_progress=no_progress,
+                workers=workers,
+                validate_inputs=validate_inputs,
+                strict_validation=strict_validation,
+                input_encoding=input_encoding,
+                output_encoding=output_encoding,
+                csv_delimiter=csv_delimiter,
+                csv_decimal=csv_decimal,
+                log_file=log_file,
+                log_level=log_level,
+                log_append=log_append,
+                developer_log=developer_log,
+                **transform_config_options,
+            )
+            return
         with command_log_wrapper(
             command="batch",
             parameters={
@@ -2399,27 +2908,7 @@ def batch(
                 ignore_missing_columns=ignore_missing_columns,
                 reset_index=reset_index,
             )
-            transform_options_supplied = any(
-                (
-                    source := ctx.get_parameter_source(option_name)
-                ) is not None
-                and source.name == "COMMANDLINE"
-                for option_name in (
-                    "select",
-                    "drop",
-                    "rename",
-                    "type_items",
-                    "type_errors",
-                    "datetime_format",
-                    "filter_items",
-                    "filter_mode",
-                    "recode",
-                    "recode_default",
-                    "update_value_labels",
-                    "ignore_missing_columns",
-                    "reset_index",
-                )
-            )
+            transform_options_supplied = _batch_transform_options_supplied(ctx)
             if transform_items and transform_pipeline.is_empty():
                 raise BatchError(
                     "--transform requires at least one transformation option."

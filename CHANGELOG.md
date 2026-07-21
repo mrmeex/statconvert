@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.5.0 - 2026-07-21
+
+Repeatable workflow configuration release.
+
+### Added
+
+- Added TOML workflow configuration files with deterministic writing through Python
+  3.11's standard-library `tomllib` support and no new required dependencies.
+- Added `statconvert config init`, `statconvert config validate`, and
+  `statconvert config run`.
+- Added `config run` execution for `convert`, `transform`, `batch`, `compare`, `report`,
+  and `collect` through their existing command and service paths.
+- Added `--write-config` to `convert`, `transform`, `batch`, `compare`, `report`, and
+  `collect`.
+- Added `--overwrite-config` for explicit config-file replacement while preserving
+  ordinary `--overwrite` as the saved workflow's output policy.
+- Added config validation for required and unknown fields, types, supported formats, and
+  command-specific conflicts.
+
+### Notes
+
+- Each config file represents one existing command; 0.5.0 does not introduce a multi-step
+  workflow engine.
+- `--write-config` writes and validates TOML without executing the workflow.
+- Config support adds no required dependency.
+
 ## 0.4.0 - 2026-07-18
 
 Performance and large-file hardening release.
@@ -38,8 +64,7 @@ Performance and large-file hardening release.
   or memory-constrained runs and inspect `batch --dry-run` first.
 - 0.4.0 does not add universal streaming/chunking, dynamic worker throttling, or automatic
   memory scheduling. The default batch worker count is unchanged.
-- Public distribution remains a wheel attached to the GitHub Release; StatConvert is not
-  published to PyPI.
+- Public distribution remains a wheel attached to the GitHub Release.
 
 ## 0.3.0 - 2026-07-18
 
@@ -76,8 +101,7 @@ Compare improvements release.
   counts or comparison status.
 - Fuzzy matching, duplicate-key reconciliation, joins, merges, appends, deduplication,
   and data-repair workflows are not included.
-- Public distribution remains a wheel attached to the GitHub Release; StatConvert is not
-  published to PyPI.
+- Public distribution remains a wheel attached to the GitHub Release.
 
 ## 0.2.0 - 2026-07-17
 
@@ -109,10 +133,8 @@ Batch and object workflow release.
   final container write. Separate batch outputs provide better per-item isolation for very
   large data.
 - Object/container workflows do not append, join, merge, or deduplicate rows.
-- XLS and RData/RDA multi-object output remain deferred; current multi-object output
-  targets are XLSX and ODS.
-- Public distribution remains a wheel attached to the GitHub Release; StatConvert is not
-  published to PyPI.
+- Current multi-object output targets are XLSX and ODS.
+- Public distribution remains a wheel attached to the GitHub Release.
 
 ## 0.1.1 - 2026-07-15
 

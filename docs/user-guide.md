@@ -23,8 +23,8 @@ features such as formatting, formulas, macros, charts, or existing sheets.
 
 StatConvert requires Python 3.11 or newer. Install the downloaded release wheel from the
 GitHub Releases page; installation, upgrades, and managed deployment are covered by the
-[Administrator Guide](admin-guide.md). Build and artifact validation are private
-maintainer workflows covered by the [Packaging Guide](packaging.md).
+[Administrator Guide](admin-guide.md). Build and artifact validation remain maintainer
+workflows.
 
 Verify the installed command and list the formats available in the current environment:
 
@@ -69,6 +69,39 @@ written dataset.
 
 This sequence is a useful default, not a requirement. For a familiar dataset and target,
 you can run `convert` directly.
+
+## Repeatable TOML workflows
+
+StatConvert 0.5.0 introduces one command per TOML config file. Create and validate a
+starter without running a data workflow:
+
+```powershell
+statconvert config init batch --output batch.toml
+statconvert config validate batch.toml
+statconvert config run batch.toml
+```
+
+The starter uses snake_case fields corresponding to existing CLI options. `config run`
+executes `convert`, `transform`, `batch`, `compare`, `report`, and `collect`. Each file
+still represents one command, not a multi-step workflow. Config loading uses Python
+3.11's standard-library `tomllib` and adds no required dependency.
+
+You can also capture an existing command without running it:
+
+```powershell
+statconvert convert input.csv output.parquet --write-config convert.toml
+statconvert transform input.csv output.parquet --select id --write-config transform.toml
+statconvert batch incoming converted --to parquet --workers 1 --write-config batch.toml
+statconvert compare old.csv new.csv --key id --write-config compare.toml
+statconvert report input.csv --output report.html --preset quick --write-config report.toml
+statconvert collect manifest.csv workbook.xlsx --write-config collect.toml
+statconvert config run batch.toml
+```
+
+`--write-config` returns after writing TOML. It does not create the command's data output.
+Use `--overwrite-config` for an existing TOML file; `--overwrite` remains the saved data
+output policy. Where the command supports `--create-dirs`, it can create the config parent
+directory and is preserved in the saved workflow.
 
 ## Checking supported formats
 
@@ -221,8 +254,7 @@ statconvert convert workspace.rdata workspace.xlsx --all-objects
 ```
 
 Supported tabular objects become sheets. Unsupported objects are skipped with a warning
-when another supported object remains. RData/RDA output is still single-object, so use
-XLSX or ODS as the destination.
+when another supported object remains. Use XLSX or ODS as the destination.
 
 `convert --all-objects` writes one container. `batch --all-objects` writes a separate
 file for each supported object. The one-container command validates names and output
@@ -277,8 +309,8 @@ folder. `include=false` rows are skipped completely. Included rows marked
 `object_supported=false` or `file_supported=false` fail early. Output names must already
 be valid and unique; no automatic sanitizing or suffixing occurs.
 
-Collection supports XLSX and ODS outputs. XLS and RData/RDA collection outputs are
-deferred. `--overwrite` and `--create-dirs` apply normal output safety, while
+Collection supports XLSX and ODS outputs. `--overwrite` and `--create-dirs` apply normal
+output safety, while
 `--dry-run` creates no directory or output and does not read full datasets. If any
 included read or validation fails, the one final container write does not begin.
 
@@ -366,7 +398,7 @@ statconvert report input.sav --output report.csv
 
 HTML is convenient for viewing and sharing. JSON is suited to downstream processing, and
 CSV provides table-oriented report output. Report contents and presets are described in
-the [CLI Reference](cli.md#report). PDF reports are not currently supported.
+the [CLI Reference](cli.md#report).
 
 ## Comparing datasets
 
@@ -603,15 +635,9 @@ the [Format Guide](formats.md#metadata-preservation) and keep any generated
 every input and reports unsupported selection as an item failure. Separate the inputs or
 run the single-dataset files without `--object`.
 
-### A PDF report was requested
-
-PDF output is not supported. Generate an HTML, JSON, or CSV report instead.
-
 ## Where to go next
 
 - [Examples and Recipes](examples.md) for copyable task-oriented workflows
 - [CLI Reference](cli.md) for every command option and exit policy
 - [Format Guide](formats.md) for the capability matrix and format caveats
 - [Administrator Guide](admin-guide.md) for installation, updates, and deployment
-- [Developer Guide](developer-guide.md) for contributing and maintenance
-- [Packaging Guide](packaging.md) for builds and clean-install validation

@@ -5,9 +5,11 @@ inspecting, validating, batch-processing, comparing, reporting, and logging stat
 datasets. It uses a backend registry and a common `Dataset` model so format-specific code
 stays out of conversion and analysis workflows.
 
-Version 0.5.0 adds repeatable TOML workflow configuration for conversion,
-transformation, batch, comparison, reporting, and collection workflows. Each config file
-describes exactly one existing command and preserves its normal CLI behavior.
+Version 0.6.0 improves operator experience with clearer batch workload and live worker
+status, planning-only dry-run messaging, concise completion summaries, and consistent
+friendly errors with deterministic suggestions. Direct and config-driven workflows share
+the same behavior, and JSON output remains machine-readable. No new commands or required
+dependencies are introduced.
 
 ## Implemented features
 
@@ -102,6 +104,12 @@ workflows. Each matching command accepts `--write-config FILE`, which writes val
 TOML and does not run the workflow; use `--overwrite-config` to replace an existing
 config. Config loading uses Python 3.11's standard-library `tomllib` and adds no required
 dependency.
+
+Human batch runs show planned workload settings before execution, stable active-worker
+slots while work is running, and complete success, failure, skipped, and blocked counts
+afterward. Dry-run is explicitly planning-only. Human errors distinguish `--overwrite`,
+`--overwrite-config`, and `--create-dirs`; JSON modes bypass Rich progress and error
+rendering so stdout stays parseable.
 
 Commands that write files refuse to replace an existing output unless `--overwrite` is
 used. `convert`, `collect`, `transform`, `batch`, `report`, and `objects --output` accept

@@ -490,9 +490,15 @@ def _validate_key_columns(
     right_columns = {str(column) for column in right.columns}
     for column in key_columns:
         if column not in left_columns:
-            raise CompareError(f"Key column not found in left dataset: {column}")
+            raise CompareError(
+                f"Key column not found in left dataset: {column}",
+                suggestion="Check --key spelling or select a key present on both sides.",
+            )
         if column not in right_columns:
-            raise CompareError(f"Key column not found in right dataset: {column}")
+            raise CompareError(
+                f"Key column not found in right dataset: {column}",
+                suggestion="Check --key spelling or select a key present on both sides.",
+            )
 
 
 def _validate_unique_keys(
@@ -503,7 +509,11 @@ def _validate_unique_keys(
 ) -> None:
     duplicate_rows = dataframe.duplicated(subset=list(key_columns), keep=False)
     if bool(duplicate_rows.any()):
-        raise CompareError(f"Duplicate key values found in {side} dataset.")
+        raise CompareError(
+            f"Duplicate key values found in {side} dataset for key columns: "
+            f"{', '.join(key_columns)}.",
+            suggestion="Choose columns that uniquely identify each row.",
+        )
 
 
 def _comparison_columns(

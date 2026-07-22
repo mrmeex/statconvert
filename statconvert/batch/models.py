@@ -10,6 +10,11 @@ BATCH_STATUS_BLOCKED = "blocked"
 BATCH_STATUS_SUCCESS = "success"
 BATCH_STATUS_FAILED = "failed"
 
+BATCH_PROGRESS_STARTED = "started"
+BATCH_PROGRESS_ITEM_STARTED = "item_started"
+BATCH_PROGRESS_ITEM_FINISHED = "item_finished"
+BATCH_PROGRESS_FINISHED = "finished"
+
 
 MULTI_WORKER_MEMORY_NOTE = (
     "Each worker may hold one dataset in memory. "
@@ -35,6 +40,20 @@ class BatchWorkloadSummary:
     validation_enabled: bool = False
     object_mode: str = "none"
     memory_note: str | None = None
+
+
+@dataclass(frozen=True)
+class BatchProgressEvent:
+    """Backend-neutral execution status emitted to optional observers."""
+
+    kind: str
+    item_index: int | None = None
+    total_items: int | None = None
+    worker_id: int | None = None
+    input_path: Path | None = None
+    output_path: Path | None = None
+    status: str | None = None
+    message: str | None = None
 
 
 @dataclass

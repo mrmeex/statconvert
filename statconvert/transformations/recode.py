@@ -127,6 +127,7 @@ def _validate_columns_exist(
             + ", ".join(
                 missing_columns
             )
+            + " (operation: --recode)"
         )
 
 

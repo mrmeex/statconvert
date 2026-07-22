@@ -12,6 +12,7 @@ from statconvert.backends.base import Backend
 from statconvert.backends.capabilities import BackendCapabilities
 from statconvert.backends.objects import DatasetObjectInfo, resolve_object_selector
 from statconvert.dataset import Dataset
+from statconvert.error_suggestions import format_cli_path
 from statconvert.exceptions import (
     ConversionError,
     ObjectNotFoundError,
@@ -354,13 +355,21 @@ class RBackend(Backend):
             detail = f" {selected.message}" if selected.message else ""
             raise ObjectSelectionError(
                 f"Object '{selected.name}' is not a supported tabular dataset "
-                f"object.{detail} Available supported objects: {available}."
+                f"object.{detail} Available supported objects: {available}.",
+                suggestion=(
+                    f"Run `statconvert objects {format_cli_path(filename)}` and select "
+                    "a supported object."
+                ),
             )
 
         workspace_object = workspace_objects[selected.index or 0]
         if not isinstance(workspace_object.value, pd.DataFrame):
             raise ObjectSelectionError(
-                f"Object '{selected.name}' is not a supported tabular dataset object."
+                f"Object '{selected.name}' is not a supported tabular dataset object.",
+                suggestion=(
+                    f"Run `statconvert objects {format_cli_path(filename)}` and select "
+                    "a supported object."
+                ),
             )
         return workspace_object.value, workspace_object.key
 

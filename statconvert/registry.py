@@ -3,7 +3,12 @@ from statconvert.backends.capabilities import BackendCapabilities
 from statconvert.backends.objects import DatasetObjectInfo, NamedDataset
 from statconvert.dataset import Dataset
 from statconvert.dataset_options import DatasetReadOptions, DatasetWriteOptions
-from statconvert.exceptions import ConversionError, ObjectSelectionNotSupportedError
+from statconvert.error_suggestions import did_you_mean
+from statconvert.exceptions import (
+    ConversionError,
+    ObjectSelectionNotSupportedError,
+    UnsupportedFormatError,
+)
 
 from collections.abc import Sequence
 from dataclasses import replace
@@ -199,8 +204,12 @@ def get_extension(filename: str) -> str:
     extension = Path(filename).suffix.lower()
 
     if extension not in FORMAT_INFO:
-        raise ValueError(
-            f"Unsupported file format: {extension}"
+        raise UnsupportedFormatError(
+            f"Unsupported file format: {extension}",
+            suggestion=did_you_mean(
+                extension.lstrip("."),
+                (choice.lstrip(".") for choice in FORMAT_INFO),
+            ),
         )
 
     return extension
@@ -234,8 +243,9 @@ def get_backend(
     """
 
     if backend_name not in BACKENDS:
-        raise ValueError(
-            f"No backend installed: {backend_name}"
+        raise UnsupportedFormatError(
+            f"No backend installed: {backend_name}",
+            suggestion=did_you_mean(backend_name, BACKENDS),
         )
 
     return BACKENDS[backend_name]
@@ -579,8 +589,15 @@ def resolve_format_or_backend(
             "capabilities": get_format_capabilities(extension),
         }
 
-    raise ValueError(
-        f"Unsupported format or backend: {target}"
+    raise UnsupportedFormatError(
+        f"Unsupported format or backend: {target}",
+        suggestion=did_you_mean(
+            target.lstrip("."),
+            [
+                *(extension.lstrip(".") for extension in FORMAT_INFO),
+                *BACKENDS,
+            ],
+        ),
     )
 
 

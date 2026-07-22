@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from difflib import get_close_matches
 import math
 from typing import Any, Callable
 
+from statconvert.error_suggestions import did_you_mean
 from statconvert.exceptions import ConfigError
-from statconvert.registry import can_write_format, resolve_format_info
+from statconvert.registry import (
+    can_write_format,
+    resolve_format_info,
+    supported_extensions,
+)
 
 from .models import SUPPORTED_COMMANDS, CommandName, WorkflowConfig
 
@@ -255,7 +259,8 @@ def validate_config(raw: object) -> WorkflowConfig:
         supported = ", ".join(SUPPORTED_COMMANDS)
         raise ConfigError(
             f"Config error: unsupported command '{command_value}'. "
-            f"Use one of: {supported}."
+            f"Use one of: {supported}.",
+            suggestion=did_you_mean(command_value, SUPPORTED_COMMANDS),
         )
 
     command: CommandName = command_value
@@ -274,9 +279,10 @@ def _validate_unknown_fields(
     for name in options:
         if name in fields:
             continue
-        suggestion = get_close_matches(name, fields, n=1, cutoff=0.65)
-        suffix = f" Did you mean '{suggestion[0]}'?" if suggestion else ""
-        raise ConfigError(f"Config error: unknown field '{name}'.{suffix}")
+        raise ConfigError(
+            f"Config error: unknown field '{name}'.",
+            suggestion=did_you_mean(name, fields, cutoff=0.65),
+        )
 
 
 def _validate_fields(
@@ -288,7 +294,11 @@ def _validate_fields(
         if field.required and name not in options:
             raise ConfigError(
                 f"Config error: missing required field '{name}' "
-                f"for command '{command}'."
+                f"for command '{command}'.",
+                suggestion=(
+                    f"Run `statconvert config init {command} --output {command}.toml` "
+                    "to create a starter config."
+                ),
             )
         if name not in options:
             continue
@@ -448,8 +458,14 @@ def _validate_batch(options: dict[str, Any]) -> None:
     if isinstance(output_format, str):
         resolved = resolve_format_info(output_format)
         if resolved is None or not can_write_format(output_format):
+            writable = [
+                extension.lstrip(".")
+                for extension in supported_extensions()
+                if can_write_format(extension)
+            ]
             raise ConfigError(
-                f"Config error: unsupported output format '{output_format}'."
+                f"Config error: unsupported output format '{output_format}'.",
+                suggestion=did_you_mean(output_format.lstrip("."), writable),
             )
 
 

@@ -65,6 +65,10 @@ Add `--overwrite-config` only when replacing the TOML file intentionally. The no
 `--overwrite` flag is saved for future data-output replacement and does not overwrite the
 config itself.
 
+If either file already exists, StatConvert names the protected path and suggests the
+matching option. Use `--overwrite` for a converted dataset and `--overwrite-config` for a
+TOML file; use `--create-dirs` when the selected output parent does not exist.
+
 ## Example files and paths
 
 Most recipes use these folders:
@@ -428,6 +432,9 @@ does not read datasets, create directories, write files, or replace existing out
 previews paths, capabilities, collisions, unique-file counts, total/largest input sizes,
 worker count, target/structure settings, and object/transform/validation modes. Multiple
 workers may hold multiple datasets concurrently, so use `--workers 1` for huge files.
+Normal terminal runs show the workload before conversion, active file slots while workers
+run, completed counts, and a concise result afterward. A requested report path is repeated
+at completion. Add `--json` for one machine-readable document without Rich progress text.
 
 ```powershell
 statconvert batch .\input .\output --to parquet --recursive --workers 2 --dry-run
@@ -447,6 +454,8 @@ Capture a JSON plan or write a durable CSV result report:
 statconvert batch .\input .\output --to parquet --dry-run --json > .\output\batch-plan.json
 statconvert batch .\input .\output --to parquet --report .\reports\batch-results.csv
 ```
+
+These commands and recipes remain documentation-only examples.
 
 For regional CSV output, combine a semicolon field delimiter with a comma decimal
 separator:
@@ -667,6 +676,17 @@ or JSON output. They help support staff reproduce failures and identify the acti
 context. Logs can contain paths, options, and error details, so handle them according to
 the environment's privacy and retention rules. Use `--log-append` only when retaining
 earlier entries is intentional.
+
+For common mistakes, read the `Suggestion` line before enabling debug output. Format typos
+may suggest a supported spelling, and object-selection errors recommend listing available
+objects first:
+
+```powershell
+statconvert objects .\input\workbook.xlsx
+statconvert convert .\input\workbook.xlsx .\output\data.parquet --object Data
+```
+
+Examples remain documentation-only; copy and adapt the commands in this guide.
 
 ## Suggested safe workflow
 

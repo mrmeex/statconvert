@@ -11,7 +11,12 @@ from statconvert.backends.objects import (
 )
 from statconvert.batch.exceptions import BatchError
 from statconvert.dataset_options import DatasetReadOptions, DatasetWriteOptions
-from statconvert.exceptions import ConversionError, ObjectSelectionError
+from statconvert.exceptions import (
+    AmbiguousObjectError,
+    ConversionError,
+    ObjectSelectionError,
+    StatConvertError,
+)
 from statconvert.inspection import (
     ValidationFailedError,
     ValidationIssue,
@@ -288,8 +293,13 @@ def _resolve_source_object(
             path=input_file,
         )
     except (ValueError, ObjectSelectionError, ConversionError) as exc:
+        detail = exc.message if isinstance(exc, StatConvertError) else str(exc)
+        if isinstance(exc, AmbiguousObjectError):
+            detail = f"Input contains multiple objects. {detail}"
+        suggestion = exc.suggestion if isinstance(exc, StatConvertError) else None
         raise CollectionError(
-            f"Object collection manifest row {row_number}:\n{exc}"
+            f"{detail}\nObject collection manifest row: {row_number}.",
+            suggestion=suggestion,
         ) from None
 
     if not selected.supported:

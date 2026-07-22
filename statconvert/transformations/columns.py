@@ -41,6 +41,7 @@ class SelectColumnsTransformation(Transformation):
             ),
             requested_columns=self.columns,
             ignore_missing=self.ignore_missing,
+            operation="--select",
         )
 
         return _dataset_with_columns(
@@ -87,6 +88,7 @@ class DropColumnsTransformation(Transformation):
             available_columns=available_columns,
             requested_columns=self.columns,
             ignore_missing=self.ignore_missing,
+            operation="--drop",
         )
         drop_names = {
             str(column)
@@ -156,6 +158,7 @@ def _validate_selected_columns(
     available_columns: list[Any],
     requested_columns: list[str],
     ignore_missing: bool = False,
+    operation: str = "--select",
 ) -> list[Any]:
     """
     Validate selected columns and return matching DataFrame labels.
@@ -170,6 +173,7 @@ def _validate_selected_columns(
         available_columns=available_columns,
         requested_columns=requested_columns,
         ignore_missing=ignore_missing,
+        operation=operation,
     )
 
     if not selected_columns:
@@ -184,6 +188,7 @@ def _validate_requested_columns(
     available_columns: list[Any],
     requested_columns: list[str],
     ignore_missing: bool = False,
+    operation: str | None = None,
 ) -> list[Any]:
     """
     Validate requested columns and return matching DataFrame labels.
@@ -200,11 +205,13 @@ def _validate_requested_columns(
     ]
 
     if missing_columns and not ignore_missing:
+        operation_detail = f" (operation: {operation})" if operation else ""
         raise TransformationError(
             "Column not found: "
             + ", ".join(
                 missing_columns
             )
+            + operation_detail
         )
 
     return [
@@ -252,6 +259,7 @@ def _validate_rename_map(
             + ", ".join(
                 missing_columns
             )
+            + " (operation: --rename)"
         )
 
     validated_map = {

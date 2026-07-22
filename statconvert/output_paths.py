@@ -11,6 +11,8 @@ def validate_output_file_path(
     overwrite: bool = False,
     create_dirs: bool = False,
     dry_run: bool = False,
+    overwrite_option: str = "--overwrite",
+    output_label: str = "Output file",
 ) -> Path:
     """Validate one output file and optionally create its missing parent."""
 
@@ -21,8 +23,10 @@ def validate_output_file_path(
     validate_output_parent_directory(path, create_dirs=create_dirs)
     if path.exists() and not overwrite:
         raise OutputPathError(
-            f"Output file already exists: {path}\n"
-            "Use --overwrite to replace it."
+            f"{output_label} already exists: {path}",
+            suggestion=(
+                f"Use {overwrite_option} to replace it, or choose a different path."
+            ),
         )
     return path
 
@@ -41,12 +45,15 @@ def validate_output_parent_directory(
         return path
     if parent.exists():
         if not parent.is_dir():
-            raise OutputPathError(f"Output directory is not a directory: {parent}")
+            raise OutputPathError(
+                f"Output directory is not a directory: {parent}",
+                suggestion="Choose an output path whose parent is a directory.",
+            )
         return path
     if not create_dirs:
         raise OutputPathError(
-            f"Output directory does not exist: {parent}\n"
-            "Use --create-dirs to create missing output directories."
+            f"Output directory does not exist: {parent}",
+            suggestion="Use --create-dirs to create missing output directories.",
         )
     if not dry_run:
         parent.mkdir(parents=True, exist_ok=True)
@@ -64,12 +71,15 @@ def validate_output_root_directory(
     path = Path(output_path)
     if path.exists():
         if not path.is_dir():
-            raise OutputPathError(f"Output directory is not a directory: {path}")
+            raise OutputPathError(
+                f"Output directory is not a directory: {path}",
+                suggestion="Choose a directory path for the batch output root.",
+            )
         return path
     if not create_dirs:
         raise OutputPathError(
-            f"Output directory does not exist: {path}\n"
-            "Use --create-dirs to create it."
+            f"Output directory does not exist: {path}",
+            suggestion="Use --create-dirs to create it.",
         )
     if not dry_run:
         path.mkdir(parents=True, exist_ok=True)

@@ -90,6 +90,10 @@ through their existing command and service paths. Output safety, transformation 
 batch planning, comparison exit policy, reports, collection naming, JSON, and progress
 behavior remain unchanged.
 
+Validation and execution errors identify the config file. When a required field is
+missing, the error points to `config init` for a starter file; close field or format typos
+may include a concise `Did you mean ...?` suggestion.
+
 ### Writing configs from commands
 
 `convert`, `transform`, `batch`, `compare`, `report`, and `collect` accept
@@ -151,6 +155,19 @@ statconvert frequencies input.csv --json > frequencies.json
 
 `formats`, `backends`, `capabilities`, `info`, `peek`, `schema`, `labels`, and `metadata`
 do not currently have `--json` options.
+
+## Friendly errors and suggestions
+
+Common operator errors use a short `Error` message followed by a `Suggestion` when there
+is an obvious corrective action. Existing workflow outputs suggest `--overwrite`, config
+files created by `--write-config` suggest `--overwrite-config`, and missing output parents
+suggest `--create-dirs`. Unknown formats and backends may suggest a close supported
+spelling. Object-selection errors point to `statconvert objects INPUT` before recommending
+`--object`.
+
+Normal mode omits tracebacks. Use the global `--debug` option before the command when
+traceback detail is needed. JSON-capable command paths keep Rich error and progress
+rendering out of JSON stdout.
 
 ## Exit codes
 
@@ -600,7 +617,12 @@ workers. Dry-run and JSON planning output include planned item/file counts, supp
 skipped file counts, total input bytes, largest input size, worker count, target, structure,
 transform/validation state, and object mode. These are filesystem facts, not peak-memory
 estimates. When workers exceed one, console output notes that each worker may hold one
-dataset in memory; use `--workers 1` for very large files. With `--transform`, each item
+dataset in memory; use `--workers 1` for very large files. Human execution output shows a
+concise workload table before conversion, the files currently active in stable worker
+slots, completed status counts, and a result summary afterward. When a report is requested,
+its path is shown with the result; failed runs include a short corrective next step.
+`--json` and JSON config runs bypass Rich progress so stdout remains one parseable JSON
+document. Worker defaults and scheduling semantics are unchanged. With `--transform`, each item
 is read, transformed, optionally validated, and then written. The same transformation
 specification applies to every item; transformation
 failures use normal item-failure and fail-fast behavior. Dry-run parses the specification

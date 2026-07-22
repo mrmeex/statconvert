@@ -4,6 +4,7 @@ from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
+from threading import get_ident
 from time import perf_counter
 from typing import Callable
 
@@ -14,17 +15,24 @@ from statconvert.batch.models import (
     BATCH_STATUS_PENDING,
     BATCH_STATUS_SKIPPED,
     BATCH_STATUS_SUCCESS,
+    BATCH_PROGRESS_FINISHED,
+    BATCH_PROGRESS_ITEM_FINISHED,
+    BATCH_PROGRESS_ITEM_STARTED,
+    BATCH_PROGRESS_STARTED,
     MULTI_WORKER_MEMORY_NOTE,
     BatchItem,
     BatchPlan,
+    BatchProgressEvent,
     BatchResult,
 )
 from statconvert.dataset_options import DatasetReadOptions, DatasetWriteOptions
+from statconvert.exceptions import OutputPathError
 from statconvert.inspection import ValidationIssue, validate_dataset
 from statconvert.transformations.pipeline import TransformationPipeline
 
 
 BatchItemCallback = Callable[[BatchItem], None]
+BatchProgressCallback = Callable[[BatchProgressEvent], None]
 
 
 def execute_batch_plan(
@@ -42,6 +50,7 @@ def execute_batch_plan(
     write_options: DatasetWriteOptions | None = None,
     on_option_warning: Callable[[str], None] | None = None,
     transform_pipeline: TransformationPipeline | None = None,
+    on_progress: BatchProgressCallback | None = None,
 ) -> BatchResult:
     """
     Execute pending items sequentially or with a bounded thread pool.
@@ -64,6 +73,13 @@ def execute_batch_plan(
         )
         for item in plan.items
     ]
+    _emit_progress(
+        on_progress,
+        BatchProgressEvent(
+            kind=BATCH_PROGRESS_STARTED,
+            total_items=len(result_items),
+        ),
+    )
     if workers == 1:
         _execute_sequential(
             result_items,
@@ -80,6 +96,7 @@ def execute_batch_plan(
             transform_pipeline=transform_pipeline,
             on_item_start=on_item_start,
             on_item_finish=on_item_finish,
+            on_progress=on_progress,
         )
     else:
         _execute_parallel(
@@ -98,7 +115,16 @@ def execute_batch_plan(
             transform_pipeline=transform_pipeline,
             on_item_start=on_item_start,
             on_item_finish=on_item_finish,
+            on_progress=on_progress,
         )
+
+    _emit_progress(
+        on_progress,
+        BatchProgressEvent(
+            kind=BATCH_PROGRESS_FINISHED,
+            total_items=len(result_items),
+        ),
+    )
 
     return BatchResult(
         plan=plan,
@@ -126,12 +152,14 @@ def _execute_sequential(
     transform_pipeline: TransformationPipeline | None,
     on_item_start: BatchItemCallback | None,
     on_item_finish: BatchItemCallback | None,
+    on_progress: BatchProgressCallback | None,
 ) -> None:
     """Execute items in plan order, preserving the original behavior."""
 
     fail_fast_triggered = False
 
-    for item in items:
+    total_items = len(items)
+    for index, item in enumerate(items):
         if fail_fast_triggered:
             _mark_not_processed_due_to_fail_fast(
                 item
@@ -140,6 +168,7 @@ def _execute_sequential(
                 on_item_finish,
                 item,
             )
+            _emit_item_finished(on_progress, item, index, total_items)
             continue
 
         if item.status in {
@@ -150,6 +179,7 @@ def _execute_sequential(
                 on_item_finish,
                 item,
             )
+            _emit_item_finished(on_progress, item, index, total_items)
             continue
 
         if item.status != BATCH_STATUS_PENDING:
@@ -157,12 +187,14 @@ def _execute_sequential(
                 on_item_finish,
                 item,
             )
+            _emit_item_finished(on_progress, item, index, total_items)
             continue
 
         _call_callback(
             on_item_start,
             item,
         )
+        _emit_item_started(on_progress, item, index, total_items)
         _execute_one_item(
             item,
             create_output_dirs=create_output_dirs,
@@ -180,6 +212,7 @@ def _execute_sequential(
             on_item_finish,
             item,
         )
+        _emit_item_finished(on_progress, item, index, total_items)
 
         if fail_fast and item.status == BATCH_STATUS_FAILED:
             fail_fast_triggered = True
@@ -200,6 +233,7 @@ def _execute_parallel(
     transform_pipeline: TransformationPipeline | None,
     on_item_start: BatchItemCallback | None,
     on_item_finish: BatchItemCallback | None,
+    on_progress: BatchProgressCallback | None,
 ) -> None:
     """Execute pending items concurrently while collecting results on the main thread."""
 
@@ -208,10 +242,12 @@ def _execute_parallel(
         for index, item in enumerate(items)
         if item.status == BATCH_STATUS_PENDING
     ]
-    terminal = [item for item in items if item.status != BATCH_STATUS_PENDING]
-
-    for item in terminal:
+    total_items = len(items)
+    for index, item in enumerate(items):
+        if item.status == BATCH_STATUS_PENDING:
+            continue
         _call_callback(on_item_finish, item)
+        _emit_item_finished(on_progress, item, index, total_items)
 
     futures: dict[Future[BatchItem], tuple[int, BatchItem]] = {}
     fail_fast_triggered = False
@@ -232,6 +268,9 @@ def _execute_parallel(
                 write_options,
                 on_option_warning,
                 transform_pipeline,
+                on_progress,
+                index,
+                total_items,
             )
             futures[future] = (index, item)
 
@@ -241,6 +280,7 @@ def _execute_parallel(
             if future.cancelled():
                 _mark_not_processed_due_to_fail_fast(planned_item)
                 completed_item = planned_item
+                _emit_item_finished(on_progress, completed_item, index, total_items)
             else:
                 completed_item = _collect_worker_result(future, planned_item)
 
@@ -272,22 +312,29 @@ def _execute_one_item(
     write_options: DatasetWriteOptions | None = None,
     on_option_warning: Callable[[str], None] | None = None,
     transform_pipeline: TransformationPipeline | None = None,
+    on_progress: BatchProgressCallback | None = None,
+    item_index: int | None = None,
+    total_items: int | None = None,
 ) -> BatchItem:
     """Complete one independent item and return it to the collecting thread."""
 
-    _execute_item(
-        item,
-        create_output_dirs=create_output_dirs,
-        overwrite=overwrite,
-        validate=validate,
-        strict_validation=strict_validation,
-        target_format=target_format,
-        object_selector=object_selector,
-        read_options=read_options,
-        write_options=write_options,
-        on_option_warning=on_option_warning,
-        transform_pipeline=transform_pipeline,
-    )
+    _emit_item_started(on_progress, item, item_index, total_items)
+    try:
+        _execute_item(
+            item,
+            create_output_dirs=create_output_dirs,
+            overwrite=overwrite,
+            validate=validate,
+            strict_validation=strict_validation,
+            target_format=target_format,
+            object_selector=object_selector,
+            read_options=read_options,
+            write_options=write_options,
+            on_option_warning=on_option_warning,
+            transform_pipeline=transform_pipeline,
+        )
+    finally:
+        _emit_item_finished(on_progress, item, item_index, total_items)
     return item
 
 
@@ -421,9 +468,11 @@ def _validate_item_ready(
         )
 
     if item.output_file.exists() and not overwrite:
-        raise FileExistsError(
-            f"Output file already exists: {item.output_file}\n"
-            "Use --overwrite to replace it."
+        raise OutputPathError(
+            f"Output file already exists: {item.output_file}",
+            suggestion=(
+                "Use --overwrite to replace it, or choose a different output path."
+            ),
         )
 
 
@@ -554,3 +603,52 @@ def _call_callback(
     callback(
         item
     )
+
+
+def _emit_item_started(
+    callback: BatchProgressCallback | None,
+    item: BatchItem,
+    item_index: int | None,
+    total_items: int | None,
+) -> None:
+    _emit_progress(
+        callback,
+        BatchProgressEvent(
+            kind=BATCH_PROGRESS_ITEM_STARTED,
+            item_index=item_index,
+            total_items=total_items,
+            worker_id=get_ident(),
+            input_path=item.input_file,
+            output_path=item.output_file,
+            status=item.status,
+        ),
+    )
+
+
+def _emit_item_finished(
+    callback: BatchProgressCallback | None,
+    item: BatchItem,
+    item_index: int | None,
+    total_items: int | None,
+) -> None:
+    _emit_progress(
+        callback,
+        BatchProgressEvent(
+            kind=BATCH_PROGRESS_ITEM_FINISHED,
+            item_index=item_index,
+            total_items=total_items,
+            worker_id=get_ident(),
+            input_path=item.input_file,
+            output_path=item.output_file,
+            status=item.status,
+            message=item.error or item.reason,
+        ),
+    )
+
+
+def _emit_progress(
+    callback: BatchProgressCallback | None,
+    event: BatchProgressEvent,
+) -> None:
+    if callback is not None:
+        callback(event)

@@ -34,7 +34,11 @@ class CompareOptions:
         ]
         if ignored_keys:
             raise CompareError(
-                f"Key columns cannot be ignored: {', '.join(ignored_keys)}"
+                f"Key columns cannot be ignored: {', '.join(ignored_keys)}",
+                suggestion=(
+                    "Remove key columns from --ignore-columns, or choose different "
+                    "--key columns."
+                ),
             )
 
 

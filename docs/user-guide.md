@@ -103,6 +103,12 @@ Use `--overwrite-config` for an existing TOML file; `--overwrite` remains the sa
 output policy. Where the command supports `--create-dirs`, it can create the config parent
 directory and is preserved in the saved workflow.
 
+Config validation errors name the TOML file and command context. Close field or output
+format typos may include a suggestion, and a missing required field points to
+`statconvert config init` for a valid starter file. The same output safety wording is used
+when a saved config is run: `--overwrite` controls workflow outputs, while
+`--overwrite-config` controls only config replacement.
+
 ## Checking supported formats
 
 Use `formats` for the installed extension matrix and `capabilities` for one format or
@@ -457,6 +463,14 @@ subfolders generated below an existing root are created automatically during exe
 Because dry runs do not read container contents,
 object-selection problems are detected during execution rather than during the dry run.
 
+During a normal human run, StatConvert first shows the planned item count, workers, target,
+structure, object mode, transformation/validation state, and report setting. The live area
+then shows the current file for one worker or active file slots for multiple workers, plus
+completed status counts. The final table includes input and output names, concise reasons,
+the report path when one was written, and a next step after failures. `--json` suppresses
+this Rich output and remains suitable for piping. The same behavior applies when an
+equivalent batch configuration is run with `statconvert config run`.
+
 `--object` applies the same exact name or zero-based index to every pending input. This
 shared-selector mode does not expand every sheet or R object. In a mixed batch, a
 single-dataset input such as
@@ -571,8 +585,18 @@ a `--json` option. For `report`, the output filename selects an HTML, JSON, or C
 report.
 
 JSON output is written separately from Rich terminal rendering and can be redirected or
-piped to another program. Keep diagnostic logging in a file so standard output remains
-machine-readable.
+piped to another program. Batch live workload and worker status are not written in JSON
+mode, including batch workflows launched through `config run`. Keep diagnostic logging in
+a file so standard output remains machine-readable.
+
+## Understanding friendly errors
+
+Common human-facing failures pair a concise error with a corrective suggestion. A format
+typo may suggest the closest installed format; a workbook selection failure points to
+`statconvert objects INPUT`; and batch output identifies skipped or failed items before
+showing a next step. These messages do not change conversion, comparison, transformation,
+or configuration semantics. Run with global `--debug` before the command when traceback
+detail is needed.
 
 ## Logging
 

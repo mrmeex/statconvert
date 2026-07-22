@@ -215,7 +215,7 @@ def _resolve_column(
 
     if requested_column not in column_lookup:
         raise TransformationError(
-            f"Column not found: {requested_column}"
+            f"Column not found: {requested_column} (operation: --filter)"
         )
 
     return column_lookup[requested_column]

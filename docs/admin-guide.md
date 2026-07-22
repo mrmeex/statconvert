@@ -308,6 +308,11 @@ container write, so the combined selected data must fit comfortably in memory. R
 object discovery can also load workspace data while classifying objects. For large object
 sets, prefer separate batch outputs and conservative worker counts.
 
+Human batch runs display workload settings before execution, active worker/current-file
+slots while running, and complete result counts with actionable issue details afterward.
+The same presentation is used by `config run`; JSON mode remains plain and parseable.
+Legacy terminal encodings receive ASCII progress/status markers automatically.
+
 ## Release wheel provenance
 
 The wheel attached to a GitHub Release is the supported public installation artifact.

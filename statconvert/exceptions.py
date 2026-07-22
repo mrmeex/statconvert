@@ -1,8 +1,18 @@
 class StatConvertError(Exception):
-    """Base exception."""
+    """Base exception with an optional concise operator suggestion."""
+
+    def __init__(self, message: str, *, suggestion: str | None = None) -> None:
+        super().__init__(message)
+        self.message = message
+        self.suggestion = suggestion
+
+    def __str__(self) -> str:
+        if self.suggestion is None:
+            return self.message
+        return f"{self.message}\nSuggestion: {self.suggestion}"
 
 
-class UnsupportedFormatError(StatConvertError):
+class UnsupportedFormatError(StatConvertError, ValueError):
     """Format is not supported."""
 
 

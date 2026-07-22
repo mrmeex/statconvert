@@ -5,6 +5,7 @@ from fnmatch import fnmatchcase
 from pathlib import Path
 
 from statconvert.batch.exceptions import BatchError
+from statconvert.error_suggestions import did_you_mean
 from statconvert.batch.models import (
     BATCH_STATUS_BLOCKED,
     BATCH_STATUS_PENDING,
@@ -49,8 +50,10 @@ def normalize_target_extension(
     )
 
     if not format_info:
+        choices = [extension.lstrip(".") for extension in supported_extensions()]
         raise BatchError(
-            f"Unsupported target format: {target}"
+            f"Unsupported target format: {target}",
+            suggestion=did_you_mean(target.lstrip("."), choices),
         )
 
     _, info = format_info
@@ -220,7 +223,11 @@ def build_batch_plan(
 
     if not discovered_files:
         raise BatchError(
-            "No input files were discovered."
+            "No input files were discovered.",
+            suggestion=(
+                "Check the input path and pattern filters, or add --recursive to "
+                "include subfolders."
+            ),
         )
 
     options = BatchPlanningOptions(
@@ -272,7 +279,11 @@ def build_batch_plan(
 
     if not items:
         raise BatchError(
-            "No supported input files were discovered."
+            "No supported input files were discovered.",
+            suggestion=(
+                "Run `statconvert formats` to review readable formats, or choose a "
+                "folder containing supported files."
+            ),
         )
 
     if all_objects:

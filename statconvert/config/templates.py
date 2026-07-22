@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 
+from statconvert.error_suggestions import did_you_mean
 from statconvert.exceptions import ConfigError
 
 from .models import SUPPORTED_COMMANDS, CommandName, WorkflowConfig
@@ -73,6 +74,7 @@ def create_template(command: str) -> WorkflowConfig:
     if normalized not in SUPPORTED_COMMANDS:
         supported = ", ".join(SUPPORTED_COMMANDS)
         raise ConfigError(
-            f"Config error: unsupported command '{command}'. Use one of: {supported}."
+            f"Config error: unsupported command '{command}'. Use one of: {supported}.",
+            suggestion=did_you_mean(normalized, SUPPORTED_COMMANDS),
         )
     return validate_config(deepcopy(_TEMPLATES[normalized]))

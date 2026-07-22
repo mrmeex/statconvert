@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.6.0 - 2026-07-22
+
+### Added
+
+- Added backend-neutral batch progress events for execution start, real worker item start,
+  item finish, and execution finish.
+- Added concise human batch workload output and live active worker/file slots.
+- Added deterministic close-match suggestions for common format, backend, command, and
+  config-field typos.
+- Added actionable object-selection, batch no-input, compare-key, and transformation
+  error guidance.
+
+### Improved
+
+- Batch completion output now includes output names, requested report paths, and a short
+  corrective next step after failures.
+- Direct and config-driven batch runs use the same status path, while JSON output continues
+  to bypass Rich rendering and remains parseable.
+- Worker defaults, scheduling, conversion results, and configuration semantics are
+  unchanged.
+- Human errors now use a consistent error-and-suggestion layout. Workflow output
+  collisions suggest `--overwrite`, config-file collisions suggest
+  `--overwrite-config`, and missing output parents suggest `--create-dirs`.
+- Config validation errors identify the config file, while JSON command output remains
+  separate from Rich rendering and machine-readable.
+- Human progress and completion markers fall back to ASCII when the active terminal
+  encoding cannot represent their Unicode forms.
+
+### Notes
+
+- No new commands were added; examples remain documentation-only.
+- Worker defaults, scheduling, conversion results, and batch execution semantics are
+  unchanged.
+- No new required dependencies were added.
+
 ## 0.5.0 - 2026-07-21
 
 Repeatable workflow configuration release.

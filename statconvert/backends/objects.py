@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from statconvert.dataset import Dataset
+from statconvert.error_suggestions import format_cli_path
 from statconvert.exceptions import AmbiguousObjectError, ObjectNotFoundError
 
 
@@ -76,18 +77,23 @@ def resolve_object_selector(
         f"{info.index}: {info.name}" if info.index is not None else info.name
         for info in objects
     )
+    list_command = f"statconvert objects {format_cli_path(path)}"
 
     if not objects:
         raise ObjectNotFoundError(
-            f"No {plural_label} were found in {path_name}."
+            f"No {plural_label} were found in {path_name}.",
+            suggestion=f"Run `{list_command}` to inspect the container.",
         )
 
     if selector is None:
         if len(objects) == 1:
             return objects[0]
         raise AmbiguousObjectError(
-            f"This file contains multiple {plural_label}. "
-            f"Use --object to choose one. Available {plural_label}: {available}."
+            f"multiple {plural_label}: Use --object to choose one for {path_name}. "
+            f"Available {plural_label}: {available}.",
+            suggestion=(
+                f"Run `{list_command}` to inspect exact names and indices."
+            ),
         )
 
     matches = [
@@ -100,18 +106,21 @@ def resolve_object_selector(
     if len(matches) > 1:
         raise AmbiguousObjectError(
             f"{object_label} selector '{selector}' is ambiguous in {path_name}. "
-            f"Available {plural_label}: {available}."
+            f"Available {plural_label}: {available}.",
+            suggestion=f"Run `{list_command}` to inspect exact names and indices.",
         )
 
     if _is_integer_selector(selector):
         raise ObjectNotFoundError(
             f"{object_label} index {selector} is out of range for {path_name}. "
-            f"Available {plural_label}: {available}."
+            f"Available {plural_label}: {available}.",
+            suggestion=f"Run `{list_command}` to list available {plural_label}.",
         )
 
     raise ObjectNotFoundError(
         f"{object_label} '{selector}' was not found in {path_name}. "
-        f"Available {plural_label}: {available}."
+        f"Available {plural_label}: {available}.",
+        suggestion=f"Run `{list_command}` to list available {plural_label}.",
     )
 
 

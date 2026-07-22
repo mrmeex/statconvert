@@ -87,6 +87,7 @@ from statconvert.ui import (
     show_backends_table,
     show_batch_plan,
     show_batch_result,
+    show_batch_workload,
     run_batch_with_progress,
     show_capabilities_panel,
     show_collection_plan,
@@ -422,6 +423,7 @@ def _write_command_config(
         config_file,
         overwrite=overwrite_config,
         create_dirs=create_config_dirs,
+        overwrite_option="--overwrite-config",
     )
     show_config_written(path, command)
 
@@ -2983,9 +2985,14 @@ def batch(
             if dry_run:
                 if report is not None:
                     write_batch_plan_report(plan, report, report_format)
+                if not json_output:
+                    console.print(
+                        "[bold]Dry run:[/bold] planning only; no datasets will be converted."
+                    )
                 _show_batch_json_or_plan(
                     plan,
                     json_output,
+                    report_path=report,
                 )
                 logger.info(
                     "Batch plan result: total=%s pending=%s skipped=%s blocked=%s",
@@ -3000,6 +3007,7 @@ def batch(
                 _show_batch_json_or_plan(
                     plan,
                     json_output,
+                    report_path=report,
                 )
 
                 if not json_output:
@@ -3018,6 +3026,8 @@ def batch(
 
             else:
                 if json_output or no_progress:
+                    if no_progress and not json_output:
+                        show_batch_workload(plan, report_path=report)
                     result = execute_batch_plan(
                         plan,
                         fail_fast=fail_fast,
@@ -3042,6 +3052,7 @@ def batch(
                         write_options=write_options,
                         on_option_warning=option_warning,
                         transform_pipeline=active_transform_pipeline,
+                        report_path=report,
                     )
 
                 if report is not None:
@@ -3053,7 +3064,8 @@ def batch(
                     )
                 else:
                     show_batch_result(
-                        result
+                        result,
+                        report_path=report,
                     )
 
                 logger.info(
@@ -3089,6 +3101,7 @@ def batch(
 def _show_batch_json_or_plan(
     plan,
     json_output: bool,
+    report_path: str | None = None,
 ) -> None:
     """
     Show a batch plan in either scriptable or Rich format.
@@ -3101,7 +3114,8 @@ def _show_batch_json_or_plan(
         return
 
     show_batch_plan(
-        plan
+        plan,
+        report_path=report_path,
     )
 
 

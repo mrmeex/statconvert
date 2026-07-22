@@ -2,7 +2,12 @@ from .console import console
 from .compare import show_dataset_comparison
 from .config import show_config_created, show_config_valid, show_config_written
 from .collection import show_collection_plan, show_collection_result
-from .batch import run_batch_with_progress, show_batch_plan, show_batch_result
+from .batch import (
+    run_batch_with_progress,
+    show_batch_plan,
+    show_batch_result,
+    show_batch_workload,
+)
 from .errors import (
     show_error,
     show_success,
@@ -43,6 +48,7 @@ __all__ = [
     "show_backends_table",
     "show_batch_plan",
     "show_batch_result",
+    "show_batch_workload",
     "run_batch_with_progress",
     "show_capabilities_panel",
     "show_collection_plan",

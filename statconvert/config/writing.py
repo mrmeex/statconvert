@@ -83,6 +83,7 @@ def write_config(
     *,
     overwrite: bool = False,
     create_dirs: bool = False,
+    overwrite_option: str = "--overwrite",
 ) -> Path:
     """Validate and safely write a StatConvert TOML config file."""
 
@@ -91,6 +92,8 @@ def write_config(
         path,
         overwrite=overwrite,
         create_dirs=create_dirs,
+        overwrite_option=overwrite_option,
+        output_label="Config file",
     )
     try:
         output_path.write_text(text, encoding="utf-8")

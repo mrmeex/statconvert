@@ -35,8 +35,6 @@ Stata, or SPSS metadata helper scripts. No new dependencies are introduced.
 - Opt-in file diagnostics across every public command
 - Plain-text installed version, Python version, and runtime dependency status
 - TOML starter generation and validation for repeatable single-command workflows
-- Reproducible private benchmark data generation, subprocess measurement, optional
-  `psutil` peak-RSS sampling, and Markdown/CSV result summaries
 
 Dataset comparison is provided by `statconvert compare`. There is currently no separate
 `statconvert diff` alias.
@@ -65,10 +63,6 @@ to `PATH`.
 plus each important runtime dependency. Missing dependencies are shown as
 `not installed`. The equivalent `statconvert --version` form works when the console
 command is on `PATH`.
-
-Repository source and editable installations are private maintainer workflows, not
-public installation methods. Contributors should use the
-[Developer Guide](docs/developer-guide.md).
 
 ## Quick start
 
@@ -149,16 +143,9 @@ See [Examples and Recipes](docs/examples.md) for copyable workflows, the
 
 - [User Guide](docs/user-guide.md) - practical end-user manual for everyday workflows
 - [Administrator Guide](docs/admin-guide.md) - installation, managed deployment, and support
-- [Developer Guide](docs/developer-guide.md) - maintainer setup, architecture, and safe changes
 - [Examples and Recipes](docs/examples.md) - copyable workflows for common tasks
 - [CLI Reference](docs/cli.md) - commands, options, output, and exit behavior
 - [Format Guide](docs/formats.md) - format-specific usage, capabilities, metadata, and caveats
-- [Packaging Guide](docs/packaging.md) - builds, clean installs, and release checks
-- [Testing Guide](docs/testing.md) - test strategy and commands
-- [Architecture](docs/architecture.md) - technical design and package boundaries
-- [Performance](docs/performance.md) - benchmarks and performance notes
-- [Roadmap](docs/roadmap.md) - project status, planned versions, and deferred work
-- [Contributing](CONTRIBUTING.md) - contribution rules and review checklist
 
 ## License
 

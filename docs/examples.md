@@ -117,6 +117,80 @@ statconvert summary .\input\data.sav --json > .\output\data-summary.json
 `info`, `peek`, `schema`, `metadata`, and `labels` are terminal-oriented and do not have a
 `--json` option.
 
+Explicitly export the metadata currently resolved for a file:
+
+```powershell
+# Standardized sibling path: data.sav.statconvert-metadata.json
+statconvert metadata .\input\data.sav --export-sidecar
+
+# Custom path; create .\metadata first
+statconvert metadata .\input\data.sav --export-sidecar --sidecar-output .\metadata\data.json
+
+# Replace an existing export
+statconvert metadata .\input\data.sav --export-sidecar --sidecar-output .\metadata\data.json --overwrite-sidecar
+```
+
+For a workbook, add `--object Data` so the flat export describes the selected sheet.
+Conversion commands already write sidecars automatically where needed.
+
+Apply an exported and edited sidecar to a matching sidecar-aware file:
+
+```powershell
+statconvert metadata .\input\data.sav --export-sidecar --sidecar-output .\metadata\edited.json
+
+# After editing metadata\edited.json:
+statconvert metadata .\input\data.csv --apply-sidecar --sidecar-input .\metadata\edited.json
+
+# Validate the now-active standardized sidecar without rewriting it
+statconvert metadata .\input\data.csv --apply-sidecar
+```
+
+If the standardized target already exists, add `--overwrite-sidecar`. Columns match by
+name; data columns missing from the sidecar are left without applied metadata.
+
+Export the resolved metadata as a human-readable data dictionary:
+
+```powershell
+# Flat review table
+statconvert metadata .\input\data.sav --export-dictionary .\review\data-dictionary.csv
+
+# Workbook with Dictionary, Dataset, and Value Labels sheets
+statconvert metadata .\input\data.sav --export-dictionary .\review\data-dictionary.xlsx
+
+# Replace an existing review artifact
+statconvert metadata .\input\data.csv --export-dictionary .\review\data-dictionary.csv --overwrite-dictionary
+
+# Describe one selected workbook sheet
+statconvert metadata .\input\book.xlsx --object Data --export-dictionary .\review\data-sheet.csv
+```
+
+Create `.\review` first. A CSV or Parquet input with restored sidecar/embedded metadata
+uses that resolved metadata in the dictionary. Dictionaries are not sidecars and are not
+used for automatic restoration.
+
+Generate external-tool metadata helpers from the same resolved metadata:
+
+```powershell
+# Base R attributes for a data frame named df
+statconvert metadata .\input\data.sav --export-script .\helpers\data.R
+
+# Stata label commands for an already loaded dataset
+statconvert metadata .\input\data.sav --export-script .\helpers\data.do
+
+# SPSS metadata syntax for an active dataset
+statconvert metadata .\input\data.sav --export-script .\helpers\data.sps
+
+# Replace an existing helper
+statconvert metadata .\input\data.csv --export-script .\helpers\data.R --overwrite-script
+
+# Generate from one selected workbook sheet
+statconvert metadata .\input\book.xlsx --object Data --export-script .\helpers\data.R
+```
+
+Create `.\helpers` first and review generated commands before running them. The scripts
+do not load or save datasets. Target-incompatible metadata and unsafe variable names are
+retained as review comments rather than silently changed.
+
 ## Convert SPSS to Excel
 
 Validate the SAV dataset for XLSX output, convert it, and create a source report for

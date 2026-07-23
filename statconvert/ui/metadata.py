@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 from typing import Any
 
 from rich.panel import Panel
@@ -416,6 +417,26 @@ def show_metadata_summary(
             )
         ),
     )
+    if metadata.notes:
+        table.add_row(
+            "Notes text",
+            " | ".join(str(note) for note in metadata.notes),
+        )
+    provenance = dataset.metadata_provenance or {}
+    table.add_row(
+        "Metadata source",
+        str(provenance.get("dataset") or ""),
+    )
+    column_provenance = provenance.get("columns", {})
+    if isinstance(column_provenance, dict) and column_provenance:
+        sources = Counter(str(value) for value in column_provenance.values())
+        table.add_row(
+            "Column sources",
+            ", ".join(
+                f"{source}: {count}"
+                for source, count in sorted(sources.items())
+            ),
+        )
 
     for name, value in summary.items():
         table.add_row(

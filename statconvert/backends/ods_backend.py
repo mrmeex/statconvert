@@ -17,7 +17,8 @@ from statconvert.exceptions import (
     ConversionError,
     ObjectNotFoundError,
 )
-from statconvert.metadata import build_basic_metadata, metadata_from_sidecar
+from statconvert.metadata import build_basic_metadata
+from statconvert.metadata.sidecar import restore_metadata
 
 
 class ODSBackend(Backend):
@@ -131,15 +132,15 @@ class ODSBackend(Backend):
         }
 
 
-        column_metadata = Dataset.read_sidecar(filename)
-        normalized_metadata = metadata_from_sidecar(
-            build_basic_metadata(
+        restored = restore_metadata(
+            dataframe=df,
+            filename=filename,
+            base_metadata=build_basic_metadata(
                 dataframe=df,
                 source_format="ods",
                 source_backend=self.name,
                 raw_metadata=metadata,
             ),
-            column_metadata,
         )
 
         return Dataset(
@@ -147,8 +148,9 @@ class ODSBackend(Backend):
             metadata=metadata,
             source_format="ods",
             source_file=str(filename),
-            normalized_metadata=normalized_metadata,
-            column_metadata=column_metadata,
+            normalized_metadata=restored.metadata,
+            column_metadata=restored.column_metadata,
+            metadata_provenance=restored.provenance,
         )
 
 

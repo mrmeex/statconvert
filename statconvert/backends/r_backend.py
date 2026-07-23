@@ -19,7 +19,8 @@ from statconvert.exceptions import (
     ObjectSelectionError,
     ObjectSelectionNotSupportedError,
 )
-from statconvert.metadata import build_basic_metadata, metadata_from_sidecar
+from statconvert.metadata import build_basic_metadata
+from statconvert.metadata.sidecar import read_sidecar, restore_metadata
 
 
 @dataclass(frozen=True)
@@ -121,7 +122,8 @@ class RBackend(Backend):
             object_names = [item.info.name for item in workspace_objects]
 
         try:
-            column_metadata = Dataset.read_sidecar(filename)
+            sidecar = read_sidecar(filename)
+            column_metadata = sidecar.columns if sidecar is not None else {}
             dataframe = self._dataframe_for_read(dataframe, column_metadata)
         except Exception as exc:
             raise ConversionError(f"Failed reading R file: {exc}") from exc
@@ -133,14 +135,16 @@ class RBackend(Backend):
             "selected_object": self._object_name(selected_object),
             "object_count": len(object_names),
         }
-        normalized_metadata = metadata_from_sidecar(
-            build_basic_metadata(
+        restored = restore_metadata(
+            dataframe=dataframe,
+            filename=filename,
+            automatic_payload=sidecar,
+            base_metadata=build_basic_metadata(
                 dataframe=dataframe,
                 source_format=extension.lstrip("."),
                 source_backend=self.name,
                 raw_metadata=metadata,
             ),
-            column_metadata,
         )
 
         return Dataset(
@@ -148,8 +152,9 @@ class RBackend(Backend):
             metadata=metadata,
             source_format=extension.lstrip("."),
             source_file=str(filename),
-            normalized_metadata=normalized_metadata,
-            column_metadata=column_metadata,
+            normalized_metadata=restored.metadata,
+            column_metadata=restored.column_metadata,
+            metadata_provenance=restored.provenance,
         )
 
     def write(

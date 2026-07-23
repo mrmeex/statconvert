@@ -477,10 +477,66 @@ Displays variable and value labels. `--limit` defaults to `100` value labels.
 ### `metadata`
 
 ```bash
-statconvert metadata INPUT_FILE [--object OBJECT]
+statconvert metadata INPUT_FILE [--object OBJECT] [--export-sidecar]
+    [--sidecar-output PATH] [--apply-sidecar] [--sidecar-input PATH]
+    [--overwrite-sidecar] [--export-dictionary PATH]
+    [--overwrite-dictionary] [--export-script PATH]
+    [--overwrite-script]
 ```
 
 Displays normalized source metadata and metadata counts through `Dataset` accessors.
+For CSV, spreadsheet, JSON, Arrow, and R inputs, the responsible backend automatically
+loads a sibling `<input>.statconvert-metadata.json` sidecar when present. No explicit
+sidecar option is required. New version 3 sidecars restore column metadata plus dataset
+labels, notes, and safe normalized raw metadata. Existing version 2 sidecars remain
+readable. Parquet and Feather also carry a StatConvert-namespaced embedded copy, but the
+sibling sidecar wins when both are present.
+
+`--export-sidecar` writes the metadata resolved by those same precedence rules as a
+version 3 sidecar. By default it uses
+`<input>.statconvert-metadata.json`. Add `--sidecar-output PATH` for a custom destination
+and `--overwrite-sidecar` to replace an existing export. A custom parent folder must
+already exist. `--sidecar-output` and `--overwrite-sidecar` require
+`--export-sidecar`.
+
+`--apply-sidecar` without a custom source validates the standardized sibling sidecar and
+reports that it is active without rewriting it. Add `--sidecar-input PATH` to validate a
+custom sidecar and write a version 3 copy to the standardized sibling path.
+`--overwrite-sidecar` is required only when that target already exists. Sidecar columns
+match physical columns by name; missing referenced columns fail, while extra data
+columns are allowed and reported.
+
+For a workbook or workspace, use `--object` so a flat sidecar describes one selected
+sheet/object. An ambiguous multi-object input still fails rather than applying shared
+metadata. Explicit apply activates sidecars for sidecar-aware formats; it does not modify
+native SAV/DTA/XPT metadata. The `metadata` command remains terminal-oriented and has no
+`--json` option. Export and apply cannot be combined in one invocation.
+
+`--export-dictionary PATH` writes the currently resolved metadata as a human-readable
+`.csv` or `.xlsx` data dictionary. CSV contains one row per physical column. XLSX contains
+`Dictionary`, `Dataset`, and `Value Labels` sheets. Both preserve physical column order
+and show labels, types, formats, missing definitions, value labels, dataset context, and
+metadata provenance where available. Complex values use compact deterministic text;
+missing metadata is blank. Existing output requires `--overwrite-dictionary`, and the
+parent folder must already exist.
+
+A dictionary is a review/handover artifact, not a reusable sidecar. StatConvert does not
+automatically restore metadata from dictionaries. Use sidecar export/apply for
+machine-readable metadata transport. Multi-object inputs still require `--object`;
+`convert`, `batch`, and `transform` do not expose dictionary-export options.
+
+`--export-script PATH` writes a best-effort external-tool metadata helper inferred from
+the extension: `.R` for base R, `.do` for Stata, or `.sps` for SPSS. The scripts assume
+the data are already loaded, contain no load/save commands, and must be reviewed before
+use. They apply only metadata that maps conservatively to the target; invalid target
+names, incompatible formats, complex values, ambiguous missing definitions, provenance,
+and other unsupported details appear in a final review-required comment section.
+
+Existing script output requires `--overwrite-script`, and the parent folder must already
+exist. Scripts use the same resolved native/embedded/sidecar metadata as the terminal
+summary and dictionary export. They are helpers rather than full-fidelity restoration
+artifacts; sidecars remain the reusable machine-readable representation. No script
+options exist on `convert`, `batch`, or `transform`.
 
 ## Statistical inspection and validation
 

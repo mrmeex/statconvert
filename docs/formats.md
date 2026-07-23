@@ -25,7 +25,9 @@ statconvert capabilities rdata
 In the matrix below, **Sidecar** means the primary file does not natively carry
 StatConvert's normalized statistical metadata. StatConvert writes a sibling
 `<output>.statconvert-metadata.json` file so a later StatConvert read can restore that
-metadata. Other applications usually ignore this sidecar.
+metadata. Sidecar-aware backends load it automatically through normal registry
+reads, so inspection, conversion, transformation, and batch commands need no separate
+option. Other applications usually ignore this sidecar.
 
 ## Capability matrix
 
@@ -44,8 +46,8 @@ metadata. Other applications usually ignore this sidecar.
 | `.json` | JSON records | Yes | Yes | Sidecar | None | Written as one JSON array of record objects. |
 | `.jsonl` | JSON Lines | Yes | Yes | Sidecar | None | One record object per line. |
 | `.ndjson` | Newline-delimited JSON | Yes | Yes | Sidecar | None | Same line-oriented behavior as JSONL. |
-| `.parquet` | Apache Parquet | Yes | Yes | Sidecar | None | Typed columnar data; Snappy compression is used by default. |
-| `.feather` | Apache Feather | Yes | Yes | Sidecar | None | Typed columnar data; the pandas index is reset on write. |
+| `.parquet` | Apache Parquet | Yes | Yes | Embedded + sidecar | None | Typed columnar data; Snappy compression is used by default. |
+| `.feather` | Apache Feather | Yes | Yes | Embedded + sidecar | None | Typed columnar data; the pandas index is reset on write. |
 | `.rds` | R serialized object | Yes | Yes | Sidecar | Single object | The one object must be tabular/DataFrame-like; `--object` is not accepted. |
 | `.rdata` | R workspace | Yes | Yes | Sidecar | R object | Selects named tabular objects. |
 | `.rda` | R workspace | Yes | Yes | Sidecar | R object | Same behavior as `.rdata`. |
@@ -299,7 +301,9 @@ pandas' tabular JSON reader, and statistical metadata is stored only in a sideca
 Parquet and Feather are efficient typed columnar formats for analytics workflows. They
 usually preserve tabular data types more effectively than CSV, but StatConvert does not
 treat their file-level metadata as native statistical-package labels or missing-value
-definitions. Normalized statistical metadata is written to a sidecar.
+definitions. StatConvert embeds its versioned normalized metadata payload in Arrow schema
+metadata and also writes the standardized sibling sidecar. The sidecar wins when both
+exist; the embedded copy provides recovery when the sidecar is absent.
 
 Parquet uses the pyarrow engine and Snappy compression by default. Feather output resets
 the pandas index before writing.
@@ -362,6 +366,43 @@ record JSON, Arrow formats, and R files do not represent it in the same statisti
 so StatConvert uses a sidecar. Keep the sidecar beside the data file for later StatConvert
 reads. Conversion preserves what the target writer can safely represent; perfect metadata
 round trips across different format families are not promised.
+
+The standardized name remains `<data-file>.statconvert-metadata.json`. New writes use
+schema version 3, which preserves normalized column metadata plus dataset labels, notes,
+and safe normalized raw metadata. Existing version 2 sidecars remain readable without
+manual migration. Invalid JSON, unsupported versions, malformed required sections, and
+metadata for absent physical columns fail clearly. Pyreadstat formats use native metadata
+rather than automatically loading or writing StatConvert sidecars.
+
+Parquet and Feather embed the same version 3 payload under the
+`statconvert.metadata` Arrow schema key while preserving pandas schema metadata. The
+standardized sibling sidecar is still written and is canonical when both copies exist.
+If the sidecar is absent, StatConvert uses the embedded payload. This is StatConvert
+namespaced metadata; third-party Arrow tools are not expected to understand it and may
+remove it.
+
+Use `statconvert metadata INPUT --export-sidecar` to explicitly write the currently
+resolved metadata. The standardized sibling path is the default; add
+`--sidecar-output PATH` for a custom path and `--overwrite-sidecar` to replace an existing
+export. This does not change automatic sidecar writes during conversion.
+
+Use `metadata INPUT --apply-sidecar` to validate the active standardized sidecar, or add
+`--sidecar-input PATH` to activate a custom source at the standardized sibling path.
+Replacement requires `--overwrite-sidecar`. Apply matches columns by name, allows extra
+data columns, and never changes data values. It operates on sidecar-aware formats rather
+than writing metadata into native SAV/DTA/XPT files.
+
+Use `metadata INPUT --export-dictionary PATH` to export the resolved metadata as a
+human-readable CSV or XLSX artifact. The CSV is a flat one-row-per-column dictionary.
+XLSX adds dataset context and long-form value labels on separate sheets. Dictionaries do
+not participate in metadata precedence and are never loaded automatically; use sidecars
+for reusable machine-readable metadata.
+
+Use `metadata INPUT --export-script PATH` for a best-effort `.R`, `.do`, or `.sps`
+metadata helper. R output uses base attributes; Stata and SPSS output use conservative
+label/format/level commands where the target syntax is safe. The scripts assume data are
+already loaded and list unsupported or review-required metadata as comments. They do not
+change StatConvert format capabilities or replace sidecars.
 
 ## Validation and target limits
 
@@ -452,5 +493,5 @@ StatConvert does not currently provide:
   relative tolerances, or chunked comparison; or
 - human-readable descriptions of raw display-format codes.
 
-See the [CLI Reference](cli.md) for command boundaries and [Examples and
-Recipes](examples.md) for supported workflows.
+See the [Roadmap](roadmap.md) for the complete deferred set and the
+[Developer Guide](developer-guide.md) for capability-maintenance rules.

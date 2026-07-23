@@ -6,7 +6,8 @@ from statconvert.backends.base import Backend
 from statconvert.backends.capabilities import BackendCapabilities
 from statconvert.dataset import Dataset
 from statconvert.exceptions import ConversionError
-from statconvert.metadata import build_basic_metadata, metadata_from_sidecar
+from statconvert.metadata import build_basic_metadata
+from statconvert.metadata.sidecar import restore_metadata
 
 
 class JsonBackend(Backend):
@@ -61,15 +62,15 @@ class JsonBackend(Backend):
         }
 
 
-        column_metadata = Dataset.read_sidecar(filename)
-        normalized_metadata = metadata_from_sidecar(
-            build_basic_metadata(
+        restored = restore_metadata(
+            dataframe=df,
+            filename=filename,
+            base_metadata=build_basic_metadata(
                 dataframe=df,
                 source_format=extension.lstrip("."),
                 source_backend=self.name,
                 raw_metadata=metadata,
             ),
-            column_metadata,
         )
 
         return Dataset(
@@ -77,8 +78,9 @@ class JsonBackend(Backend):
             metadata=metadata,
             source_format=extension.lstrip("."),
             source_file=str(filename),
-            normalized_metadata=normalized_metadata,
-            column_metadata=column_metadata,
+            normalized_metadata=restored.metadata,
+            column_metadata=restored.column_metadata,
+            metadata_provenance=restored.provenance,
         )
 
 

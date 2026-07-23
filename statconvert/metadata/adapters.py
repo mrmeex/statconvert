@@ -53,6 +53,20 @@ def metadata_from_pyreadstat(
             "pyreadstat": pyreadstat_metadata,
         },
     )
+    metadata.dataset_label = getattr(
+        pyreadstat_metadata,
+        "file_label",
+        None,
+    ) or None
+    notes = getattr(
+        pyreadstat_metadata,
+        "notes",
+        None,
+    )
+    if isinstance(notes, str):
+        metadata.notes = [notes] if notes else []
+    elif notes:
+        metadata.notes = [str(note) for note in notes]
 
     labels = getattr(
         pyreadstat_metadata,

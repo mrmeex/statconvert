@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "statconvert"
-version = "0.6.0"
+version = "0.7.0"
 description = "CLI toolkit for converting, inspecting, validating, comparing and reporting statistical datasets."
 authors = [
     { name = "Gijs Meex" },

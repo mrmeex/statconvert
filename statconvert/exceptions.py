@@ -20,6 +20,18 @@ class ConversionError(StatConvertError):
     """Conversion failed."""
 
 
+class MetadataSidecarError(ConversionError):
+    """A metadata sidecar or embedded payload is invalid."""
+
+
+class DataDictionaryError(ConversionError):
+    """A human-readable metadata dictionary could not be produced."""
+
+
+class MetadataScriptError(ConversionError):
+    """An external-tool metadata helper script could not be produced."""
+
+
 class OutputPathError(ConversionError):
     """An output path conflicts with the selected write policy."""
 

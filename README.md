@@ -5,16 +5,19 @@ inspecting, validating, batch-processing, comparing, reporting, and logging stat
 datasets. It uses a backend registry and a common `Dataset` model so format-specific code
 stays out of conversion and analysis workflows.
 
-Version 0.6.0 improves operator experience with clearer batch workload and live worker
-status, planning-only dry-run messaging, concise completion summaries, and consistent
-friendly errors with deterministic suggestions. Direct and config-driven workflows share
-the same behavior, and JSON output remains machine-readable. No new commands or required
-dependencies are introduced.
+Version 0.7.0 expands portable metadata workflows. Sidecar schema version 3 preserves
+dataset labels, notes, normalized metadata, and provenance while existing version 2
+sidecars remain readable. Parquet and Feather embed the StatConvert payload in addition
+to the canonical sibling sidecar. The `metadata` command can export, validate, or apply
+sidecars; create human-readable CSV/XLSX data dictionaries; and generate best-effort R,
+Stata, or SPSS metadata helper scripts. No new dependencies are introduced.
 
 ## Implemented features
 
 - Conversion between registered statistical, spreadsheet, JSON, Arrow, and R formats
 - Normalized schema, variable-label, value-label, missing-value, and metadata access
+- Versioned metadata sidecars, Arrow-embedded StatConvert metadata, resolved-metadata
+  export/apply, human-readable data dictionaries, and external-tool helper scripts
 - Ordered transformations: select, drop, rename, type conversion, filtering, and recoding
 - Dataset summary, descriptive profiles, frequencies, and missing-value analysis
 - Dataset-quality and target-format validation
@@ -63,8 +66,9 @@ plus each important runtime dependency. Missing dependencies are shown as
 `not installed`. The equivalent `statconvert --version` form works when the console
 command is on `PATH`.
 
-Repository source and editable installations are maintainer workflows, not public
-installation methods.
+Repository source and editable installations are private maintainer workflows, not
+public installation methods. Contributors should use the
+[Developer Guide](docs/developer-guide.md).
 
 ## Quick start
 
@@ -76,6 +80,9 @@ statconvert batch incoming converted --to csv --object-manifest objects.csv --cr
 statconvert batch incoming converted --to csv --all-objects
 statconvert batch incoming converted --to parquet --transform --select id --select name
 statconvert peek input.sav
+statconvert metadata input.sav --export-sidecar
+statconvert metadata input.sav --export-dictionary dictionary.xlsx
+statconvert metadata input.sav --export-script labels.R
 statconvert convert input.sav output.xlsx
 statconvert convert input.sav new-output/output.xlsx --create-dirs
 statconvert convert workbook.xlsx output.csv --object Data
@@ -142,9 +149,16 @@ See [Examples and Recipes](docs/examples.md) for copyable workflows, the
 
 - [User Guide](docs/user-guide.md) - practical end-user manual for everyday workflows
 - [Administrator Guide](docs/admin-guide.md) - installation, managed deployment, and support
+- [Developer Guide](docs/developer-guide.md) - maintainer setup, architecture, and safe changes
 - [Examples and Recipes](docs/examples.md) - copyable workflows for common tasks
 - [CLI Reference](docs/cli.md) - commands, options, output, and exit behavior
 - [Format Guide](docs/formats.md) - format-specific usage, capabilities, metadata, and caveats
+- [Packaging Guide](docs/packaging.md) - builds, clean installs, and release checks
+- [Testing Guide](docs/testing.md) - test strategy and commands
+- [Architecture](docs/architecture.md) - technical design and package boundaries
+- [Performance](docs/performance.md) - benchmarks and performance notes
+- [Roadmap](docs/roadmap.md) - project status, planned versions, and deferred work
+- [Contributing](CONTRIBUTING.md) - contribution rules and review checklist
 
 ## License
 

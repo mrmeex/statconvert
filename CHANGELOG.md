@@ -1,5 +1,53 @@
 # Changelog
 
+## 0.7.0 - 2026-07-23
+
+### Added
+
+- Added an internal compatibility matrix covering native and sidecar metadata behavior
+  for all 18 registered format extensions.
+- Added regression coverage for automatic sidecar reads and writes through inspection,
+  conversion, transformation, and batch workflows.
+- Added version 3 metadata sidecars with dataset labels, notes, safe normalized raw
+  metadata, validation, and minimal source provenance while retaining version 2 reads.
+- Added a namespaced StatConvert metadata payload to Parquet and Feather files.
+- Added explicit resolved-metadata export through `metadata --export-sidecar`, with
+  optional `--sidecar-output` and dedicated `--overwrite-sidecar` protection.
+- Added explicit sidecar validation and activation through `metadata --apply-sidecar`,
+  with optional `--sidecar-input` and version 3 standardized output.
+- Added human-readable CSV/XLSX data dictionary export through
+  `metadata --export-dictionary`, with dedicated `--overwrite-dictionary` protection.
+- Added deterministic R, Stata, and SPSS metadata helper generation through
+  `metadata --export-script`, with dedicated `--overwrite-script` protection.
+
+### Improved
+
+- Pyreadstat metadata normalization now includes dataset labels and notes.
+- SAV writing now preserves supported dataset labels, notes, and measurement levels;
+  DTA and XPT writing preserve supported dataset labels.
+- Sidecar-aware backends now share one parser, serializer, validation, and precedence
+  implementation.
+- Explicit sidecar apply matches columns by name, rejects missing or duplicate sidecar
+  columns, permits extra physical columns, and records minimal explicit-source
+  provenance.
+- Metadata terminal and report summaries now expose dataset labels, notes, and resolved
+  provenance where available.
+- Metadata helpers emit conservative target commands and list unsafe names,
+  target-incompatible formats, missing definitions, provenance, and other unsupported
+  metadata as review comments instead of silently rewriting them.
+- Parquet and Feather retain native type/pandas schema metadata, embed a StatConvert
+  payload, and continue writing the canonical standardized sidecar.
+- Batch input discovery ignores standardized StatConvert metadata sidecars.
+
+### Notes
+
+- The standardized `<data-file>.statconvert-metadata.json` name remains unchanged.
+- Existing version 2 sidecars remain readable; new writes use version 3.
+- Applying a custom sidecar never changes the primary data file; native SAV, DTA, and XPT
+  metadata application remains outside this workflow.
+- PyArrow 25 may emit Feather read/write deprecation warnings for the current convenience
+  APIs; Feather behavior and the full test suite remain successful.
+
 ## 0.6.0 - 2026-07-22
 
 ### Added

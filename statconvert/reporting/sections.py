@@ -102,11 +102,41 @@ def build_metadata_section(dataset: Dataset) -> ReportSection:
         else len(dataset.measurement_levels() or {}),
     }
     summary.update(counts)
+    metadata = dataset.get_normalized_metadata()
+    provenance = dataset.metadata_provenance or {}
+    context_metrics = [
+        ReportMetric(
+            name="dataset_label",
+            value=metadata.dataset_label,
+            label="Dataset Label",
+        ),
+        ReportMetric(
+            name="dataset_notes",
+            value=list(metadata.notes),
+            label="Dataset Notes",
+        ),
+        ReportMetric(
+            name="metadata_source",
+            value=provenance.get("dataset"),
+            label="Metadata Source",
+        ),
+        ReportMetric(
+            name="column_metadata_sources",
+            value=dict(provenance.get("columns", {}))
+            if isinstance(provenance.get("columns", {}), dict)
+            else {},
+            label="Column Metadata Sources",
+        ),
+    ]
     metrics = [
         ReportMetric(name=name, value=value, label=name.replace("_", " ").title())
         for name, value in summary.items()
     ]
-    return ReportSection(key="metadata", title="Metadata", metrics=metrics)
+    return ReportSection(
+        key="metadata",
+        title="Metadata",
+        metrics=[*context_metrics, *metrics],
+    )
 
 
 def build_labels_section(

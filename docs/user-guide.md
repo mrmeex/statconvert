@@ -23,8 +23,8 @@ features such as formatting, formulas, macros, charts, or existing sheets.
 
 StatConvert requires Python 3.11 or newer. Install the downloaded release wheel from the
 GitHub Releases page; installation, upgrades, and managed deployment are covered by the
-[Administrator Guide](admin-guide.md). Build and artifact validation remain maintainer
-workflows.
+[Administrator Guide](admin-guide.md). Build and artifact validation are private
+maintainer workflows covered by the [Packaging Guide](packaging.md).
 
 Verify the installed command and list the formats available in the current environment:
 
@@ -346,10 +346,94 @@ statconvert labels input.sav
 - `labels` displays variable labels and value labels when they exist.
 
 Statistical formats commonly contain richer labels and missing-value definitions than
-CSV or spreadsheet data. When StatConvert writes a metadata-poor format, it may create a
-sibling `*.statconvert-metadata.json` sidecar. Keep the sidecar beside the data file if you
-want a later StatConvert read to restore that metadata. Other tools may ignore the
-sidecar.
+CSV or spreadsheet data. Normal single-dataset writes to a metadata-poor format
+automatically create a sibling `*.statconvert-metadata.json` sidecar. Keep the sidecar
+beside the data file: `info`, `metadata`, `convert`, `transform`, and batch workflows
+automatically restore its column metadata through the normal reader. Other tools may
+ignore the sidecar.
+
+New sidecars use schema version 3 and preserve column-level labels, value labels, missing
+definitions, types, formats, and measurement levels, plus dataset labels, notes, and safe
+normalized raw metadata. Existing version 2 sidecars remain readable. Statistical
+formats handled by pyreadstat use their supported native metadata instead.
+
+Parquet and Feather also contain a StatConvert-namespaced copy of the same payload.
+StatConvert still writes the sibling sidecar, because other Arrow tools may remove custom
+schema metadata. If both copies exist, the sibling sidecar is canonical; if it is absent,
+StatConvert restores metadata from the embedded copy.
+
+To explicitly export the metadata currently shown by `metadata`, use:
+
+```powershell
+statconvert metadata input.sav --export-sidecar
+statconvert metadata input.sav --export-sidecar --sidecar-output .\metadata\input.json
+statconvert metadata input.sav --export-sidecar --overwrite-sidecar
+```
+
+The default destination is `<input>.statconvert-metadata.json`. A custom destination's
+parent folder must already exist, and an existing destination requires
+`--overwrite-sidecar`. Export uses the fully resolved metadata, so a sibling sidecar wins
+over an embedded Arrow payload. For multi-object files, select one sheet/object with
+`--object`; StatConvert does not create an ambiguous shared flat sidecar.
+
+Conversions already create sidecars automatically where needed. Explicit export is
+therefore limited to `metadata`.
+
+Apply an edited or relocated sidecar to a sidecar-aware data file with:
+
+```powershell
+# Validate the standardized sibling sidecar without rewriting it
+statconvert metadata data.csv --apply-sidecar
+
+# Activate a custom source at data.csv.statconvert-metadata.json
+statconvert metadata data.csv --apply-sidecar --sidecar-input .\metadata\edited.json
+
+# Replace an existing standardized sidecar
+statconvert metadata data.csv --apply-sidecar --sidecar-input .\metadata\edited.json --overwrite-sidecar
+```
+
+Application matches columns by name and never changes cell values or physical columns.
+Sidecar references to missing data columns fail. Extra data columns are allowed and
+remain without sidecar metadata. Select a workbook/workspace object with `--object`;
+ambiguous containers are rejected. This activates the standardized sidecar for future
+StatConvert reads; it does not write metadata into native SAV/DTA/XPT files.
+
+For a human-readable review or handover artifact, export a data dictionary:
+
+```powershell
+statconvert metadata input.sav --export-dictionary .\review\input-dictionary.csv
+statconvert metadata input.sav --export-dictionary .\review\input-dictionary.xlsx
+```
+
+The parent folder must already exist. Add `--overwrite-dictionary` to replace an existing
+dictionary. CSV contains one row per physical column; XLSX adds separate dataset and
+long-form value-label sheets. Dictionary content comes from the same resolved metadata
+shown by `metadata`, so an active sidecar wins over embedded Arrow metadata. Sparse
+metadata produces blank cells rather than an error.
+
+Data dictionaries are for people and are not loaded automatically by StatConvert.
+Sidecars remain the versioned machine-readable artifact for metadata restoration.
+Select one workbook/workspace object with `--object`; this workflow does not create a
+combined multi-object dictionary.
+
+Generate a reviewable external-tool metadata helper with:
+
+```powershell
+statconvert metadata input.sav --export-script .\helpers\labels.R
+statconvert metadata input.sav --export-script .\helpers\labels.do
+statconvert metadata input.sav --export-script .\helpers\labels.sps
+```
+
+The generated R, Stata, and SPSS helpers assume the dataset or data frame is already
+loaded. They do not load, save, overwrite, or convert a data file. Review every script
+before running it. StatConvert emits labels and other metadata only when there is a
+conservative target mapping; skipped or ambiguous metadata is listed as comments.
+Invalid target variable names are also commented rather than silently renamed.
+
+Create the parent folder first and use `--overwrite-script` to replace an existing
+helper. Script generation uses resolved metadata, including active sidecars and embedded
+Arrow metadata. Scripts are target-specific conveniences, dictionaries are human review
+artifacts, and sidecars remain the reusable StatConvert metadata artifact.
 
 ## Summaries, profiles, frequencies and missing values
 
@@ -665,3 +749,5 @@ run the single-dataset files without `--object`.
 - [CLI Reference](cli.md) for every command option and exit policy
 - [Format Guide](formats.md) for the capability matrix and format caveats
 - [Administrator Guide](admin-guide.md) for installation, updates, and deployment
+- [Developer Guide](developer-guide.md) for contributing and maintenance
+- [Packaging Guide](packaging.md) for builds and clean-install validation

@@ -403,13 +403,22 @@ class PyReadstatBackend(Backend):
     def _metadata_write_options(
         self,
         dataset: Dataset,
-        include_value_labels: bool = True
+        include_value_labels: bool = True,
+        include_notes: bool = False,
+        include_measurement_levels: bool = False,
     ) -> dict[str, Any]:
         """
         Return metadata write options from normalized Dataset metadata.
         """
 
         options: dict[str, Any] = {}
+        metadata = dataset.get_normalized_metadata()
+
+        if metadata.dataset_label:
+            options["file_label"] = metadata.dataset_label
+
+        if include_notes and metadata.notes:
+            options["note"] = list(metadata.notes)
 
         column_labels = column_labels_from_metadata(
             dataset
@@ -425,6 +434,15 @@ class PyReadstatBackend(Backend):
 
             if variable_value_labels:
                 options["variable_value_labels"] = variable_value_labels
+
+        if include_measurement_levels:
+            variable_measure = {
+                name: variable.measure
+                for name, variable in dataset.variables_metadata().items()
+                if variable.measure
+            }
+            if variable_measure:
+                options["variable_measure"] = variable_measure
 
         return options
 
@@ -724,6 +742,13 @@ class PyReadstatBackend(Backend):
                 meta,
                 extension,
             ),
+            metadata_provenance={
+                "dataset": "native_file",
+                "columns": {
+                    str(column): "native_file"
+                    for column in df.columns
+                },
+            },
         )
 
 
@@ -761,7 +786,9 @@ class PyReadstatBackend(Backend):
 
             if extension == "sav":
                 write_options = self._metadata_write_options(
-                    dataset
+                    dataset,
+                    include_notes=True,
+                    include_measurement_levels=True,
                 )
 
                 if variable_format:

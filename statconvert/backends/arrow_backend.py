@@ -1,12 +1,24 @@
 from pathlib import Path
 
 import pandas as pd
+import pyarrow as pa
+import pyarrow.feather as feather
+import pyarrow.parquet as parquet
 
 from statconvert.backends.base import Backend
 from statconvert.backends.capabilities import BackendCapabilities
 from statconvert.dataset import Dataset
 from statconvert.exceptions import ConversionError
-from statconvert.metadata import build_basic_metadata, metadata_from_sidecar
+from statconvert.metadata import build_basic_metadata
+from statconvert.metadata.sidecar import (
+    MetadataPayload,
+    parse_payload_bytes,
+    payload_bytes,
+    restore_metadata,
+)
+
+
+STATCONVERT_METADATA_KEY = b"statconvert.metadata"
 
 
 class ArrowBackend(Backend):
@@ -35,6 +47,7 @@ class ArrowBackend(Backend):
 
         try:
             extension = Path(filename).suffix.lower()
+            embedded_payload = self._read_embedded_payload(filename, extension)
 
             if extension == ".parquet":
                 options = {
@@ -60,6 +73,8 @@ class ArrowBackend(Backend):
                     f"Unsupported Arrow format: {extension}"
                 )
 
+        except ConversionError:
+            raise
         except Exception as e:
             raise ConversionError(
                 f"Failed reading Arrow file: {e}"
@@ -73,15 +88,16 @@ class ArrowBackend(Backend):
         }
 
 
-        column_metadata = Dataset.read_sidecar(filename)
-        normalized_metadata = metadata_from_sidecar(
-            build_basic_metadata(
+        restored = restore_metadata(
+            dataframe=df,
+            filename=filename,
+            embedded_payload=embedded_payload,
+            base_metadata=build_basic_metadata(
                 dataframe=df,
                 source_format=arrow_format,
                 source_backend=self.name,
                 raw_metadata=metadata,
             ),
-            column_metadata,
         )
 
         return Dataset(
@@ -89,8 +105,9 @@ class ArrowBackend(Backend):
             metadata=metadata,
             source_format=arrow_format,
             source_file=str(filename),
-            normalized_metadata=normalized_metadata,
-            column_metadata=column_metadata,
+            normalized_metadata=restored.metadata,
+            column_metadata=restored.column_metadata,
+            metadata_provenance=restored.provenance,
         )
 
 
@@ -106,16 +123,27 @@ class ArrowBackend(Backend):
 
         try:
             extension = Path(filename).suffix.lower()
+            embedded_payload = payload_bytes(dataset)
 
             if extension == ".parquet":
                 options = {
-                    "engine": "pyarrow",
-                    "index": False,
                     "compression": "snappy",
                 }
                 options.update(kwargs)
-
-                dataset.dataframe.to_parquet(
+                engine = options.pop("engine", "pyarrow")
+                if engine != "pyarrow":
+                    raise ConversionError(
+                        "Embedded StatConvert metadata requires the pyarrow "
+                        "Parquet engine."
+                    )
+                preserve_index = bool(options.pop("index", False))
+                table = pa.Table.from_pandas(
+                    dataset.dataframe,
+                    preserve_index=preserve_index,
+                )
+                table = self._embed_payload(table, embedded_payload)
+                parquet.write_table(
+                    table,
                     filename,
                     **options
                 )
@@ -133,7 +161,13 @@ class ArrowBackend(Backend):
                         drop=True
                     )
 
-                dataframe.to_feather(
+                table = pa.Table.from_pandas(
+                    dataframe,
+                    preserve_index=False,
+                )
+                table = self._embed_payload(table, embedded_payload)
+                feather.write_feather(
+                    table,
                     filename,
                     **kwargs
                 )
@@ -147,7 +181,43 @@ class ArrowBackend(Backend):
                 filename
             )
 
+        except ConversionError:
+            raise
         except Exception as e:
             raise ConversionError(
                 f"Failed writing Arrow file: {e}"
             )
+
+    def _read_embedded_payload(
+        self,
+        filename: str,
+        extension: str,
+    ) -> MetadataPayload | None:
+        """Read the namespaced payload without loading dataset values."""
+
+        if extension == ".parquet":
+            schema = parquet.read_schema(filename)
+        elif extension == ".feather":
+            with pa.memory_map(str(filename), "r") as source:
+                schema = pa.ipc.open_file(source).schema
+        else:
+            return None
+
+        raw_payload = (schema.metadata or {}).get(STATCONVERT_METADATA_KEY)
+        if raw_payload is None:
+            return None
+        return parse_payload_bytes(
+            raw_payload,
+            source=f"embedded metadata in {filename}",
+        )
+
+    @staticmethod
+    def _embed_payload(
+        table: pa.Table,
+        embedded_payload: bytes,
+    ) -> pa.Table:
+        """Add StatConvert metadata while retaining pandas/Arrow metadata."""
+
+        schema_metadata = dict(table.schema.metadata or {})
+        schema_metadata[STATCONVERT_METADATA_KEY] = embedded_payload
+        return table.replace_schema_metadata(schema_metadata)

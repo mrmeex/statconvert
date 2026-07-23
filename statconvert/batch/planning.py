@@ -15,6 +15,7 @@ from statconvert.batch.models import (
     BatchPlanningOptions,
 )
 from statconvert.object_manifest import ObjectManifestRow, read_object_manifest
+from statconvert.metadata.sidecar import SIDECAR_SUFFIX
 from statconvert.output_names import sanitize_output_name
 from statconvert.registry import (
     can_read_format,
@@ -107,6 +108,7 @@ def discover_input_files(
         candidate
         for candidate in iterator
         if candidate.is_file()
+        and not candidate.name.endswith(SIDECAR_SUFFIX)
     ]
     filtered = [
         candidate

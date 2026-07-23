@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import copy as copy_module
-from dataclasses import asdict, dataclass, field
-from datetime import date, datetime
-import json
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -62,6 +60,8 @@ class Dataset:
 
     column_metadata: dict[str, ColumnMetadata] = field(default_factory=dict)
 
+    metadata_provenance: dict[str, Any] = field(default_factory=dict)
+
     _provided_column_metadata_names: set[str] = field(
         default_factory=set,
         init=False,
@@ -99,6 +99,14 @@ class Dataset:
 
         self.ensure_normalized_metadata()
         self.sync_metadata()
+        if not self.metadata_provenance:
+            self.metadata_provenance = {
+                "dataset": "primary_file",
+                "columns": {
+                    str(column): "primary_file"
+                    for column in self.dataframe.columns
+                },
+            }
 
 
     @property
@@ -392,6 +400,10 @@ class Dataset:
                 self.column_metadata,
                 deep=deep,
             ),
+            metadata_provenance=self._copy_value(
+                self.metadata_provenance,
+                deep=deep,
+            ),
         )
 
 
@@ -400,27 +412,9 @@ class Dataset:
         Return JSON-serializable metadata for sidecar files.
         """
 
-        self.sync_metadata()
-        columns = []
-        for column in self.column_metadata.values():
-            item = self._json_ready(asdict(column))
-            item["value_label_items"] = [
-                {
-                    "value": self._json_ready(value),
-                    "label": self._json_ready(label),
-                }
-                for value, label in column.value_labels.items()
-            ]
-            columns.append(item)
+        from statconvert.metadata.sidecar import dataset_to_payload
 
-        return {
-            "sidecar_version": 2,
-            "source_format": self.source_format,
-            "source_file": self._json_ready(
-                self.source_file
-            ),
-            "columns": columns,
-        }
+        return dataset_to_payload(self)
 
 
     def write_sidecar(self, filename: str | Path) -> None:
@@ -428,16 +422,9 @@ class Dataset:
         Write Dataset metadata next to a metadata-poor output file.
         """
 
-        sidecar = self.sidecar_path(filename)
+        from statconvert.metadata.sidecar import write_sidecar
 
-        sidecar.write_text(
-            json.dumps(
-                self.to_sidecar_dict(),
-                indent=2,
-                ensure_ascii=False,
-            ),
-            encoding="utf-8",
-        )
+        write_sidecar(self, filename)
 
 
     @classmethod
@@ -449,43 +436,10 @@ class Dataset:
         Read sidecar metadata if it exists.
         """
 
-        sidecar = cls.sidecar_path(filename)
+        from statconvert.metadata.sidecar import read_sidecar
 
-        if not sidecar.exists():
-            return {}
-
-        data = json.loads(
-            sidecar.read_text(
-                encoding="utf-8"
-            )
-        )
-
-        columns = {}
-
-        for item in data.get(
-            "columns",
-            []
-        ):
-            item = dict(item)
-            value_label_items = item.pop("value_label_items", None)
-            if value_label_items is not None:
-                item["value_labels"] = {
-                    entry.get("value"): entry.get("label")
-                    for entry in value_label_items
-                }
-
-            name = item.get(
-                "name"
-            )
-
-            if not name:
-                continue
-
-            columns[name] = ColumnMetadata(
-                **item
-            )
-
-        return columns
+        payload = read_sidecar(filename)
+        return payload.columns if payload is not None else {}
 
 
     @staticmethod
@@ -494,9 +448,9 @@ class Dataset:
         Return the sidecar path for an output filename.
         """
 
-        return Path(
-            f"{filename}.statconvert-metadata.json"
-        )
+        from statconvert.metadata.sidecar import sidecar_path
+
+        return sidecar_path(filename)
 
 
     @staticmethod
@@ -642,71 +596,3 @@ class Dataset:
                 return value.copy()
 
             return value
-
-
-    @classmethod
-    def _json_ready(
-        cls,
-        value: Any
-    ) -> Any:
-        """
-        Convert nested metadata values to JSON-compatible values.
-        """
-
-        if isinstance(
-            value,
-            dict
-        ):
-            return {
-                str(key): cls._json_ready(item)
-                for key, item in value.items()
-            }
-
-        if isinstance(
-            value,
-            list
-        ):
-            return [
-                cls._json_ready(item)
-                for item in value
-            ]
-
-        if isinstance(
-            value,
-            tuple
-        ):
-            return [
-                cls._json_ready(item)
-                for item in value
-            ]
-
-        if pd.isna(value):
-            return None
-
-        if isinstance(
-            value,
-            Path
-        ):
-            return str(value)
-
-        if isinstance(
-            value,
-            (date, datetime, pd.Timestamp)
-        ):
-            return value.isoformat()
-
-        if hasattr(
-            value,
-            "item"
-        ):
-            return cls._json_ready(
-                value.item()
-            )
-
-        if isinstance(
-            value,
-            (str, int, float, bool)
-        ) or value is None:
-            return value
-
-        return str(value)

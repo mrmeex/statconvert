@@ -75,8 +75,18 @@ from statconvert.registry import (
 from statconvert.exceptions import (
     ConfigError,
     ConversionError,
+    DataDictionaryError,
+    MetadataSidecarError,
+    MetadataScriptError,
     ObjectSelectionNotSupportedError,
 )
+from statconvert.metadata.sidecar import (
+    apply_sidecar as apply_metadata_sidecar,
+    export_sidecar as export_metadata_sidecar,
+    without_automatic_sidecar,
+)
+from statconvert.metadata.dictionary import export_data_dictionary
+from statconvert.metadata.scripts import export_metadata_script
 from statconvert.transformer import transform_file
 from statconvert.transformations.cli_parsing import build_pipeline_from_cli_options
 from statconvert.version import format_version_status
@@ -253,6 +263,75 @@ OverwriteConfigOption = Annotated[
     typer.Option(
         "--overwrite-config",
         help="Replace the --write-config file if it already exists.",
+    ),
+]
+ExportSidecarOption = Annotated[
+    bool,
+    typer.Option(
+        "--export-sidecar",
+        help=(
+            "Export the currently resolved metadata as a version 3 sidecar. "
+            "Uses the standardized sibling path unless --sidecar-output is set."
+        ),
+    ),
+]
+ApplySidecarOption = Annotated[
+    bool,
+    typer.Option(
+        "--apply-sidecar",
+        help=(
+            "Validate the standardized sidecar, or activate --sidecar-input "
+            "at the standardized sibling path."
+        ),
+    ),
+]
+SidecarOutputOption = Annotated[
+    str | None,
+    typer.Option(
+        "--sidecar-output",
+        help="Custom path for --export-sidecar.",
+    ),
+]
+SidecarInputOption = Annotated[
+    str | None,
+    typer.Option(
+        "--sidecar-input",
+        help="Custom sidecar source for --apply-sidecar.",
+    ),
+]
+OverwriteSidecarOption = Annotated[
+    bool,
+    typer.Option(
+        "--overwrite-sidecar",
+        help="Replace an existing sidecar export or applied standardized sidecar.",
+    ),
+]
+ExportDictionaryOption = Annotated[
+    str | None,
+    typer.Option(
+        "--export-dictionary",
+        help="Export resolved metadata as a human-readable .csv or .xlsx dictionary.",
+    ),
+]
+OverwriteDictionaryOption = Annotated[
+    bool,
+    typer.Option(
+        "--overwrite-dictionary",
+        help="Replace an existing data dictionary export.",
+    ),
+]
+ExportScriptOption = Annotated[
+    str | None,
+    typer.Option(
+        "--export-script",
+        help="Export resolved metadata as an .R, .do, or .sps helper script.",
+    ),
+]
+OverwriteScriptOption = Annotated[
+    bool,
+    typer.Option(
+        "--overwrite-script",
+        help="Replace an existing metadata helper script.",
     ),
 ]
 
@@ -1603,6 +1682,15 @@ def labels(
 def metadata(
     input_file: str,
     object_selector: ObjectSelectorOption = None,
+    export_sidecar: ExportSidecarOption = False,
+    apply_sidecar: ApplySidecarOption = False,
+    sidecar_output: SidecarOutputOption = None,
+    sidecar_input: SidecarInputOption = None,
+    overwrite_sidecar: OverwriteSidecarOption = False,
+    export_dictionary: ExportDictionaryOption = None,
+    overwrite_dictionary: OverwriteDictionaryOption = False,
+    export_script: ExportScriptOption = None,
+    overwrite_script: OverwriteScriptOption = False,
     log_file: LogFileOption = None,
     log_level: LogLevelOption = "info",
     log_append: LogAppendOption = False,
@@ -1615,18 +1703,133 @@ def metadata(
     try:
         with command_log_wrapper(
             command="metadata",
-            parameters={"input_file": input_file, "object": object_selector},
+            parameters={
+                "input_file": input_file,
+                "object": object_selector,
+                "export_sidecar": export_sidecar,
+                "apply_sidecar": apply_sidecar,
+                "sidecar_output": sidecar_output,
+                "sidecar_input": sidecar_input,
+                "overwrite_sidecar": overwrite_sidecar,
+                "export_dictionary": export_dictionary,
+                "overwrite_dictionary": overwrite_dictionary,
+                "export_script": export_script,
+                "overwrite_script": overwrite_script,
+            },
             log_file=log_file,
             log_level=log_level,
             log_append=log_append,
             developer_log=developer_log,
         ):
-            dataset = _read_dataset(
-                input_file,
-                object_selector=object_selector,
-            )
+            if export_sidecar and apply_sidecar:
+                raise MetadataSidecarError(
+                    "Use either --export-sidecar or --apply-sidecar, not both."
+                )
+            if sidecar_output is not None and not export_sidecar:
+                raise MetadataSidecarError(
+                    "--sidecar-output requires --export-sidecar."
+                )
+            if sidecar_input is not None and not apply_sidecar:
+                raise MetadataSidecarError(
+                    "--sidecar-input requires --apply-sidecar."
+                )
+            if overwrite_sidecar and not (export_sidecar or apply_sidecar):
+                raise MetadataSidecarError(
+                    "--overwrite-sidecar requires --export-sidecar or "
+                    "--apply-sidecar."
+                )
+            if overwrite_dictionary and export_dictionary is None:
+                raise DataDictionaryError(
+                    "--overwrite-dictionary requires --export-dictionary."
+                )
+            if overwrite_script and export_script is None:
+                raise MetadataScriptError(
+                    "--overwrite-script requires --export-script."
+                )
+            if apply_sidecar and get_backend_name(input_file) == "pyreadstat":
+                raise MetadataSidecarError(
+                    "Explicit sidecar apply is not supported for native "
+                    "statistical formats handled by pyreadstat.",
+                    suggestion=(
+                        "Convert to a sidecar-aware format before applying "
+                        "metadata. Native-file metadata is not modified."
+                    ),
+                )
+            if apply_sidecar and sidecar_input is not None:
+                with without_automatic_sidecar():
+                    dataset = _read_dataset(
+                        input_file,
+                        object_selector=object_selector,
+                    )
+            else:
+                dataset = _read_dataset(
+                    input_file,
+                    object_selector=object_selector,
+                )
+            exported_path = None
+            dictionary_path = None
+            script_path = None
+            applied_result = None
+            if export_sidecar:
+                exported_path = export_metadata_sidecar(
+                    dataset,
+                    input_file,
+                    output_path=sidecar_output,
+                    overwrite=overwrite_sidecar,
+                )
+            elif apply_sidecar:
+                applied_result = apply_metadata_sidecar(
+                    dataset,
+                    input_file,
+                    source_path=sidecar_input,
+                    overwrite=overwrite_sidecar,
+                )
+                if sidecar_input is not None:
+                    dataset = _read_dataset(
+                        input_file,
+                        object_selector=object_selector,
+                    )
+            if export_dictionary is not None:
+                dictionary_path = export_data_dictionary(
+                    dataset,
+                    input_file,
+                    export_dictionary,
+                    overwrite=overwrite_dictionary,
+                )
+            if export_script is not None:
+                script_path = export_metadata_script(
+                    dataset,
+                    input_file,
+                    export_script,
+                    overwrite=overwrite_script,
+                )
             _show_dataset_header(input_file, dataset)
             show_metadata_summary(dataset)
+            if (
+                applied_result is not None
+                and applied_result.unmatched_data_columns
+            ):
+                unmatched = ", ".join(applied_result.unmatched_data_columns)
+                show_warning(
+                    "Sidecar metadata applies only to matching columns. "
+                    f"Columns without sidecar metadata: {unmatched}"
+                )
+            if exported_path is not None:
+                show_success(f"Metadata sidecar written: {exported_path}")
+            elif applied_result is not None:
+                if applied_result.already_active:
+                    show_success(
+                        "Metadata sidecar is valid and active: "
+                        f"{applied_result.target_path}"
+                    )
+                else:
+                    show_success(
+                        f"Metadata sidecar applied: {applied_result.target_path}"
+                    )
+            if dictionary_path is not None:
+                show_success(f"Data dictionary written: {dictionary_path}")
+            if script_path is not None:
+                show_success(f"Metadata helper script written: {script_path}")
 
     except Exception as exc:
 

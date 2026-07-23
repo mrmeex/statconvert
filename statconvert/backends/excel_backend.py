@@ -23,7 +23,8 @@ import pandas as pd
 
 from statconvert.dataset import Dataset
 from statconvert.exceptions import ConversionError
-from statconvert.metadata import build_basic_metadata, metadata_from_sidecar
+from statconvert.metadata import build_basic_metadata
+from statconvert.metadata.sidecar import restore_metadata
 
 
 class ExcelBackend(Backend):
@@ -131,15 +132,15 @@ class ExcelBackend(Backend):
         }
 
 
-        column_metadata = Dataset.read_sidecar(filename)
-        normalized_metadata = metadata_from_sidecar(
-            build_basic_metadata(
+        restored = restore_metadata(
+            dataframe=df,
+            filename=filename,
+            base_metadata=build_basic_metadata(
                 dataframe=df,
                 source_format="excel",
                 source_backend=self.name,
                 raw_metadata=metadata,
             ),
-            column_metadata,
         )
 
         return Dataset(
@@ -147,8 +148,9 @@ class ExcelBackend(Backend):
             metadata=metadata,
             source_format="excel",
             source_file=filename,
-            normalized_metadata=normalized_metadata,
-            column_metadata=column_metadata,
+            normalized_metadata=restored.metadata,
+            column_metadata=restored.column_metadata,
+            metadata_provenance=restored.provenance,
         )
 
 

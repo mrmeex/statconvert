@@ -3,7 +3,7 @@ site_description: Convert, inspect, validate, transform, and compare statistical
 site_url: https://mrmeex.github.io/statconvert/
 repo_name: mrmeex/statconvert
 repo_url: https://github.com/mrmeex/statconvert
-edit_uri: edit/main/docs/
+edit_uri: ""
 copyright: Copyright &copy; 2026 StatConvert
 
 theme:

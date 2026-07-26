@@ -23,8 +23,7 @@ features such as formatting, formulas, macros, charts, or existing sheets.
 
 StatConvert requires Python 3.11 or newer. Install the downloaded release wheel from the
 GitHub Releases page; installation, upgrades, and managed deployment are covered by the
-[Administrator Guide](admin-guide.md). Build and artifact validation are private
-maintainer workflows covered by the [Packaging Guide](packaging.md).
+[Administrator Guide](admin-guide.md).
 
 Verify the installed command and list the formats available in the current environment:
 
@@ -749,5 +748,3 @@ run the single-dataset files without `--object`.
 - [CLI Reference](cli.md) for every command option and exit policy
 - [Format Guide](formats.md) for the capability matrix and format caveats
 - [Administrator Guide](admin-guide.md) for installation, updates, and deployment
-- [Developer Guide](developer-guide.md) for contributing and maintenance
-- [Packaging Guide](packaging.md) for builds and clean-install validation

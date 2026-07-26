@@ -7,7 +7,6 @@ hide:
 <section class="statconvert-hero" markdown="1">
   <p class="statconvert-eyebrow">Statistical data, made portable</p>
   <h1>StatConvert</h1>
-  <p class="statconvert-tagline">Convert statistical data without the friction.</p>
   <p class="statconvert-lede">
     StatConvert is a command-line tool for inspecting, validating, transforming, and
     converting statistical datasets between formats such as SPSS, Stata, SAS, R,

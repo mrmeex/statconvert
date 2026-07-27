@@ -38,6 +38,8 @@ class BatchWorkloadSummary:
     target_format: str = ""
     transform_enabled: bool = False
     validation_enabled: bool = False
+    streaming_enabled: bool = False
+    chunk_size: int | None = None
     object_mode: str = "none"
     memory_note: str | None = None
 
@@ -76,6 +78,8 @@ class BatchPlanningOptions:
     workers: int = 1
     transform_enabled: bool = False
     validation_enabled: bool = False
+    streaming_enabled: bool = False
+    chunk_size: int | None = None
     object_mode: str = "none"
 
 
@@ -106,6 +110,10 @@ class BatchItem:
     validation_warnings: int | None = None
     started_at: str | None = None
     finished_at: str | None = None
+    streaming: bool = False
+    chunk_size: int | None = None
+    chunks_processed: int | None = None
+    rows_processed: int | None = None
 
 
 @dataclass
@@ -316,6 +324,26 @@ class BatchResult:
 
         return self.blocked_count > 0
 
+    @property
+    def total_streamed_rows(self) -> int:
+        """Return streamed rows across successful items."""
+
+        return sum(
+            item.rows_processed or 0
+            for item in self.success_items()
+            if item.streaming
+        )
+
+    @property
+    def total_streamed_chunks(self) -> int:
+        """Return streamed chunks across successful items."""
+
+        return sum(
+            item.chunks_processed or 0
+            for item in self.success_items()
+            if item.streaming
+        )
+
 
     def success_items(self) -> list[BatchItem]:
         """
@@ -405,6 +433,8 @@ def _build_workload_summary(
         target_format=options.target_extension,
         transform_enabled=options.transform_enabled,
         validation_enabled=options.validation_enabled,
+        streaming_enabled=options.streaming_enabled,
+        chunk_size=options.chunk_size,
         object_mode=options.object_mode,
         memory_note=(MULTI_WORKER_MEMORY_NOTE if options.workers > 1 else None),
     )

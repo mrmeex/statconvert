@@ -5,12 +5,11 @@ inspecting, validating, batch-processing, comparing, reporting, and logging stat
 datasets. It uses a backend registry and a common `Dataset` model so format-specific code
 stays out of conversion and analysis workflows.
 
-Version 0.8.0 adds versioned TOML schema contracts and named data-quality rules.
-`schema --export-contract` creates deterministic starter contracts,
-`validate --schema-contract` provides terminal or JSON quality gates, and
-`report --schema-contract` adds observational findings to JSON, CSV, and HTML reports.
-Validate and report contract workflows can also be saved and run through existing TOML
-workflow configs. No new dependencies are introduced.
+Version 0.9.0 adds opt-in streaming conversion, batch conversion, and schema-contract
+validation for CSV, JSONL, and NDJSON. `--chunk-size ROWS` controls bounded reads for
+these workflows, while ordinary in-memory behavior remains the default. JSON arrays and
+all other formats continue to use the normal in-memory paths. No new dependencies are
+introduced.
 
 ## Implemented features
 
@@ -36,6 +35,8 @@ workflow configs. No new dependencies are introduced.
 - Opt-in file diagnostics across every public command
 - Plain-text installed version, Python version, and runtime dependency status
 - TOML starter generation and validation for repeatable single-command workflows
+- Opt-in streaming conversion and batch conversion for all nine ordered pairs among CSV,
+  JSONL, and NDJSON, plus contract-only streaming validation for those inputs
 
 Dataset comparison is provided by `statconvert compare`. There is currently no separate
 `statconvert diff` alias.
@@ -79,6 +80,7 @@ statconvert metadata input.sav --export-sidecar
 statconvert metadata input.sav --export-dictionary dictionary.xlsx
 statconvert metadata input.sav --export-script labels.R
 statconvert convert input.sav output.xlsx
+statconvert convert input.csv output.jsonl --stream --chunk-size 50000
 statconvert convert input.sav new-output/output.xlsx --create-dirs
 statconvert convert workbook.xlsx output.csv --object Data
 statconvert convert workbook.xlsx combined.ods --all-objects
@@ -86,12 +88,14 @@ statconvert collect objects.csv combined.xlsx --base-dir incoming
 statconvert validate input.sav --to parquet
 statconvert schema input.sav --export-contract schema.toml
 statconvert validate input.sav --schema-contract schema.toml
+statconvert validate input.csv --schema-contract schema.toml --stream
 statconvert report input.sav --output quality.html --schema-contract schema.toml
 statconvert compare before.sav after.parquet
 statconvert compare before.csv after.csv --ignore-columns exported_at --numeric-tolerance 0.001
 statconvert compare before.csv after.csv --key id --max-differences 10
 statconvert report input.sav --output report.html
 statconvert batch input-folder output-folder --to parquet
+statconvert batch incoming-csv output-jsonl --to jsonl --stream --chunk-size 50000
 statconvert batch input-folder output-folder --to parquet --workers 2 --dry-run
 statconvert config init batch --output batch.toml
 statconvert config validate batch.toml
@@ -130,6 +134,13 @@ their selected datasets in memory before writing one final XLSX or ODS container
 large inputs, prefer separate Parquet/Feather batch outputs over JSON/Excel/ODS where
 practical. Object listing is metadata-oriented, although
 RData/RDA discovery may load workspace data because of backend-library limitations.
+
+Streaming is explicitly enabled with `--stream` and is limited to CSV, JSONL, and NDJSON.
+All nine source/target pairs are available for `convert` and plain `batch`; streaming
+validation accepts those three inputs and requires `--schema-contract`. Exact uniqueness
+validation retains observed keys in memory. Streaming conversion writes its metadata
+sidecar only after the data file commits successfully. Transforms, reports, compare,
+collect, object modes, JSON arrays, and other formats are not streamed.
 
 Use `statconvert capabilities FORMAT` for detailed runtime capabilities. Important output
 restrictions include:

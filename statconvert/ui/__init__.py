@@ -39,6 +39,10 @@ from .objects import (
 )
 from .reporting import show_dataset_report_written
 from .tables import show_dataset_info, show_preview
+from .streaming import (
+    show_streaming_conversion_result,
+    show_streaming_validation_summary,
+)
 from .transformations import show_transformation_summary
 
 __all__ = [
@@ -76,6 +80,8 @@ __all__ = [
     "show_frequency_tables",
     "show_missing_profiles",
     "show_schema_contract_validation",
+    "show_streaming_conversion_result",
+    "show_streaming_validation_summary",
     "show_validation_issues",
     "show_preview",
     "show_objects_not_supported",

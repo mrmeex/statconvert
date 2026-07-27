@@ -198,6 +198,9 @@ Options:
   It conflicts with `--object`.
 - `--overwrite` replaces an existing output.
 - `--create-dirs` creates a missing output parent directory.
+- `--stream` opts into bounded conversion for CSV, JSONL, and NDJSON pairs only.
+- `--chunk-size ROWS` sets a positive streaming chunk size and requires `--stream`.
+  Streaming defaults to 100,000 rows per chunk.
 - `--write-config FILE` writes this invocation as TOML without converting data.
 - `--overwrite-config` permits replacement of the selected config file only.
 - `--validate` validates the loaded dataset for the output extension before writing.
@@ -224,6 +227,9 @@ statconvert convert input.csv output.xlsx --input-encoding latin1 --csv-delimite
 statconvert convert input.xlsx output.csv --output-encoding utf-8-sig --csv-delimiter ";"
 statconvert convert legacy.csv clean.csv --input-encoding latin1 --output-encoding utf-8-sig --csv-delimiter ";"
 statconvert convert input.xlsx output.csv --csv-delimiter ";" --csv-decimal ","
+statconvert convert input.csv output.jsonl --stream
+statconvert convert input.jsonl output.csv --stream --chunk-size 50000
+statconvert convert input.ndjson output.jsonl --stream --chunk-size 10000 --overwrite
 ```
 
 Validation errors always prevent writing. Warnings prevent writing only in strict mode.
@@ -231,6 +237,17 @@ Unsupported output extensions fail before a backend write. Genuine `.xls` writin
 the normally installed `xlwt` dependency and is limited to 65,535 data rows plus one header row and
 256 columns; use `.xlsx` for larger or wider datasets. `.zsav`, `.por`, and `.sas7bdat`
 are read-only.
+
+Streaming is off by default. It supports all nine ordered source/target pairs among CSV,
+JSONL, and NDJSON. JSON arrays and every other format must use the normal in-memory path.
+`--stream` cannot currently be combined with object selection, `--all-objects`,
+validation, or `--write-config`. `--chunk-size` without `--stream` is an error.
+
+The streaming writer validates stable ordered columns, writes to a temporary sibling, and
+commits the target only after all chunks succeed. It loads a source sidecar once and
+commits one final standardized sidecar after the data file. Malformed records or schema
+drift fail without publishing partial output. `convert` has no JSON-output option, so its
+streaming completion summary is human-readable only.
 
 `convert --all-objects` is container-to-container conversion: one XLSX, XLS, ODS,
 RData, or RDA input becomes one XLSX or ODS output with one sheet per supported input
@@ -622,12 +639,16 @@ Actual nulls and metadata-defined missing values/ranges are reported separately.
 
 ```bash
 statconvert validate INPUT_FILE [--to FORMAT] [--strict] [--json]
-    [--object OBJECT] [--schema-contract PATH] [--write-config FILE]
+    [--object OBJECT] [--schema-contract PATH] [--stream]
+    [--chunk-size ROWS] [--write-config FILE]
 ```
 
 - `--to FORMAT` adds destination-format readiness and metadata-preservation checks.
 - `--strict` makes warnings fail validation.
 - `--schema-contract PATH` adds validation against a version 1 TOML schema contract.
+- `--stream` opts into contract-only streaming validation for CSV, JSONL, and NDJSON.
+- `--chunk-size ROWS` sets a positive streaming chunk size, defaults to `100000`, and
+  requires `--stream`.
 - `--json` emits the existing issue array without a contract. With
   `--schema-contract`, it emits an object containing `validation` and
   `schema_contract` results.
@@ -643,11 +664,27 @@ expected and actual values, affected-row counts, bounded samples, and source-rul
 identifiers. Validation uses the resolved `Dataset`, so active sidecars and embedded
 Arrow metadata participate under the normal precedence rules.
 
+Streaming validation requires `--schema-contract`; ordinary no-contract and
+destination-readiness checks depend on a complete DataFrame and remain available by
+omitting `--stream`. Streaming supports required/unexpected columns, column order,
+reliable resolved storage/logical types, nullability/not-null, allowed values, numeric
+ranges, regular expressions, string length, row count, and exact single/composite
+uniqueness. Uniqueness retains every complete key, so memory grows with distinct keys; it
+is never approximated. Samples remain bounded to five values per issue.
+
+Human streaming output adds chunk size, chunks/rows processed, rules/columns checked,
+status, and issue totals without per-chunk noise. JSON contract output retains
+`validation` and `schema_contract` and adds a `streaming` object. JSON arrays and all
+non-CSV/JSONL/NDJSON inputs are rejected before an in-memory read. Object selection,
+`--to`, and streaming config serialization are not supported. Streaming validation is
+read-only and does not add report, compare, collect, or transform integration.
+
 Generate a conservative starting point, edit deliberate rules, then validate it:
 
 ```bash
 statconvert schema input.sav --export-contract schema.toml
 statconvert validate input.sav --schema-contract schema.toml
+statconvert validate input.csv --schema-contract schema.toml --stream --chunk-size 50000
 ```
 
 Starter exports avoid inferred allowed values, ranges, regular expressions, uniqueness,
@@ -742,6 +779,10 @@ Options:
 - `--recursive`, `-r` - include subdirectories.
 - `--overwrite` - allow existing output replacement.
 - `--create-dirs` - create the root output directory when it is missing.
+- `--stream` - opt into bounded conversion when every executed item is a CSV, JSONL, or
+  NDJSON source/target pair.
+- `--chunk-size ROWS` - positive rows per streaming chunk; requires `--stream` and
+  defaults to `100000`.
 - `--preserve-structure` / `--flatten` - path policy (preserve is default).
 - `--include-unsupported` / `--supported-only` - skipped-input visibility.
 - `--pattern GLOB` and `--exclude-pattern GLOB` - repeatable discovery filters.
@@ -787,6 +828,20 @@ during execution, so dry-run performs no dataset or object reads. Shared `--obje
 selects one object per file; expansion requires `--all-objects`. A format that
 does not support object selection fails as an individual item rather than silently
 ignoring `--object`.
+
+With `--stream`, each pending item delegates to the same transactional streaming executor
+as `convert --stream`. All nine ordered pairs among CSV, JSONL, and NDJSON are supported.
+Unsupported pairs, including JSON arrays, fail as normal batch items before creating a
+final output; the existing continue/fail-fast policy still applies. Successful items
+record rows and chunks, and human summaries, JSON, and CSV/JSON reports expose per-item
+metrics plus total streamed rows/chunks. Sidecars are committed only after each successful
+data file, while failures preserve existing targets and clean temporary output.
+
+Batch streaming cannot be combined with transforms, validation, object selection,
+object manifests, or all-object expansion. Use normal batch without `--stream` for those
+workflows and for Parquet, Feather, spreadsheets, statistical-package, R, or JSON-array
+formats. Batch streaming config serialization is deferred: `--stream` with
+`--write-config` is rejected, and existing batch configs remain non-streaming.
 
 Manifest mode reads either the full CSV from `objects --output` or a minimal CSV:
 
@@ -835,6 +890,8 @@ are supported because `pyreadr` descriptors alone are not always sufficient.
 ```bash
 statconvert batch input output --to csv --recursive --dry-run
 statconvert batch input new-output --to csv --create-dirs
+statconvert batch input output --to jsonl --stream --chunk-size 50000
+statconvert batch input-jsonl output-csv --to csv --stream --workers 2
 statconvert batch input output --to parquet --workers 4 --report result.csv
 statconvert batch input output --to xlsx --validate --strict-validation
 statconvert batch workbooks output --to csv --object Data

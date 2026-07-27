@@ -284,8 +284,9 @@ not write SAS7BDAT files.
 
 The JSON backend is for tabular, record-oriented data. `.json` output is an indented JSON
 array of record objects. `.jsonl` and `.ndjson` contain one record object per line, which
-is useful for streaming-oriented tools even though StatConvert itself does not implement
-streaming conversion.
+is useful for streaming-oriented tools. StatConvert implements opt-in streaming only for
+CSV, JSONL, and NDJSON conversion pairs and contract validation; JSON arrays remain on the
+normal in-memory path.
 
 ```powershell
 statconvert convert input.csv output.json
@@ -493,5 +494,5 @@ StatConvert does not currently provide:
   relative tolerances, or chunked comparison; or
 - human-readable descriptions of raw display-format codes.
 
-Use `statconvert capabilities FORMAT` for the installed capability details. Deferred
-format work is described in the release notes when it becomes user-facing.
+The CLI rejects unsupported operations before writing output. Use `statconvert
+capabilities FORMAT` to inspect the active format contract.

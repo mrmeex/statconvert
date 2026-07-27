@@ -85,6 +85,15 @@ from statconvert.exceptions import (
     MetadataScriptError,
     ObjectSelectionNotSupportedError,
 )
+from statconvert.streaming.execution import execute_streaming_convert
+from statconvert.streaming.options import (
+    DEFAULT_STREAMING_CHUNK_SIZE,
+    validate_chunk_size,
+)
+from statconvert.streaming.validation import (
+    require_streaming_validation_input,
+    validate_streaming_contract,
+)
 from statconvert.metadata.sidecar import (
     apply_sidecar as apply_metadata_sidecar,
     export_sidecar as export_metadata_sidecar,
@@ -121,6 +130,8 @@ from statconvert.ui import (
     show_frequency_tables,
     show_missing_profiles,
     show_schema_contract_validation,
+    show_streaming_conversion_result,
+    show_streaming_validation_summary,
     show_validation_issues,
     show_formats_table,
     show_labels,
@@ -255,6 +266,46 @@ CreateDirsOption = Annotated[
     typer.Option(
         "--create-dirs",
         help="Create missing output directories when writing files.",
+    ),
+]
+StreamOption = Annotated[
+    bool,
+    typer.Option(
+        "--stream",
+        help=(
+            "Use bounded streaming for CSV, JSONL and NDJSON source/target pairs."
+        ),
+    ),
+]
+ChunkSizeOption = Annotated[
+    int | None,
+    typer.Option(
+        "--chunk-size",
+        min=1,
+        help=(
+            "Rows per streaming chunk. Requires --stream; defaults to 100000."
+        ),
+    ),
+]
+BatchStreamOption = Annotated[
+    bool,
+    typer.Option(
+        "--stream",
+        help=(
+            "Use bounded streaming for CSV, JSONL and NDJSON source/target pairs."
+        ),
+        rich_help_panel="Streaming",
+    ),
+]
+BatchChunkSizeOption = Annotated[
+    int | None,
+    typer.Option(
+        "--chunk-size",
+        min=1,
+        help=(
+            "Rows per streaming chunk. Requires --stream; defaults to 100000."
+        ),
+        rich_help_panel="Streaming",
     ),
 ]
 WriteConfigOption = Annotated[
@@ -507,6 +558,83 @@ def _batch_transform_options_supplied(ctx: Any) -> bool:
     )
 
 
+def _validate_batch_streaming_options(
+    *,
+    stream: bool,
+    transform_items: bool,
+    validate_inputs: bool,
+    object_selector: str | None,
+    object_manifest: str | None,
+    all_objects: bool,
+    write_config_file: str | None,
+) -> None:
+    """Reject batch modes that do not yet have a streaming contract."""
+
+    if not stream:
+        return
+    if transform_items:
+        raise BatchError(
+            "Batch streaming does not support transforms yet.",
+            suggestion="Run without --stream, or remove the batch transform options.",
+        )
+    if validate_inputs:
+        raise BatchError(
+            "Batch streaming does not support validation yet.",
+            suggestion="Run without --stream, or remove --validate.",
+        )
+    if object_selector is not None or object_manifest is not None or all_objects:
+        raise BatchError(
+            "Batch streaming does not support object selection or containers.",
+            suggestion=(
+                "Run without --stream, or batch plain CSV, JSONL, and NDJSON files."
+            ),
+        )
+    if write_config_file is not None:
+        raise BatchError(
+            "Batch streaming config integration is not available yet.",
+            suggestion="Run the batch directly, or write a non-streaming batch config.",
+        )
+
+
+def _validate_streaming_validate_options(
+    *,
+    stream: bool,
+    schema_contract: str | None,
+    object_selector: str | None,
+    to_format: str | None,
+    write_config_file: str | None,
+) -> None:
+    """Reject validate modes without a faithful streaming contract."""
+
+    if not stream:
+        return
+    if schema_contract is None:
+        raise ConversionError(
+            "Streaming validation requires --schema-contract.",
+            suggestion=(
+                "Run without --stream for full in-memory validation, or provide "
+                "a schema contract."
+            ),
+        )
+    if object_selector is not None:
+        raise ConversionError(
+            "Streaming validation does not support object selection.",
+            suggestion="Run without --stream, or validate a CSV, JSONL, or NDJSON file.",
+        )
+    if to_format is not None:
+        raise ConversionError(
+            "Streaming validation does not support --to conversion-readiness checks.",
+            suggestion="Run without --stream to use destination-readiness validation.",
+        )
+    if write_config_file is not None:
+        raise ConversionError(
+            "Streaming validation config integration is not available yet.",
+            suggestion=(
+                "Run validation directly, or write a non-streaming validation config."
+            ),
+        )
+
+
 def _write_command_config(
     command: str,
     config_file: str,
@@ -560,6 +688,54 @@ def _dataset_io_options(
             csv_decimal=csv_decimal,
         ),
     )
+
+
+def _streaming_chunk_size(
+    *,
+    stream: bool,
+    chunk_size: int | None,
+) -> int | None:
+    """Resolve the convert-only opt-in streaming chunk size."""
+
+    if not stream:
+        if chunk_size is not None:
+            raise ConversionError("--chunk-size requires --stream.")
+        return None
+    resolved = chunk_size or DEFAULT_STREAMING_CHUNK_SIZE
+    try:
+        return validate_chunk_size(resolved)
+    except ValueError as exc:
+        raise ConversionError(str(exc)) from exc
+
+
+def _validate_streaming_convert_options(
+    *,
+    stream: bool,
+    object_selector: str | None,
+    all_objects: bool,
+    validate_inputs: bool,
+    strict_validation: bool,
+    write_config_file: str | None,
+) -> None:
+    """Reject convert features not supported by the streaming path."""
+
+    if not stream:
+        return
+    if object_selector is not None or all_objects:
+        raise ConversionError(
+            "--stream does not support --object or --all-objects.",
+            suggestion="Run without --stream for container object conversion.",
+        )
+    if validate_inputs or strict_validation:
+        raise ConversionError(
+            "--stream does not support --validate or --strict-validation yet.",
+            suggestion="Run without --stream to use conversion validation.",
+        )
+    if write_config_file is not None:
+        raise ConversionError(
+            "--stream is not supported by convert workflow configuration yet.",
+            suggestion="Omit --stream when using --write-config.",
+        )
 
 
 def _show_dataset_option_warning(message: str, *, json_output: bool = False) -> None:
@@ -701,6 +877,8 @@ def convert(
     ),
     overwrite: OverwriteOption = False,
     create_dirs: CreateDirsOption = False,
+    stream: StreamOption = False,
+    chunk_size: ChunkSizeOption = None,
     write_config_file: WriteConfigOption = None,
     overwrite_config: OverwriteConfigOption = False,
     validate_inputs: bool = typer.Option(
@@ -729,6 +907,18 @@ def convert(
     validation_failure: ValidationFailedError | None = None
 
     try:
+        effective_chunk_size = _streaming_chunk_size(
+            stream=stream,
+            chunk_size=chunk_size,
+        )
+        _validate_streaming_convert_options(
+            stream=stream,
+            object_selector=object_selector,
+            all_objects=all_objects,
+            validate_inputs=validate_inputs,
+            strict_validation=strict_validation,
+            write_config_file=write_config_file,
+        )
         _validate_write_config_options(write_config_file, overwrite_config)
         if write_config_file is not None:
             _write_command_config(
@@ -763,6 +953,8 @@ def convert(
                 "all_objects": all_objects,
                 "overwrite": overwrite,
                 "create_dirs": create_dirs,
+                "stream": stream,
+                "chunk_size": effective_chunk_size,
                 "validate": validate_inputs,
                 "strict_validation": strict_validation,
                 "input_encoding": input_encoding,
@@ -786,7 +978,17 @@ def convert(
                     "Use either --object or --all-objects, not both."
                 )
             try:
-                if all_objects:
+                if stream:
+                    streaming_result = execute_streaming_convert(
+                        input_file,
+                        output_file,
+                        chunk_size=effective_chunk_size,
+                        overwrite=overwrite,
+                        create_dirs=create_dirs,
+                        read_options=read_options,
+                        write_options=write_options,
+                    )
+                elif all_objects:
                     conversion_result = convert_all_objects(
                         input_file=input_file,
                         output_file=output_file,
@@ -837,7 +1039,18 @@ def convert(
                     strict=strict_validation,
                 )
             else:
-                if all_objects:
+                if stream:
+                    logger.info(
+                        "Streaming conversion result: output_file=%s chunks=%s "
+                        "rows=%s chunk_size=%s sidecar=%s",
+                        output_file,
+                        streaming_result.chunks_processed,
+                        streaming_result.rows_processed,
+                        streaming_result.chunk_size,
+                        streaming_result.sidecar_path,
+                    )
+                    show_streaming_conversion_result(streaming_result)
+                elif all_objects:
                     for skipped in conversion_result.skipped_objects:
                         name = (
                             skipped.name
@@ -2223,6 +2436,8 @@ def validate(
         "--schema-contract",
         help="Validate the resolved dataset against a version 1 TOML contract.",
     ),
+    stream: StreamOption = False,
+    chunk_size: ChunkSizeOption = None,
     json_output: bool = typer.Option(
         False,
         "--json",
@@ -2242,6 +2457,19 @@ def validate(
     exit_code = 0
 
     try:
+        effective_chunk_size = _streaming_chunk_size(
+            stream=stream,
+            chunk_size=chunk_size,
+        )
+        if stream:
+            require_streaming_validation_input(input_file)
+        _validate_streaming_validate_options(
+            stream=stream,
+            schema_contract=schema_contract,
+            object_selector=object_selector,
+            to_format=to_format,
+            write_config_file=write_config_file,
+        )
         _validate_write_config_options(write_config_file, overwrite_config)
         if write_config_file is not None:
             _write_command_config(
@@ -2269,6 +2497,8 @@ def validate(
                 "target_format": to_format,
                 "strict": strict,
                 "schema_contract": schema_contract,
+                "stream": stream,
+                "chunk_size": effective_chunk_size,
                 "json": json_output,
             },
             log_file=log_file,
@@ -2276,23 +2506,35 @@ def validate(
             log_append=log_append,
             developer_log=developer_log,
         ) as logger:
-            target_extension = _resolve_target_extension(
-                to_format
-            )
-            dataset = _read_dataset(
-                input_file,
-                object_selector=object_selector,
-            )
-            issues = validate_dataset(
-                dataset,
-                target_format=target_extension,
-                strict=strict,
-            )
-            contract_validation = (
-                validate_schema_contract_file(dataset, schema_contract)
-                if schema_contract is not None
-                else None
-            )
+            streaming_result = None
+            dataset = None
+            if stream:
+                streaming_result = validate_streaming_contract(
+                    input_file,
+                    schema_contract or "",
+                    chunk_size=effective_chunk_size or DEFAULT_STREAMING_CHUNK_SIZE,
+                )
+                target_extension = None
+                issues = []
+                contract_validation = streaming_result.contract_validation
+            else:
+                target_extension = _resolve_target_extension(
+                    to_format
+                )
+                dataset = _read_dataset(
+                    input_file,
+                    object_selector=object_selector,
+                )
+                issues = validate_dataset(
+                    dataset,
+                    target_format=target_extension,
+                    strict=strict,
+                )
+                contract_validation = (
+                    validate_schema_contract_file(dataset, schema_contract)
+                    if schema_contract is not None
+                    else None
+                )
             combined_issues = list(issues)
             if contract_validation is not None:
                 combined_issues.extend(contract_validation.issues)
@@ -2323,7 +2565,17 @@ def validate(
                     asdict(issue)
                     for issue in issues
                 ]
-                if contract_validation is None:
+                if streaming_result is not None:
+                    emit_json(
+                        {
+                            "validation": validation_payload,
+                            "schema_contract": contract_validation.to_dict(
+                                strict=strict,
+                            ),
+                            "streaming": streaming_result.streaming_dict(),
+                        }
+                    )
+                elif contract_validation is None:
                     emit_json(validation_payload)
                 else:
                     emit_json(
@@ -2335,15 +2587,21 @@ def validate(
                         }
                     )
             else:
-                _show_dataset_header(
-                    input_file,
-                    dataset,
-                )
-                show_validation_issues(
-                    issues,
-                    strict=strict,
-                    target_format=target_extension,
-                )
+                if streaming_result is not None:
+                    show_streaming_validation_summary(
+                        streaming_result,
+                        strict=strict,
+                    )
+                else:
+                    _show_dataset_header(
+                        input_file,
+                        dataset,
+                    )
+                    show_validation_issues(
+                        issues,
+                        strict=strict,
+                        target_format=target_extension,
+                    )
                 if contract_validation is not None:
                     show_schema_contract_validation(
                         contract_validation,
@@ -3009,6 +3267,8 @@ def batch(
     ),
     overwrite: OverwriteOption = False,
     create_dirs: CreateDirsOption = False,
+    stream: BatchStreamOption = False,
+    chunk_size: BatchChunkSizeOption = None,
     write_config_file: WriteConfigOption = None,
     overwrite_config: OverwriteConfigOption = False,
     preserve_structure: bool = typer.Option(
@@ -3097,6 +3357,19 @@ def batch(
     exit_code = 0
 
     try:
+        effective_chunk_size = _streaming_chunk_size(
+            stream=stream,
+            chunk_size=chunk_size,
+        )
+        _validate_batch_streaming_options(
+            stream=stream,
+            transform_items=transform_items,
+            validate_inputs=validate_inputs,
+            object_selector=object_selector,
+            object_manifest=object_manifest,
+            all_objects=all_objects,
+            write_config_file=write_config_file,
+        )
         _validate_write_config_options(write_config_file, overwrite_config)
         if write_config_file is not None:
             transform_pipeline = build_pipeline_from_cli_options(
@@ -3197,6 +3470,8 @@ def batch(
                 "recursive": recursive,
                 "overwrite": overwrite,
                 "create_dirs": create_dirs,
+                "stream": stream,
+                "chunk_size": effective_chunk_size,
                 "preserve_structure": preserve_structure,
                 "include_unsupported": include_unsupported,
                 "pattern": patterns,
@@ -3293,6 +3568,8 @@ def batch(
                 workers=workers,
                 transform_enabled=transform_items,
                 validation_enabled=validate_inputs,
+                streaming_enabled=stream,
+                chunk_size=effective_chunk_size,
                 object_mode=object_mode,
             )
             input_path_value = Path(input_path)

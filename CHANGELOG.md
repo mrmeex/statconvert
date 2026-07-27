@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.9.0 - 2026-07-27
+
+### Added
+
+- Added backend-owned CSV and JSONL/NDJSON chunk readers, transactional chunk writers,
+  stable ordered-schema validation, and deterministic chunk/row metrics.
+- Added opt-in `convert --stream` and `--chunk-size ROWS` for all nine ordered
+  CSV/JSONL/NDJSON pairs.
+- Added opt-in `batch --stream` with shared chunk-size handling, deterministic item
+  ordering, worker/fail-fast behavior, per-item sidecars, and JSON/report metrics.
+- Added opt-in, contract-only `validate --stream` for CSV, JSONL, and NDJSON with bounded
+  schema and named-rule aggregation.
+- Added exact retained-key state for single and composite uniqueness across chunks while
+  preserving issue codes, severities, source rules, affected rows, and bounded samples.
+
+### Notes
+
+- Streaming remains opt-in. Normal in-memory behavior remains the default.
+- JSON arrays and formats outside CSV, JSONL, and NDJSON are not streamable.
+- Streaming conversion and batch write a final metadata sidecar only after the data file
+  commits successfully.
+- Streaming validation requires `--schema-contract`, writes no datasets or sidecars, and
+  may use memory proportional to the number of distinct uniqueness keys.
+- Transforms, reports, compare, collect, object modes, and workflow config serialization
+  are not streamed.
+- No new dependencies were added.
+
 ## 0.8.0 - 2026-07-27
 
 ### Added

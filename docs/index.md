@@ -25,9 +25,11 @@ hide:
 ```powershell title="Inspect, convert, and validate"
 statconvert info survey.sav
 statconvert convert survey.sav survey.parquet
+statconvert convert records.csv records.jsonl --stream --chunk-size 50000
 statconvert validate survey.sav
 statconvert schema survey.sav --export-contract schema.toml
 statconvert validate survey.sav --schema-contract schema.toml
+statconvert validate records.csv --schema-contract schema.toml --stream
 ```
 </section>
 
@@ -47,6 +49,10 @@ statconvert validate survey.sav --schema-contract schema.toml
   <article>
     <h2>Define data-quality contracts</h2>
     <p>Export versioned TOML schema contracts and apply named rules in validation or reports.</p>
+  </article>
+  <article>
+    <h2>Stream line-oriented data</h2>
+    <p>Opt into chunked CSV, JSONL, and NDJSON conversion, batch, and contract-validation workflows.</p>
   </article>
 </section>
 

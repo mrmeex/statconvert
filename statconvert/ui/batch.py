@@ -128,6 +128,9 @@ def show_batch_workload(
     table.add_row("Object mode", plan.workload.object_mode)
     table.add_row("Transform", _format_bool(plan.workload.transform_enabled))
     table.add_row("Validation", _format_bool(plan.workload.validation_enabled))
+    table.add_row("Streaming", _format_bool(plan.workload.streaming_enabled))
+    if plan.workload.streaming_enabled:
+        table.add_row("Chunk size", _format_count(plan.workload.chunk_size or 0))
     table.add_row("Report", "none" if report_path is None else str(report_path))
     console.print(table)
     _show_memory_note(plan.workload.memory_note)
@@ -314,6 +317,15 @@ def show_batch_result(
         ),
     )
     _add_workload_rows(summary, result.workload)
+    if result.workload.streaming_enabled:
+        summary.add_row(
+            "Streamed chunks",
+            _format_count(result.total_streamed_chunks),
+        )
+        summary.add_row(
+            "Streamed rows",
+            _format_count(result.total_streamed_rows),
+        )
 
     console.print(
         summary
@@ -340,6 +352,11 @@ def show_batch_result(
         "Shape",
         justify="right",
     )
+    if result.workload.streaming_enabled:
+        table.add_column(
+            "Streaming",
+            justify="right",
+        )
     table.add_column(
         "Duration",
         justify="right",
@@ -350,14 +367,25 @@ def show_batch_result(
     )
 
     for item in result.items:
-        table.add_row(
+        values = [
             item.status,
             _format_input_file(item),
             _format_output_file(item),
             _format_shape(item),
-            "" if item.duration_seconds is None else f"{item.duration_seconds:.2f}s",
-            _format_item_message(item),
+        ]
+        if result.workload.streaming_enabled:
+            values.append(_format_streaming_item(item))
+        values.extend(
+            [
+                (
+                    ""
+                    if item.duration_seconds is None
+                    else f"{item.duration_seconds:.2f}s"
+                ),
+                _format_item_message(item),
+            ]
         )
+        table.add_row(*values)
 
     console.print(
         table
@@ -428,6 +456,19 @@ def _add_workload_rows(summary: Table, workload) -> None:
     summary.add_row("Object mode", workload.object_mode)
     summary.add_row("Transform", _format_bool(workload.transform_enabled))
     summary.add_row("Validation", _format_bool(workload.validation_enabled))
+    summary.add_row("Streaming", _format_bool(workload.streaming_enabled))
+    if workload.streaming_enabled:
+        summary.add_row("Chunk size", _format_count(workload.chunk_size or 0))
+
+
+def _format_streaming_item(item: BatchItem) -> str:
+    """Format successful per-item streaming metrics compactly."""
+
+    if not item.streaming:
+        return ""
+    chunks = item.chunks_processed or 0
+    rows = item.rows_processed or 0
+    return f"{chunks:,} chunks / {rows:,} rows"
 
 
 def _show_memory_note(message: str | None) -> None:

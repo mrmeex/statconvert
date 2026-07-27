@@ -165,6 +165,8 @@ def build_batch_plan(
     workers: int = 1,
     transform_enabled: bool = False,
     validation_enabled: bool = False,
+    streaming_enabled: bool = False,
+    chunk_size: int | None = None,
     object_mode: str | None = None,
 ) -> BatchPlan:
     """
@@ -207,6 +209,8 @@ def build_batch_plan(
             workers=workers,
             transform_enabled=transform_enabled,
             validation_enabled=validation_enabled,
+            streaming_enabled=streaming_enabled,
+            chunk_size=chunk_size,
             object_mode=object_mode or "manifest",
         )
 
@@ -246,6 +250,8 @@ def build_batch_plan(
         workers=workers,
         transform_enabled=transform_enabled,
         validation_enabled=validation_enabled,
+        streaming_enabled=streaming_enabled,
+        chunk_size=chunk_size,
         object_mode=object_mode or ("all_objects" if all_objects else "none"),
     )
     items = []
@@ -522,6 +528,8 @@ def _build_manifest_plan(
     workers: int,
     transform_enabled: bool,
     validation_enabled: bool,
+    streaming_enabled: bool,
+    chunk_size: int | None,
     object_mode: str,
 ) -> BatchPlan:
     """Build one batch item for every included object-manifest row."""
@@ -546,6 +554,8 @@ def _build_manifest_plan(
         workers=workers,
         transform_enabled=transform_enabled,
         validation_enabled=validation_enabled,
+        streaming_enabled=streaming_enabled,
+        chunk_size=chunk_size,
         object_mode=object_mode,
     )
     items = [

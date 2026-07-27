@@ -28,6 +28,8 @@ from statconvert.batch.models import (
 from statconvert.dataset_options import DatasetReadOptions, DatasetWriteOptions
 from statconvert.exceptions import OutputPathError
 from statconvert.inspection import ValidationIssue, validate_dataset
+from statconvert.streaming.execution import execute_streaming_convert
+from statconvert.streaming.options import validate_chunk_size
 from statconvert.transformations.pipeline import TransformationPipeline
 
 
@@ -64,6 +66,29 @@ def execute_batch_plan(
         raise BatchError(
             "Strict validation requires --validate."
         )
+    if plan.options.streaming_enabled:
+        if transform_pipeline is not None:
+            raise BatchError(
+                "Batch streaming does not support transforms yet.",
+                suggestion=(
+                    "Run without --stream, or remove the batch transform options."
+                ),
+            )
+        if validate:
+            raise BatchError(
+                "Batch streaming does not support validation yet.",
+                suggestion="Run without --stream, or remove --validate.",
+            )
+        if object_selector is not None or plan.options.object_mode != "none":
+            raise BatchError(
+                "Batch streaming does not support object selection or containers.",
+                suggestion=(
+                    "Run without --stream, or batch plain CSV, JSONL, and NDJSON files."
+                ),
+            )
+        if plan.options.chunk_size is None:
+            raise BatchError("Batch streaming requires a chunk size.")
+        validate_chunk_size(plan.options.chunk_size)
 
     validation_target = target_format or plan.options.target_extension
 
@@ -94,6 +119,8 @@ def execute_batch_plan(
             write_options=write_options,
             on_option_warning=on_option_warning,
             transform_pipeline=transform_pipeline,
+            streaming=plan.options.streaming_enabled,
+            chunk_size=plan.options.chunk_size,
             on_item_start=on_item_start,
             on_item_finish=on_item_finish,
             on_progress=on_progress,
@@ -113,6 +140,8 @@ def execute_batch_plan(
             write_options=write_options,
             on_option_warning=on_option_warning,
             transform_pipeline=transform_pipeline,
+            streaming=plan.options.streaming_enabled,
+            chunk_size=plan.options.chunk_size,
             on_item_start=on_item_start,
             on_item_finish=on_item_finish,
             on_progress=on_progress,
@@ -150,6 +179,8 @@ def _execute_sequential(
     write_options: DatasetWriteOptions | None,
     on_option_warning: Callable[[str], None] | None,
     transform_pipeline: TransformationPipeline | None,
+    streaming: bool,
+    chunk_size: int | None,
     on_item_start: BatchItemCallback | None,
     on_item_finish: BatchItemCallback | None,
     on_progress: BatchProgressCallback | None,
@@ -207,6 +238,8 @@ def _execute_sequential(
             write_options=write_options,
             on_option_warning=on_option_warning,
             transform_pipeline=transform_pipeline,
+            streaming=streaming,
+            chunk_size=chunk_size,
         )
         _call_callback(
             on_item_finish,
@@ -231,6 +264,8 @@ def _execute_parallel(
     write_options: DatasetWriteOptions | None,
     on_option_warning: Callable[[str], None] | None,
     transform_pipeline: TransformationPipeline | None,
+    streaming: bool,
+    chunk_size: int | None,
     on_item_start: BatchItemCallback | None,
     on_item_finish: BatchItemCallback | None,
     on_progress: BatchProgressCallback | None,
@@ -268,6 +303,8 @@ def _execute_parallel(
                 write_options,
                 on_option_warning,
                 transform_pipeline,
+                streaming,
+                chunk_size,
                 on_progress,
                 index,
                 total_items,
@@ -312,6 +349,8 @@ def _execute_one_item(
     write_options: DatasetWriteOptions | None = None,
     on_option_warning: Callable[[str], None] | None = None,
     transform_pipeline: TransformationPipeline | None = None,
+    streaming: bool = False,
+    chunk_size: int | None = None,
     on_progress: BatchProgressCallback | None = None,
     item_index: int | None = None,
     total_items: int | None = None,
@@ -332,6 +371,8 @@ def _execute_one_item(
             write_options=write_options,
             on_option_warning=on_option_warning,
             transform_pipeline=transform_pipeline,
+            streaming=streaming,
+            chunk_size=chunk_size,
         )
     finally:
         _emit_item_finished(on_progress, item, item_index, total_items)
@@ -366,6 +407,8 @@ def _execute_item(
     write_options: DatasetWriteOptions | None = None,
     on_option_warning: Callable[[str], None] | None = None,
     transform_pipeline: TransformationPipeline | None = None,
+    streaming: bool = False,
+    chunk_size: int | None = None,
 ) -> None:
     """
     Execute one pending batch item.
@@ -375,10 +418,34 @@ def _execute_item(
     item.started_at = _timestamp()
 
     try:
+        if streaming:
+            if chunk_size is None:
+                raise BatchError("Batch streaming requires a chunk size.")
+            item.streaming = True
+            item.chunk_size = chunk_size
+
         _validate_item_ready(
             item,
             overwrite=overwrite,
         )
+
+        if streaming:
+            streamed = execute_streaming_convert(
+                item.input_file,
+                item.output_file,
+                chunk_size=chunk_size,
+                overwrite=overwrite,
+                create_dirs=create_output_dirs,
+                read_options=read_options,
+                write_options=write_options,
+            )
+            item.rows = streamed.rows_processed
+            item.rows_processed = streamed.rows_processed
+            item.chunks_processed = streamed.chunks_processed
+            item.status = BATCH_STATUS_SUCCESS
+            item.reason = None
+            item.error = None
+            return
 
         item_object_selector = (
             item.input_object

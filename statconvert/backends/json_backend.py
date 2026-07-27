@@ -1,4 +1,6 @@
+from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 
@@ -7,7 +9,11 @@ from statconvert.backends.capabilities import BackendCapabilities
 from statconvert.dataset import Dataset
 from statconvert.exceptions import ConversionError
 from statconvert.metadata import build_basic_metadata
-from statconvert.metadata.sidecar import restore_metadata
+from statconvert.metadata.sidecar import read_sidecar, restore_metadata
+from statconvert.streaming.chunks import ChunkWriter, DatasetChunk
+from statconvert.streaming.errors import StreamingNotSupportedError
+from statconvert.streaming.options import ChunkedReadOptions, ChunkedWriteOptions
+from statconvert.streaming.writers import TransactionalChunkWriter
 
 
 class JsonBackend(Backend):
@@ -24,6 +30,95 @@ class JsonBackend(Backend):
     )
 
     write_chunk_rows = 10_000
+
+    def iter_chunks(
+        self,
+        filename: str,
+        options: ChunkedReadOptions,
+        **kwargs: Any,
+    ) -> Iterator[DatasetChunk]:
+        """Yield JSONL/NDJSON records without enabling JSON-array streaming."""
+
+        extension = Path(filename).suffix.lower()
+        if extension not in {".jsonl", ".ndjson"}:
+            raise StreamingNotSupportedError(
+                "Chunked JSON reading supports only .jsonl and .ndjson files."
+            )
+
+        automatic_payload = read_sidecar(filename)
+        metadata = {
+            "file_type": extension,
+            "lines": True,
+            "backend": self.name,
+        }
+        read_options = {**kwargs, "lines": True}
+        yielded = False
+        try:
+            with pd.read_json(
+                filename,
+                chunksize=options.chunk_size,
+                **read_options,
+            ) as reader:
+                start_row = 0
+                for index, dataframe in enumerate(reader):
+                    yielded = True
+                    dataset = self._chunk_dataset(
+                        dataframe,
+                        filename=filename,
+                        metadata=metadata,
+                        automatic_payload=automatic_payload,
+                    )
+                    yield DatasetChunk(
+                        dataset=dataset,
+                        index=index,
+                        start_row=start_row,
+                        rows=dataset.rows,
+                    )
+                    start_row += dataset.rows
+        except ConversionError:
+            raise
+        except Exception as exc:
+            raise ConversionError(
+                f"Failed reading chunked JSON Lines file: {exc}"
+            ) from exc
+
+        if not yielded:
+            dataframe = pd.DataFrame()
+            dataset = self._chunk_dataset(
+                dataframe,
+                filename=filename,
+                metadata=metadata,
+                automatic_payload=automatic_payload,
+            )
+            yield DatasetChunk(
+                dataset=dataset,
+                index=0,
+                start_row=0,
+                rows=0,
+            )
+
+    def open_chunk_writer(
+        self,
+        filename: str,
+        options: ChunkedWriteOptions,
+        *,
+        overwrite: bool = False,
+        create_dirs: bool = False,
+        **kwargs: Any,
+    ) -> ChunkWriter:
+        """Open a transactional JSONL/NDJSON chunk writer."""
+
+        extension = Path(filename).suffix.lower()
+        if extension not in {".jsonl", ".ndjson"}:
+            raise StreamingNotSupportedError(
+                "Chunked JSON writing supports only .jsonl and .ndjson files."
+            )
+        return _JsonLinesChunkWriter(
+            filename,
+            overwrite=overwrite,
+            create_dirs=create_dirs,
+            write_kwargs=kwargs,
+        )
 
 
     def read(
@@ -182,3 +277,81 @@ class JsonBackend(Backend):
             if wrote_records and indent:
                 output.write("\n")
             output.write("]")
+
+    def _chunk_dataset(
+        self,
+        dataframe: pd.DataFrame,
+        *,
+        filename: str,
+        metadata: dict[str, Any],
+        automatic_payload,
+    ) -> Dataset:
+        extension = Path(filename).suffix.lower()
+        restored = restore_metadata(
+            dataframe=dataframe,
+            filename=filename,
+            automatic_payload=automatic_payload,
+            base_metadata=build_basic_metadata(
+                dataframe=dataframe,
+                source_format=extension.lstrip("."),
+                source_backend=self.name,
+                raw_metadata=metadata,
+            ),
+        )
+        return Dataset(
+            dataframe=dataframe,
+            metadata=dict(metadata),
+            source_format=extension.lstrip("."),
+            source_file=str(filename),
+            normalized_metadata=restored.metadata,
+            column_metadata=restored.column_metadata,
+            metadata_provenance=restored.provenance,
+        )
+
+
+class _JsonLinesChunkWriter(TransactionalChunkWriter):
+    """Transactional line-delimited JSON writer owned by the JSON backend."""
+
+    def __init__(
+        self,
+        target_path: str | Path,
+        *,
+        overwrite: bool,
+        create_dirs: bool,
+        write_kwargs: dict[str, Any],
+    ) -> None:
+        self.write_kwargs = {
+            **write_kwargs,
+            "orient": "records",
+            "lines": True,
+            "force_ascii": False,
+        }
+        super().__init__(
+            target_path,
+            overwrite=overwrite,
+            create_dirs=create_dirs,
+        )
+
+    def _write_dataset(self, dataset: Dataset, *, first_chunk: bool) -> None:
+        del first_chunk
+        if dataset.rows == 0:
+            return
+        try:
+            text = dataset.dataframe.to_json(
+                path_or_buf=None,
+                **self.write_kwargs,
+            )
+            if not text:
+                return
+            with self.temporary_path.open(
+                "a",
+                encoding="utf-8",
+                newline="",
+            ) as output:
+                output.write(text)
+                if not text.endswith("\n"):
+                    output.write("\n")
+        except Exception as exc:
+            raise ConversionError(
+                f"Failed writing chunked JSON Lines file: {exc}"
+            ) from exc

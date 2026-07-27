@@ -29,6 +29,10 @@ REPORT_COLUMNS = (
     "validation_issues",
     "validation_errors",
     "validation_warnings",
+    "streaming",
+    "chunk_size",
+    "chunks_processed",
+    "rows_processed",
 )
 SUPPORTED_REPORT_FORMATS = {"csv", "json"}
 
@@ -66,6 +70,10 @@ def batch_item_to_report_row(item: BatchItem) -> dict[str, Any]:
         "validation_issues": item.validation_issues,
         "validation_errors": item.validation_errors,
         "validation_warnings": item.validation_warnings,
+        "streaming": item.streaming,
+        "chunk_size": item.chunk_size,
+        "chunks_processed": item.chunks_processed,
+        "rows_processed": item.rows_processed,
     }
     return {
         column: _report_value(values[column])
@@ -99,6 +107,8 @@ def write_batch_plan_report(
             "pending": plan.pending_count,
             "skipped": plan.skipped_count,
             "blocked": plan.blocked_count,
+            "streaming": plan.options.streaming_enabled,
+            "chunk_size": plan.options.chunk_size,
             "workload": asdict(plan.workload),
         },
         "items": batch_plan_to_rows(plan),
@@ -121,6 +131,10 @@ def write_batch_result_report(
             "failed": result.failed_count,
             "skipped": result.skipped_count,
             "blocked": result.blocked_count,
+            "streaming": result.plan.options.streaming_enabled,
+            "chunk_size": result.plan.options.chunk_size,
+            "total_streamed_chunks": result.total_streamed_chunks,
+            "total_streamed_rows": result.total_streamed_rows,
             "workload": asdict(result.workload),
         },
         "items": batch_result_to_rows(result),

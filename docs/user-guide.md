@@ -23,8 +23,7 @@ features such as formatting, formulas, macros, charts, or existing sheets.
 
 StatConvert requires Python 3.11 or newer. Install the downloaded release wheel from the
 GitHub Releases page; installation, upgrades, and managed deployment are covered by the
-[Administrator Guide](admin-guide.md). Build and artifact validation remain private
-maintainer workflows.
+[Administrator Guide](admin-guide.md).
 
 Verify the installed command and list the formats available in the current environment:
 
@@ -171,6 +170,29 @@ statconvert convert input.sav new-output/output.xlsx --create-dirs
 StatConvert does not replace an existing output unless `--overwrite` is supplied. If the
 output parent directory is missing, the command fails unless `--create-dirs` is supplied.
 No directory flag is needed for the current directory or any existing directory.
+
+### Opt-in streaming conversion
+
+Use `--stream` when both input and output are CSV, JSONL, or NDJSON and the dataset should
+be processed in bounded row chunks:
+
+```powershell
+statconvert convert input.csv output.jsonl --stream
+statconvert convert input.jsonl output.csv --stream --chunk-size 50000
+statconvert convert input.ndjson output.jsonl --stream --chunk-size 10000 --overwrite
+```
+
+Streaming is never selected automatically. The default chunk size is 100,000 rows, and
+`--chunk-size` requires a positive integer plus `--stream`. All nine ordered pairs among
+CSV, JSONL, and NDJSON are supported. A `.json` file is a JSON array and is not a
+streaming format; use JSONL/NDJSON or omit `--stream`. Other formats remain available
+through the normal in-memory conversion path.
+
+Streaming uses a temporary sibling output and commits it only after every chunk succeeds.
+Ordered columns must remain stable, and incompatible dtype drift fails safely. Source
+sidecar metadata is loaded once; one final standardized sidecar is committed after the
+data file. Streaming conversion does not yet support object selection, all-object
+conversion, validation, workflow configuration, transforms, batch, or reports.
 
 For CSV dataset output, select an encoding, one-character delimiter, or one-character
 decimal separator:
@@ -503,6 +525,26 @@ schema-contract result and issue table. With `--json`, contract mode emits a
 `schema_contract` object alongside the ordinary `validation` array; without a contract,
 the existing JSON array shape is unchanged.
 
+For a bounded, read-only contract check of CSV, JSONL, or NDJSON, use:
+
+```powershell
+statconvert validate input.csv --schema-contract schema.toml --stream
+statconvert validate input.jsonl --schema-contract schema.toml --stream --chunk-size 50000
+```
+
+Streaming validation requires a schema contract. It supports schema membership/order,
+resolved types, nullability, allowed values, range, regex, length, row count, and exact
+single/composite uniqueness. Uniqueness retains all distinct complete keys, so memory can
+grow with key cardinality; StatConvert does not approximate it. Terminal output reports
+chunk/row and rule/column totals. JSON retains the existing contract objects and adds a
+parseable `streaming` object.
+
+JSON arrays and formats other than CSV/JSONL/NDJSON are not streamable. Run without
+`--stream` for normal full in-memory validation, destination-readiness checks, object
+selection, or no-contract validation. Streaming validation does not write datasets or
+sidecars and is not available through report, compare, collect, transform, or workflow
+config integration.
+
 Contracts use resolved schema metadata, including active sidecars and embedded Parquet or
 Feather metadata. You can manually add required/extra column policies, exact or prefix
 column order, storage/logical types, nullability, uniqueness, allowed values, numeric
@@ -643,6 +685,26 @@ the report path when one was written, and a next step after failures. `--json` s
 this Rich output and remains suitable for piping. The same behavior applies when an
 equivalent batch configuration is run with `statconvert config run`.
 
+For bounded batch conversion, add `--stream` when every executed source and target is CSV,
+JSONL, or NDJSON:
+
+```powershell
+statconvert batch .\incoming-csv .\json-lines --to jsonl --stream --chunk-size 50000
+statconvert batch .\incoming-jsonl .\csv-output --to csv --stream
+```
+
+Streaming is opt-in and defaults to 100,000 rows per chunk. The final summary and optional
+CSV/JSON report include per-item rows/chunks and aggregate streamed totals. Successful
+items write their normal sidecars after committing data. A failed item cleans temporary
+output and preserves an existing target; the established continue or `--fail-fast` policy
+still controls later items.
+
+JSON arrays and formats other than CSV, JSONL, and NDJSON are not streamable. Omit
+`--stream` to use ordinary batch conversion for those formats. Streaming batch also
+rejects transforms, validation, object selection/manifests/all-object expansion, and
+`--write-config`. Existing batch configs remain non-streaming; streaming config support
+is deferred.
+
 `--object` applies the same exact name or zero-based index to every pending input. This
 shared-selector mode does not expand every sheet or R object. In a mixed batch, a
 single-dataset input such as
@@ -736,8 +798,8 @@ afterward. Worker count can increase concurrent memory use because each active w
 its current dataset. Throughput improves only when memory, CPU, storage, and backend I/O
 provide enough headroom. Use `--workers 1` for huge files and run `--dry-run` before a
 large batch. JSON, Excel, and ODS targets can be memory-heavy; Parquet and Feather are
-generally better large-file targets. Broad chunking and streaming are deferred to a later
-performance-focused release.
+generally better large-file targets. Opt-in streaming is available only for plain
+CSV/JSONL/NDJSON batch items; broader format and workflow streaming remains deferred.
 
 ## JSON output
 
@@ -837,5 +899,3 @@ run the single-dataset files without `--object`.
 - [CLI Reference](cli.md) for every command option and exit policy
 - [Format Guide](formats.md) for the capability matrix and format caveats
 - [Administrator Guide](admin-guide.md) for installation, updates, and deployment
-- [CLI Reference](cli.md) for complete command options and exit behavior
-- [Examples and Recipes](examples.md) for copyable public workflows

@@ -27,6 +27,7 @@ def show_config_written(path: Path, command: str) -> None:
         "transform": "No transformation was run.",
         "batch": "No batch conversion was run.",
         "compare": "No comparison was run.",
+        "validate": "No validation was run.",
         "report": "No report was generated.",
         "collect": "No collection was run.",
     }

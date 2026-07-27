@@ -67,8 +67,8 @@ statconvert config init COMMAND --output workflow.toml [--overwrite] [--create-d
 ```
 
 Creates a validated starter file for `convert`, `transform`, `batch`, `compare`,
-`report`, or `collect`. Existing files are protected unless `--overwrite` is supplied,
-and missing parent directories require `--create-dirs`.
+`validate`, `report`, or `collect`. Existing files are protected unless `--overwrite`
+is supplied, and missing parent directories require `--create-dirs`.
 
 ### `config validate`
 
@@ -85,10 +85,10 @@ command-specific conflicts without running the command.
 statconvert config run CONFIG_FILE
 ```
 
-`config run` executes `convert`, `transform`, `batch`, `compare`, `report`, and `collect`
-through their existing command and service paths. Output safety, transformation behavior,
-batch planning, comparison exit policy, reports, collection naming, JSON, and progress
-behavior remain unchanged.
+`config run` executes `convert`, `transform`, `batch`, `compare`, `validate`, `report`,
+and `collect` through their existing command and service paths. Output safety,
+transformation behavior, batch planning, comparison and validation exit policies,
+reports, collection naming, JSON, and progress behavior remain unchanged.
 
 Validation and execution errors identify the config file. When a required field is
 missing, the error points to `config init` for a starter file; close field or format typos
@@ -96,7 +96,7 @@ may include a concise `Did you mean ...?` suggestion.
 
 ### Writing configs from commands
 
-`convert`, `transform`, `batch`, `compare`, `report`, and `collect` accept
+`convert`, `transform`, `batch`, `compare`, `validate`, `report`, and `collect` accept
 `--write-config FILE`. The command writes one validated TOML file and returns without
 running the workflow. Use
 `--overwrite-config` to replace that TOML file; ordinary `--overwrite` remains the saved
@@ -109,6 +109,7 @@ statconvert convert input.csv output.parquet --write-config convert.toml
 statconvert transform input.csv output.parquet --select id --write-config transform.toml
 statconvert batch incoming converted --to parquet --workers 1 --write-config batch.toml
 statconvert compare old.csv new.csv --key id --write-config compare.toml
+statconvert validate input.csv --schema-contract schema.toml --write-config validate.toml
 statconvert report input.csv --output report.html --preset quick --write-config report.toml
 statconvert collect manifest.csv workbook.xlsx --write-config collect.toml
 statconvert config validate batch.toml
@@ -460,10 +461,22 @@ statconvert peek INPUT_FILE [--rows N] [--object OBJECT]
 
 ```bash
 statconvert schema INPUT_FILE [--object OBJECT]
+    [--export-contract PATH] [--overwrite-contract]
 ```
 
 Displays normalized names, storage types, labels, value-label/missing counts, display
 formats, and measurement levels.
+
+`--export-contract PATH` also writes the resolved schema and metadata as a deterministic
+starter contract. The output format is TOML and the parent directory must already exist.
+Existing files are protected unless `--overwrite-contract` is supplied.
+
+The starter contract preserves physical column order, requires the observed columns,
+disallows unexpected columns, ignores order during validation, records resolved
+storage/logical types when available, and sets nullability from the loaded values. It
+intentionally does not infer brittle row-derived rules such as allowed values, ranges,
+regular expressions, uniqueness, or keys. Edit the TOML to add deliberate expectations.
+Validate an edited contract with `validate --schema-contract`.
 
 ### `labels`
 
@@ -608,13 +621,99 @@ Actual nulls and metadata-defined missing values/ranges are reported separately.
 ### `validate`
 
 ```bash
-statconvert validate INPUT_FILE [--to FORMAT] [--strict] [--json] [--object OBJECT]
+statconvert validate INPUT_FILE [--to FORMAT] [--strict] [--json]
+    [--object OBJECT] [--schema-contract PATH] [--write-config FILE]
 ```
 
 - `--to FORMAT` adds destination-format readiness and metadata-preservation checks.
 - `--strict` makes warnings fail validation.
-- `--json` emits issue objects only.
+- `--schema-contract PATH` adds validation against a version 1 TOML schema contract.
+- `--json` emits the existing issue array without a contract. With
+  `--schema-contract`, it emits an object containing `validation` and
+  `schema_contract` results.
 - `--object OBJECT` selects an Excel/ODS sheet or RData/RDA object.
+- `--write-config FILE` writes this validation invocation as TOML without reading or
+  validating the dataset.
+- `--overwrite-config` permits replacement of the selected config file only.
+
+Contract validation is additive: general dataset and optional target-format checks still
+run. Error-severity findings from either source exit `1`; `--strict` also makes warnings
+exit `1`. Contract load/parser failures always exit `1`. Results include stable codes,
+expected and actual values, affected-row counts, bounded samples, and source-rule
+identifiers. Validation uses the resolved `Dataset`, so active sidecars and embedded
+Arrow metadata participate under the normal precedence rules.
+
+Generate a conservative starting point, edit deliberate rules, then validate it:
+
+```bash
+statconvert schema input.sav --export-contract schema.toml
+statconvert validate input.sav --schema-contract schema.toml
+```
+
+Starter exports avoid inferred allowed values, ranges, regular expressions, uniqueness,
+and keys. Version 1 contracts can add the currently supported allowed-value, numeric
+range, regex, uniqueness, nullability, and storage/logical type expectations manually.
+Validation workflow configs accept `schema_contract = "schema.toml"` and preserve the
+same terminal/JSON and exit-code semantics when run with `statconvert config run`.
+Relative paths retain the existing config behavior and are interpreted from the command's
+working directory. Durable JSON, CSV, and HTML output is available through
+`report --schema-contract`.
+
+Named data-quality policies use `[[rules]]` in the same contract file. Every rule has a
+unique `name`, a supported `type`, and optional `description` and
+`severity = "error"|"warning"|"info"`. The rule name appears as `source_rule` in JSON
+and in terminal issue details.
+
+```toml
+[[rules]]
+name = "known_status"
+type = "allowed_values"
+column = "status"
+values = ["active", "inactive"]
+
+[[rules]]
+name = "valid_age"
+type = "range"
+column = "age"
+min = 0
+max = 120
+
+[[rules]]
+name = "valid_email"
+type = "regex"
+column = "email"
+pattern = "^[^@]+@[^@]+$"
+severity = "warning"
+
+[[rules]]
+name = "unique_person"
+type = "unique"
+columns = ["site_id", "person_id"]
+
+[[rules]]
+name = "minimum_rows"
+type = "row_count"
+min = 1
+
+[[rules]]
+name = "required_id_values"
+type = "not_null"
+column = "person_id"
+
+[[rules]]
+name = "short_code"
+type = "length"
+column = "code"
+min = 2
+max = 8
+```
+
+`allowed_values`, `range`, `regex`, `not_null`, and `length` target one `column`.
+`unique` accepts one or more `columns` and evaluates complete keys; rows with a missing
+key component are excluded from that uniqueness check. `row_count` accepts `min`,
+`max`, or both. Length bounds are non-negative integers and non-string values violate a
+length rule. Named rules and concise `[[columns]]` constraints may coexist and are
+evaluated independently.
 
 Read-only targets such as `zsav`, `por`, and `sas7bdat` are reported as invalid write
 targets. `xls`, `xlsx`, `sav`, `dta`, and `xpt` are valid writable targets when their
@@ -849,6 +948,8 @@ Options:
 - `--max-preview-values N` - value-label preview limit (default `5`).
 - `--target-format FORMAT` - add conversion-readiness validation.
 - `--strict-validation` - use strict validation severity in the report.
+- `--schema-contract PATH` - add a Schema Contract Validation section using an existing
+  version 1 TOML contract. This requires the validation section.
 - `--json` - print a concise JSON summary after writing.
 - `--quiet` - suppress the normal Rich completion summary.
 - `--write-config FILE` writes this invocation as TOML without generating the report.
@@ -863,9 +964,26 @@ Explicit `--section`, `--frequencies`, and `--no-*` options refine the preset.
 `--max-table-rows` limits HTML/CSV tables and adds truncation notices; JSON report files
 retain the complete model. Reports are static and Rich-free.
 
+When `--schema-contract` is supplied, the contract is evaluated once and the resulting
+section contains contract path, status, issue/error/warning/info counts, checked named
+rules and columns, and bounded issue details. Each issue includes severity, stable code,
+column(s), source rule, message, expected/actual values, affected rows, and at most five
+sample values. JSON preserves the hierarchy; HTML renders compact summary and issue
+tables; CSV contains one detailed `schema_contract_issues` table row per finding using the
+existing flattened report representation.
+
+Reports remain observational: a successfully written report exits `0` even if the report
+contains contract errors or warnings. `--strict-validation` changes warning-only contract
+status to failed inside the report, but does not turn report generation into a validation
+gate. Use `validate --schema-contract` when an exit-code quality gate is required.
+Report workflow configs accept `schema_contract = "schema.toml"`, including configs
+written by `report --write-config`. `--schema-contract` cannot be combined with
+`--no-validation`.
+
 ```bash
 statconvert report input.sav --output report.html --preset quick
 statconvert report input.sav --output reports/report.html --create-dirs
 statconvert report input.sav --output report.json --preset full
 statconvert report input.sav --output report.csv --section summary --section validation
+statconvert report input.sav --output quality.html --schema-contract schema.toml
 ```

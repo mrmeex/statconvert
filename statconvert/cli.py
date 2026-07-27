@@ -36,6 +36,10 @@ from statconvert.config import (
     load_config,
     write_config,
 )
+from statconvert.contracts import (
+    export_schema_contract,
+    validate_schema_contract_file,
+)
 from statconvert.dataset_options import DatasetReadOptions, DatasetWriteOptions
 from statconvert.inspection import (
     ColumnProfile,
@@ -74,6 +78,7 @@ from statconvert.registry import (
 )
 from statconvert.exceptions import (
     ConfigError,
+    ContractError,
     ConversionError,
     DataDictionaryError,
     MetadataSidecarError,
@@ -115,6 +120,7 @@ from statconvert.ui import (
     show_column_profiles,
     show_frequency_tables,
     show_missing_profiles,
+    show_schema_contract_validation,
     show_validation_issues,
     show_formats_table,
     show_labels,
@@ -334,6 +340,20 @@ OverwriteScriptOption = Annotated[
         help="Replace an existing metadata helper script.",
     ),
 ]
+ExportContractOption = Annotated[
+    str | None,
+    typer.Option(
+        "--export-contract",
+        help="Export the resolved dataset schema as a starter TOML contract.",
+    ),
+]
+OverwriteContractOption = Annotated[
+    bool,
+    typer.Option(
+        "--overwrite-contract",
+        help="Replace an existing schema contract export.",
+    ),
+]
 
 
 @config_app.command("init")
@@ -389,6 +409,7 @@ def config_run(config_file: str):
                 "transform": transform,
                 "batch": _run_batch_config,
                 "compare": _run_compare_config,
+                "validate": validate,
                 "report": _run_report_config,
                 "collect": collect,
             },
@@ -1601,6 +1622,8 @@ def info(
 def schema(
     input_file: str,
     object_selector: ObjectSelectorOption = None,
+    export_contract: ExportContractOption = None,
+    overwrite_contract: OverwriteContractOption = False,
     log_file: LogFileOption = None,
     log_level: LogLevelOption = "info",
     log_append: LogAppendOption = False,
@@ -1613,18 +1636,41 @@ def schema(
     try:
         with command_log_wrapper(
             command="schema",
-            parameters={"input_file": input_file, "object": object_selector},
+            parameters={
+                "input_file": input_file,
+                "object": object_selector,
+                "export_contract": export_contract,
+                "overwrite_contract": overwrite_contract,
+            },
             log_file=log_file,
             log_level=log_level,
             log_append=log_append,
             developer_log=developer_log,
-        ):
+        ) as logger:
+            if overwrite_contract and export_contract is None:
+                raise ContractError(
+                    "--overwrite-contract requires --export-contract."
+                )
             dataset = _read_dataset(
                 input_file,
                 object_selector=object_selector,
             )
+            contract_path = None
+            if export_contract is not None:
+                contract_path = export_schema_contract(
+                    dataset,
+                    input_file,
+                    export_contract,
+                    overwrite=overwrite_contract,
+                )
+                logger.info(
+                    "Schema contract written: output_file=%s",
+                    contract_path,
+                )
             _show_dataset_header(input_file, dataset)
             show_schema(dataset)
+            if contract_path is not None:
+                show_success(f"Schema contract written: {contract_path}")
 
     except Exception as exc:
 
@@ -2172,11 +2218,18 @@ def validate(
         "--strict",
         help="Treat warnings as validation failures.",
     ),
+    schema_contract: str | None = typer.Option(
+        None,
+        "--schema-contract",
+        help="Validate the resolved dataset against a version 1 TOML contract.",
+    ),
     json_output: bool = typer.Option(
         False,
         "--json",
         help="Output validation issues as JSON.",
     ),
+    write_config_file: WriteConfigOption = None,
+    overwrite_config: OverwriteConfigOption = False,
     log_file: LogFileOption = None,
     log_level: LogLevelOption = "info",
     log_append: LogAppendOption = False,
@@ -2189,6 +2242,25 @@ def validate(
     exit_code = 0
 
     try:
+        _validate_write_config_options(write_config_file, overwrite_config)
+        if write_config_file is not None:
+            _write_command_config(
+                "validate",
+                write_config_file,
+                overwrite_config=overwrite_config,
+                create_config_dirs=False,
+                input_file=input_file,
+                object_selector=object_selector,
+                to_format=to_format,
+                strict=strict,
+                schema_contract=schema_contract,
+                json_output=json_output,
+                log_file=log_file,
+                log_level=log_level,
+                log_append=log_append,
+                developer_log=developer_log,
+            )
+            return
         with command_log_wrapper(
             command="validate",
             parameters={
@@ -2196,6 +2268,7 @@ def validate(
                 "object": object_selector,
                 "target_format": to_format,
                 "strict": strict,
+                "schema_contract": schema_contract,
                 "json": json_output,
             },
             log_file=log_file,
@@ -2215,22 +2288,52 @@ def validate(
                 target_format=target_extension,
                 strict=strict,
             )
+            contract_validation = (
+                validate_schema_contract_file(dataset, schema_contract)
+                if schema_contract is not None
+                else None
+            )
+            combined_issues = list(issues)
+            if contract_validation is not None:
+                combined_issues.extend(contract_validation.issues)
             exit_code = _validation_exit_code(
-                issues,
+                combined_issues,
                 strict,
             )
-            error_count = sum(issue.severity == "error" for issue in issues)
-            warning_count = sum(issue.severity == "warning" for issue in issues)
+            error_count = sum(
+                issue.severity == "error"
+                for issue in combined_issues
+            )
+            warning_count = sum(
+                issue.severity == "warning"
+                for issue in combined_issues
+            )
 
             logger.info(
-                "Validation result: errors=%s warnings=%s strict=%s",
+                "Validation result: errors=%s warnings=%s strict=%s "
+                "schema_contract=%s",
                 error_count,
                 warning_count,
                 strict,
+                schema_contract,
             )
 
             if json_output:
-                emit_json([asdict(issue) for issue in issues])
+                validation_payload = [
+                    asdict(issue)
+                    for issue in issues
+                ]
+                if contract_validation is None:
+                    emit_json(validation_payload)
+                else:
+                    emit_json(
+                        {
+                            "validation": validation_payload,
+                            "schema_contract": contract_validation.to_dict(
+                                strict=strict,
+                            ),
+                        }
+                    )
             else:
                 _show_dataset_header(
                     input_file,
@@ -2241,6 +2344,11 @@ def validate(
                     strict=strict,
                     target_format=target_extension,
                 )
+                if contract_validation is not None:
+                    show_schema_contract_validation(
+                        contract_validation,
+                        strict=strict,
+                    )
 
             if exit_code:
                 log_command_outcome(
@@ -2589,6 +2697,11 @@ def report(
         "--strict-validation",
         help="Enable strict validation behavior in the report.",
     ),
+    schema_contract: str | None = typer.Option(
+        None,
+        "--schema-contract",
+        help="Include version 1 TOML schema-contract validation results.",
+    ),
     json_output: bool = typer.Option(
         False,
         "--json",
@@ -2659,6 +2772,7 @@ def report(
                 max_preview_values=max_preview_values,
                 target_format=target_format,
                 strict_validation=strict_validation,
+                schema_contract=schema_contract,
                 json_output=json_output,
                 quiet=quiet,
                 log_file=log_file,
@@ -2685,6 +2799,7 @@ def report(
                 "max_preview_values": max_preview_values,
                 "target_format": target_format,
                 "strict_validation": strict_validation,
+                "schema_contract": schema_contract,
                 "json": json_output,
                 "quiet": quiet,
             },
@@ -2713,10 +2828,19 @@ def report(
                 max_table_rows=max_table_rows,
                 max_preview_values=max_preview_values,
             )
+            if schema_contract is not None and not report_options.include_validation:
+                raise ContractError(
+                    "--schema-contract requires the report validation section."
+                )
             columns = _attach_extra_describe_columns(list(ctx.args), columns)
             dataset = _read_dataset(
                 input_file,
                 object_selector=object_selector,
+            )
+            contract_validation = (
+                validate_schema_contract_file(dataset, schema_contract)
+                if schema_contract is not None
+                else None
             )
             logger.debug("Building dataset report")
             dataset_report = build_dataset_report(
@@ -2736,6 +2860,7 @@ def report(
                 validation_target_format=target_format,
                 strict_validation=strict_validation,
                 label_preview_values=report_options.max_preview_values,
+                schema_contract_validation=contract_validation,
             )
             logger.debug("Writing dataset report: %s", output_file)
             write_dataset_report(

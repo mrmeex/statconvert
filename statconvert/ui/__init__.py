@@ -28,6 +28,7 @@ from .inspection import (
     show_dataset_summary,
     show_frequency_tables,
     show_missing_profiles,
+    show_schema_contract_validation,
     show_validation_issues,
 )
 from .panels import show_dataset_header
@@ -74,6 +75,7 @@ __all__ = [
     "show_column_profiles",
     "show_frequency_tables",
     "show_missing_profiles",
+    "show_schema_contract_validation",
     "show_validation_issues",
     "show_preview",
     "show_objects_not_supported",

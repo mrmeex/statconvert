@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.8.0 - 2026-07-27
+
+### Added
+
+- Added the internal version 1 TOML schema-contract model and strict parser.
+- Added backend-neutral contract validation results with stable issue codes, expected and
+  actual values, affected-row counts, sample values, and source-rule context.
+- Added in-memory contract validation for required and unexpected columns, column order,
+  resolved storage/logical types, nullability, uniqueness, allowed values, numeric ranges,
+  and string regular expressions.
+- Added `schema --export-contract` for deterministic, overwrite-protected TOML starter
+  contracts built from resolved dataset schema and metadata.
+- Added additive `validate --schema-contract` checks with readable terminal findings,
+  detailed machine-readable results, existing validation exit semantics, object
+  selection, and resolved sidecar/embedded metadata support.
+- Extended version 1 contracts with strict named `[[rules]]` for allowed values, numeric
+  ranges, regex patterns, single/composite uniqueness, row counts, not-null values, and
+  string lengths, including configurable severities and source-rule provenance.
+- Added `report --schema-contract` for observational JSON, CSV, and HTML contract
+  validation sections with status/count summaries, detailed named-rule findings, and
+  bounded samples, reusing the existing evaluated contract result.
+- Added `validate` workflow configs and `schema_contract` fields for validate/report
+  config validation, execution, starter generation, and deterministic `--write-config`.
+
+### Notes
+
+- Exported starter contracts deliberately omit inferred allowed values, ranges, regular
+  expressions, uniqueness, keys, and named quality rules so users can add intentional
+  policies without brittle row-derived defaults.
+- Schema contract export remains a direct `schema --export-contract` workflow; no
+  separate schema workflow-config command was added.
+- Contract validation reads an already loaded `Dataset` and does not modify its values or
+  metadata.
+
 ## 0.7.0 - 2026-07-23
 
 ### Added
@@ -115,31 +149,21 @@ Performance and large-file hardening release.
 
 ### Added
 
-- Added reproducible benchmark tooling under `tools/performance/` with deterministic tiny,
-  small, medium, and explicitly enabled large synthetic-data profiles.
-- Added subprocess benchmark runs and Markdown/CSV summaries covering elapsed time, output
-  size, success/skip state, environment details, and optional `psutil` peak RSS.
 - Added batch workload summaries with planned item/file counts, input sizes, worker count,
   target/structure settings, transform and validation state, and object mode.
-- Added multi-worker memory guidance and worker-count benchmark comparisons for CSV to
-  Parquet and JSON workloads.
+- Added multi-worker memory guidance for CSV-to-Parquet and CSV-to-JSON workloads.
 
 ### Changed
 
 - JSON, JSONL, and NDJSON record writes now serialize bounded row chunks while preserving
   their existing output structures.
-- The measured medium CSV-to-JSON benchmark used about 51% less peak RSS in the 0.4.0b
-  before/after run; timings and memory remain machine- and workload-dependent.
 - Compare paths avoid unnecessary full Python mask materialization and repeated JSON
   dataclass serialization without changing comparison semantics.
 - Feather writing avoids an unnecessary index copy for the default `RangeIndex` path.
-- Missing benchmark-profile errors now report required, detected, and missing profiles
-  plus an exact data-generation command.
 - Documentation now includes safer large-file, dry-run, and batch-worker guidance.
 
 ### Notes
 
-- `psutil` remains optional and is used only by benchmark tooling for peak-RSS sampling.
 - StatConvert remains DataFrame-based for most operations; JSON can still be memory-heavy,
   and Excel/ODS remain poor choices for very large datasets.
 - Prefer Parquet or Feather for large tabular workflows where practical.

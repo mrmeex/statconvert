@@ -15,6 +15,7 @@ RUNNABLE_COMMANDS = (
     "transform",
     "batch",
     "compare",
+    "validate",
     "report",
     "collect",
 )
@@ -39,6 +40,8 @@ def prepare_execution(config: WorkflowConfig) -> ConfigExecution:
         arguments = _batch_arguments(config.options)
     elif config.command == "compare":
         arguments = _compare_arguments(config.options)
+    elif config.command == "validate":
+        arguments = _validate_arguments(config.options)
     elif config.command == "report":
         arguments = _report_arguments(config.options)
     elif config.command == "collect":
@@ -235,8 +238,26 @@ def _report_arguments(options: dict[str, Any]) -> dict[str, Any]:
         "max_preview_values": options.get("max_preview_values", 5),
         "target_format": options.get("target_format"),
         "strict_validation": options.get("strict_validation", False),
+        "schema_contract": options.get("schema_contract"),
         "json_output": options.get("json", False),
         "quiet": options.get("quiet", False),
+        "log_file": options.get("log"),
+        "log_level": options.get("log_level", "info"),
+        "log_append": options.get("log_append", False),
+        "developer_log": options.get("developer_log", False),
+        "write_config_file": None,
+        "overwrite_config": False,
+    }
+
+
+def _validate_arguments(options: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "input_file": options["input"],
+        "object_selector": options.get("object"),
+        "to_format": options.get("to"),
+        "strict": options.get("strict", False),
+        "schema_contract": options.get("schema_contract"),
+        "json_output": options.get("json", False),
         "log_file": options.get("log"),
         "log_level": options.get("log_level", "info"),
         "log_append": options.get("log_append", False),

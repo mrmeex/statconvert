@@ -5,6 +5,11 @@ from datetime import datetime, timezone
 from itertools import islice
 
 from statconvert.dataset import Dataset
+from statconvert.contracts import (
+    SchemaContractValidation,
+    contract_issue_rows,
+    contract_validation_summary,
+)
 from statconvert.inspection import (
     frequency_tables,
     missing_profile,
@@ -287,6 +292,59 @@ def build_validation_section(
     )
 
 
+def build_schema_contract_section(
+    validation: SchemaContractValidation,
+    *,
+    strict: bool = False,
+) -> ReportSection:
+    """Build a report section from an already evaluated contract result."""
+
+    summary = contract_validation_summary(validation, strict=strict)
+    metrics = [
+        ReportMetric(
+            name=name,
+            value=value,
+            label=name.replace("_", " ").title(),
+        )
+        for name, value in summary.items()
+    ]
+    rows = contract_issue_rows(validation)
+    columns = [
+        "severity",
+        "code",
+        "column",
+        "source_rule",
+        "message",
+        "expected",
+        "actual",
+        "affected_rows",
+        "samples",
+    ]
+    issues = [
+        ReportIssue(
+            issue.severity,
+            issue.code,
+            issue.message,
+            issue.column,
+        )
+        for issue in validation.issues
+    ]
+    return ReportSection(
+        key="schema_contract",
+        title="Schema Contract Validation",
+        metrics=metrics,
+        tables=[
+            ReportTable(
+                "schema_contract_issues",
+                columns,
+                rows,
+                description="Samples are bounded to at most five values.",
+            )
+        ],
+        issues=issues,
+    )
+
+
 def build_dataset_report(
     dataset: Dataset,
     title: str | None = None,
@@ -305,6 +363,7 @@ def build_dataset_report(
     validation_target_format: str | None = None,
     strict_validation: bool = False,
     label_preview_values: int = 5,
+    schema_contract_validation: SchemaContractValidation | None = None,
 ) -> DatasetReport:
     sections: list[ReportSection] = []
     if include_summary:
@@ -338,6 +397,13 @@ def build_dataset_report(
             target_format=validation_target_format,
             strict=strict_validation,
         ))
+        if schema_contract_validation is not None:
+            sections.append(
+                build_schema_contract_section(
+                    schema_contract_validation,
+                    strict=strict_validation,
+                )
+            )
 
     issues = [issue for section in sections for issue in section.issues]
     return DatasetReport(

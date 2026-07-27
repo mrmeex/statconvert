@@ -183,6 +183,15 @@ COMMAND_FIELDS: dict[CommandName, dict[str, Field]] = {
         "report_format": STRING,
         **COMMON_LOG_FIELDS,
     },
+    "validate": {
+        "input": _required(PATH),
+        "object": NAME,
+        "to": NAME,
+        "strict": BOOL,
+        "schema_contract": PATH,
+        "json": BOOL,
+        **COMMON_LOG_FIELDS,
+    },
     "report": {
         "input": _required(PATH),
         "output": _required(PATH),
@@ -210,6 +219,7 @@ COMMAND_FIELDS: dict[CommandName, dict[str, Field]] = {
         "overwrite": BOOL,
         "create_dirs": BOOL,
         "strict_validation": BOOL,
+        "schema_contract": PATH,
         **COMMON_LOG_FIELDS,
     },
     "collect": {
@@ -332,6 +342,13 @@ def _validate_command_rules(command: CommandName, options: dict[str, Any]) -> No
     elif command == "batch":
         _validate_batch(options)
     elif command == "report":
+        if options.get("schema_contract") is not None and options.get(
+            "no_validation"
+        ):
+            raise ConfigError(
+                "Config error: 'schema_contract' cannot be used with "
+                "'no_validation'."
+            )
         preset = options.get("preset")
         if isinstance(preset, str) and preset.lower() not in REPORT_PRESETS:
             supported = ", ".join(sorted(REPORT_PRESETS))

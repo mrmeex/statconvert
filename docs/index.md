@@ -26,6 +26,8 @@ hide:
 statconvert info survey.sav
 statconvert convert survey.sav survey.parquet
 statconvert validate survey.sav
+statconvert schema survey.sav --export-contract schema.toml
+statconvert validate survey.sav --schema-contract schema.toml
 ```
 </section>
 
@@ -41,6 +43,10 @@ statconvert validate survey.sav
   <article>
     <h2>Inspect before converting</h2>
     <p>Check dimensions, types, sample rows, capabilities, and target constraints before writing output.</p>
+  </article>
+  <article>
+    <h2>Define data-quality contracts</h2>
+    <p>Export versioned TOML schema contracts and apply named rules in validation or reports.</p>
   </article>
 </section>
 

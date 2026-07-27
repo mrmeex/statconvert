@@ -5,12 +5,12 @@ inspecting, validating, batch-processing, comparing, reporting, and logging stat
 datasets. It uses a backend registry and a common `Dataset` model so format-specific code
 stays out of conversion and analysis workflows.
 
-Version 0.7.0 expands portable metadata workflows. Sidecar schema version 3 preserves
-dataset labels, notes, normalized metadata, and provenance while existing version 2
-sidecars remain readable. Parquet and Feather embed the StatConvert payload in addition
-to the canonical sibling sidecar. The `metadata` command can export, validate, or apply
-sidecars; create human-readable CSV/XLSX data dictionaries; and generate best-effort R,
-Stata, or SPSS metadata helper scripts. No new dependencies are introduced.
+Version 0.8.0 adds versioned TOML schema contracts and named data-quality rules.
+`schema --export-contract` creates deterministic starter contracts,
+`validate --schema-contract` provides terminal or JSON quality gates, and
+`report --schema-contract` adds observational findings to JSON, CSV, and HTML reports.
+Validate and report contract workflows can also be saved and run through existing TOML
+workflow configs. No new dependencies are introduced.
 
 ## Implemented features
 
@@ -20,7 +20,8 @@ Stata, or SPSS metadata helper scripts. No new dependencies are introduced.
   export/apply, human-readable data dictionaries, and external-tool helper scripts
 - Ordered transformations: select, drop, rename, type conversion, filtering, and recoding
 - Dataset summary, descriptive profiles, frequencies, and missing-value analysis
-- Dataset-quality and target-format validation
+- Dataset-quality and target-format validation, versioned schema contracts, and named
+  allowed-value, range, regex, uniqueness, row-count, not-null, and length rules
 - Deterministic batch planning, parallel execution, shared transformation pipelines,
   validation, progress, workload summaries, worker-memory guidance, and CSV/JSON reports
 - Dataset comparison with positional or unique-key row matching, ignored columns,
@@ -83,6 +84,9 @@ statconvert convert workbook.xlsx output.csv --object Data
 statconvert convert workbook.xlsx combined.ods --all-objects
 statconvert collect objects.csv combined.xlsx --base-dir incoming
 statconvert validate input.sav --to parquet
+statconvert schema input.sav --export-contract schema.toml
+statconvert validate input.sav --schema-contract schema.toml
+statconvert report input.sav --output quality.html --schema-contract schema.toml
 statconvert compare before.sav after.parquet
 statconvert compare before.csv after.csv --ignore-columns exported_at --numeric-tolerance 0.001
 statconvert compare before.csv after.csv --key id --max-differences 10
@@ -96,15 +100,16 @@ statconvert convert input.csv output.parquet --write-config convert.toml
 statconvert transform input.csv output.parquet --select id --write-config transform.toml
 statconvert batch incoming converted --to parquet --workers 1 --write-config batch.toml
 statconvert compare old.csv new.csv --key id --write-config compare.toml
+statconvert validate input.csv --schema-contract schema.toml --write-config validate.toml
 statconvert report input.csv --output report.html --preset quick --write-config report.toml
 statconvert collect manifest.csv workbook.xlsx --write-config collect.toml
 ```
 
-`config run` executes `convert`, `transform`, `batch`, `compare`, `report`, and `collect`
-workflows. Each matching command accepts `--write-config FILE`, which writes validated
-TOML and does not run the workflow; use `--overwrite-config` to replace an existing
-config. Config loading uses Python 3.11's standard-library `tomllib` and adds no required
-dependency.
+`config run` executes `convert`, `transform`, `batch`, `compare`, `validate`, `report`,
+and `collect` workflows. Each matching command accepts `--write-config FILE`, which
+writes validated TOML and does not run the workflow; use `--overwrite-config` to replace
+an existing config. Config loading uses Python 3.11's standard-library `tomllib` and adds
+no required dependency.
 
 Human batch runs show planned workload settings before execution, stable active-worker
 slots while work is running, and complete success, failure, skipped, and blocked counts

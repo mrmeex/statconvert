@@ -40,6 +40,10 @@ class ConfigError(StatConvertError):
     """A workflow configuration is invalid or cannot be accessed."""
 
 
+class ContractError(StatConvertError):
+    """A schema contract is invalid or cannot be accessed."""
+
+
 class ObjectSelectionError(StatConvertError):
     """A dataset object could not be selected."""
 

@@ -23,6 +23,7 @@ from statconvert.reporting.sections import (
     build_metadata_section,
     build_missing_section,
     build_schema_section,
+    build_schema_contract_section,
     build_summary_section,
     build_validation_section,
 )
@@ -33,6 +34,7 @@ __all__ = [
     "ReportTable", "build_dataset_report", "build_describe_section",
     "build_frequencies_section", "build_labels_section", "build_metadata_section",
     "build_missing_section", "build_schema_section", "build_summary_section",
+    "build_schema_contract_section",
     "build_validation_section", "dataset_report_summary_dict",
     "infer_report_output_format", "write_dataset_report",
     "write_dataset_report_csv", "write_dataset_report_html",

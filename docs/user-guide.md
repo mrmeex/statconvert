@@ -23,7 +23,8 @@ features such as formatting, formulas, macros, charts, or existing sheets.
 
 StatConvert requires Python 3.11 or newer. Install the downloaded release wheel from the
 GitHub Releases page; installation, upgrades, and managed deployment are covered by the
-[Administrator Guide](admin-guide.md).
+[Administrator Guide](admin-guide.md). Build and artifact validation remain private
+maintainer workflows.
 
 Verify the installed command and list the formats available in the current environment:
 
@@ -81,8 +82,8 @@ statconvert config run batch.toml
 ```
 
 The starter uses snake_case fields corresponding to existing CLI options. `config run`
-executes `convert`, `transform`, `batch`, `compare`, `report`, and `collect`. Each file
-still represents one command, not a multi-step workflow. Config loading uses Python
+executes `convert`, `transform`, `batch`, `compare`, `validate`, `report`, and `collect`.
+Each file still represents one command, not a multi-step workflow. Config loading uses Python
 3.11's standard-library `tomllib` and adds no required dependency.
 
 You can also capture an existing command without running it:
@@ -92,6 +93,7 @@ statconvert convert input.csv output.parquet --write-config convert.toml
 statconvert transform input.csv output.parquet --select id --write-config transform.toml
 statconvert batch incoming converted --to parquet --workers 1 --write-config batch.toml
 statconvert compare old.csv new.csv --key id --write-config compare.toml
+statconvert validate input.csv --schema-contract schema.toml --write-config validate.toml
 statconvert report input.csv --output report.html --preset quick --write-config report.toml
 statconvert collect manifest.csv workbook.xlsx --write-config collect.toml
 statconvert config run batch.toml
@@ -344,6 +346,26 @@ statconvert labels input.sav
 - `metadata` summarizes the normalized metadata available for the dataset.
 - `labels` displays variable labels and value labels when they exist.
 
+To create an editable starter schema contract from the same resolved dataset metadata:
+
+```powershell
+statconvert schema input.sav --export-contract schema.toml
+```
+
+The TOML contract records the physical columns in source order, resolved storage and
+logical types where available, and whether the loaded values contain nulls. Its
+conservative defaults require the observed columns and disallow extras, but ignore column
+order during validation. It does not infer allowed-value lists, ranges, regular
+expressions, uniqueness, or keys. Add those expectations manually when they represent
+deliberate data rules. Use `--overwrite-contract` to replace an existing export.
+
+The command follows normal object selection rules, so use `--object` for one sheet or
+object in a container. Validate the starter—or an edited version—with:
+
+```powershell
+statconvert validate input.sav --schema-contract schema.toml
+```
+
 Statistical formats commonly contain richer labels and missing-value definitions than
 CSV or spreadsheet data. Normal single-dataset writes to a metadata-poor format
 automatically create a sibling `*.statconvert-metadata.json` sidecar. Keep the sidecar
@@ -463,6 +485,7 @@ statconvert validate input.sav
 statconvert validate input.sav --to xlsx
 statconvert validate input.csv --to xls
 statconvert validate input.sav --to xlsx --strict
+statconvert validate input.sav --schema-contract schema.toml
 ```
 
 Without `--to`, validation reports general dataset issues. With `--to`, it also checks
@@ -474,6 +497,62 @@ which is useful in automated quality gates. Validation can identify known struct
 format problems, but it cannot guarantee that the data is semantically correct for its
 real-world purpose.
 
+`--schema-contract` adds a version 1 TOML contract to the normal dataset and optional
+target checks. Contract errors also exit with failure. The terminal includes a separate
+schema-contract result and issue table. With `--json`, contract mode emits a
+`schema_contract` object alongside the ordinary `validation` array; without a contract,
+the existing JSON array shape is unchanged.
+
+Contracts use resolved schema metadata, including active sidecars and embedded Parquet or
+Feather metadata. You can manually add required/extra column policies, exact or prefix
+column order, storage/logical types, nullability, uniqueness, allowed values, numeric
+ranges, and string regex rules. Select one container object with `--object`; ambiguous
+multi-object inputs remain an error.
+
+Validation and report workflow configs accept the same contract path:
+
+```toml
+command = "validate"
+input = "./input.csv"
+schema_contract = "./schema.toml"
+json = true
+```
+
+Use `command = "report"` with `output` and the same `schema_contract` field for durable
+JSON, CSV, or HTML reporting. `config run` preserves validation exit behavior while
+contract findings in a successfully written report remain observational. Relative config
+paths follow the existing workflow convention and resolve from the working directory.
+Schema export remains a direct `schema --export-contract` workflow rather than a new
+config command.
+
+For explicit, named quality policies, add `[[rules]]` to that same TOML file:
+
+```toml
+[[rules]]
+name = "known_status"
+type = "allowed_values"
+column = "status"
+values = ["active", "inactive"]
+severity = "error"
+
+[[rules]]
+name = "unique_person"
+type = "unique"
+columns = ["site_id", "person_id"]
+
+[[rules]]
+name = "minimum_rows"
+type = "row_count"
+min = 1
+```
+
+Supported named types are `allowed_values`, `range`, `regex`, `unique`, `row_count`,
+`not_null`, and `length`. Named rules are useful when a policy needs an explicit identity,
+description, severity, composite uniqueness, or dataset-wide row-count bound. Column-local
+fields remain the concise form for simple constraints. Both forms may coexist and can
+produce separate findings. Exported starter contracts never infer named rules; add only
+policies that represent deliberate expectations.
+
 ## Creating reports
 
 Reports combine dataset summary, schema, metadata, labels, missing-value analysis,
@@ -483,11 +562,21 @@ column profiles, and validation according to the selected preset and sections:
 statconvert report input.sav --output report.html
 statconvert report input.sav --output report.json
 statconvert report input.sav --output report.csv
+statconvert report input.sav --output quality.html --schema-contract schema.toml
 ```
 
 HTML is convenient for viewing and sharing. JSON is suited to downstream processing, and
 CSV provides table-oriented report output. Report contents and presets are described in
 the [CLI Reference](cli.md#report).
+
+`report --schema-contract` adds the already supported schema and named-rule results as a
+dedicated section in JSON, CSV, or HTML. It includes status and counts plus severity,
+stable code, source rule, expected/actual values, affected rows, and no more than five
+samples per issue. Report generation is observational and exits successfully after
+writing even when findings exist; use `validate --schema-contract` for an exit-code gate.
+`--strict-validation` records warning-only contract status as failed in the report.
+Contract reporting currently requires the validation section and is not serialized by
+`--write-config`.
 
 ## Comparing datasets
 
@@ -748,3 +837,5 @@ run the single-dataset files without `--object`.
 - [CLI Reference](cli.md) for every command option and exit policy
 - [Format Guide](formats.md) for the capability matrix and format caveats
 - [Administrator Guide](admin-guide.md) for installation, updates, and deployment
+- [CLI Reference](cli.md) for complete command options and exit behavior
+- [Examples and Recipes](examples.md) for copyable public workflows

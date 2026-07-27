@@ -9,6 +9,7 @@ CommandName: TypeAlias = Literal[
     "transform",
     "batch",
     "compare",
+    "validate",
     "report",
     "collect",
 ]
@@ -22,6 +23,7 @@ SUPPORTED_COMMANDS: tuple[CommandName, ...] = (
     "transform",
     "batch",
     "compare",
+    "validate",
     "report",
     "collect",
 )

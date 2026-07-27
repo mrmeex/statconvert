@@ -47,6 +47,11 @@ _TEMPLATES: dict[CommandName, dict[str, object]] = {
         "numeric_tolerance": 0.001,
         "max_differences": 50,
     },
+    "validate": {
+        "command": "validate",
+        "input": "./input.csv",
+        "schema_contract": "./schema.toml",
+    },
     "report": {
         "command": "report",
         "input": "./input.csv",

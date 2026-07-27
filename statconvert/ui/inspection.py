@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import json
+
 import pandas as pd
 
 from rich.table import Table
 
+from statconvert.contracts import SchemaContractValidation
 from statconvert.inspection import (
     ColumnProfile,
     DatasetSummary,
@@ -308,6 +311,69 @@ def show_validation_issues(
         console.print(
             "[green]No validation warnings or errors found.[/green]"
         )
+
+
+def show_schema_contract_validation(
+    validation: SchemaContractValidation,
+    *,
+    strict: bool = False,
+) -> None:
+    """Display one schema contract validation result."""
+
+    if not validation.valid or (strict and validation.warning_count):
+        status = "[red]failed[/red]"
+    elif validation.warning_count:
+        status = "[yellow]passed with warnings[/yellow]"
+    else:
+        status = "[green]passed[/green]"
+    console.print(f"\nSchema contract validation: {status}")
+    console.print(f"[dim]Contract: {validation.path}[/dim]")
+    console.print(
+        "[dim]Summary: "
+        f"{validation.error_count} error(s), "
+        f"{validation.warning_count} warning(s), "
+        f"{validation.info_count} info; "
+        f"{validation.checked_rule_count} named rule(s), "
+        f"{validation.checked_column_count} contract column(s).[/dim]"
+    )
+
+    if not validation.issues:
+        return
+
+    table = Table(title="Schema Contract Issues")
+    table.add_column("Issue", no_wrap=True)
+    table.add_column("Details")
+
+    for issue in validation.issues:
+        details = [
+            f"Source rule: {issue.source_rule or '-'}",
+            f"Column: {issue.column or '-'}",
+            issue.message,
+            f"Expected: {_format_contract_value(issue.expected) or '-'}",
+            f"Actual: {_format_contract_value(issue.actual) or '-'}",
+            (
+                "Affected rows: "
+                + (
+                    f"{issue.affected_rows:,}"
+                    if issue.affected_rows is not None
+                    else "-"
+                )
+            ),
+        ]
+        table.add_row(
+            f"{_format_severity(issue.severity)}\n[cyan]{issue.code}[/cyan]",
+            "\n".join(details),
+        )
+
+    console.print(table)
+
+
+def _format_contract_value(value: object) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, (dict, list, tuple)):
+        return json.dumps(value, ensure_ascii=False, default=str)
+    return str(value)
 
 
 def _summary_rows(

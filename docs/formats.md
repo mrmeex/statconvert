@@ -492,3 +492,6 @@ StatConvert does not currently provide:
 - fuzzy or many-to-many compare matching, duplicate-key reconciliation, per-column or
   relative tolerances, or chunked comparison; or
 - human-readable descriptions of raw display-format codes.
+
+Use `statconvert capabilities FORMAT` for the installed capability details. Deferred
+format work is described in the release notes when it becomes user-facing.

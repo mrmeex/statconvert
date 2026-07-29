@@ -851,9 +851,9 @@ preserved unless `--recode-default` is supplied; existing missing values remain 
 
 Use `transform --dry-run` to inspect the planned pipeline without writing. The complete
 syntax for filters, recoding, type errors, validation, and object selection is in the
-[CLI Reference](cli.md#transform). The [Transform Language](transform-language.md)
-defines every supported function and operator, bracketed references for awkward column
-names, ordered recipe semantics, and the closed evaluator's security boundary.
+[CLI Reference](cli.md#transform), including supported functions and operators,
+bracketed references for awkward column names, ordered recipe semantics, and the closed
+evaluator's security boundary.
 
 For many inputs, `batch --transform` continues to support the established select, drop,
 rename, type, structured filter, and recode options. The new derive and expression-filter
@@ -967,7 +967,5 @@ run the single-dataset files without `--object`.
 - [Examples and Recipes](examples.md) for copyable task-oriented workflows
 - [CLI Reference](cli.md) for every command option and exit policy
 - [Format Guide](formats.md) for the capability matrix and format caveats
-- [Transform Language](transform-language.md) for safe expressions and ordered recipes
 - [Administrator Guide](admin-guide.md) for installation, updates, and deployment
-- [Roadmap](roadmap.md) for planned releases and deferred work
 - [License](license.md) for the GNU AGPLv3-or-later terms

@@ -62,10 +62,16 @@ statconvert transform input.csv output.csv --filter-expression "age >= 18"
   </article>
 </section>
 
+<p>
+  StatConvert 0.11.0 is a release-quality and documentation-boundary update. It
+  does not change conversion commands, supported formats, or runtime behavior.
+</p>
+
 <footer class="statconvert-home-footer">
   <span>StatConvert documentation</span>
   <a href="examples/">Examples</a>
-  <a href="transform-language/">Transform language</a>
+  <a href="cli/">CLI reference</a>
+  <a href="formats/">Formats</a>
   <a href="license/">License</a>
   <a href="https://github.com/mrmeex/statconvert/releases/latest">Latest release</a>
   <a href="https://github.com/mrmeex/statconvert">Source on GitHub</a>

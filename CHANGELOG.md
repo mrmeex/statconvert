@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.11.0 - 2026-07-29
+
+### Added
+
+- Added a documented Codex-driven release process with explicit private, public,
+  artifact, GitHub Release, Pages, and post-release quality gates.
+- Added safeguards for the current package version, AGPL package metadata, official
+  `LICENSE` text, and the documentation dependency group required by GitHub Pages.
+- Added a machine-reviewable public documentation allowlist, conditional set, denylist,
+  content boundary, required navigation, and next-sync removal list.
+
+### Documentation
+
+- Documented the curated public-sync boundary and the required removal of private-only
+  roadmap and transform-language design pages from public documentation.
+- Documented strict MkDocs verification, public navigation requirements, and the
+  documentation-only Pages hotfix procedure.
+- Kept Codex as the automation layer without adding an internal release framework or
+  user-facing release command.
+
+### Notes
+
+- No data-conversion, command, supported-format, or runtime dependency behavior changed.
+- The GUI remains future 1.0.0 work via `statconvert ui`.
+
 ## 0.10.1 - 2026-07-29
 
 ### Added

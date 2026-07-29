@@ -494,5 +494,4 @@ StatConvert does not currently provide:
   relative tolerances, or chunked comparison; or
 - human-readable descriptions of raw display-format codes.
 
-The CLI rejects unsupported operations before writing output. Use `statconvert
-capabilities FORMAT` to inspect the active format contract.
+See the [Roadmap](roadmap.md) for planned releases and deferred work.

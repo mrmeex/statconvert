@@ -407,7 +407,7 @@ encoding; `--output-encoding` affects only supporting writers. An unsupported ba
 produces a warning and ignores that directional option. CSV delimiter and decimal values
 apply only to CSV input/output paths, must each be one character, and cannot be the same
 when both are supplied. Read-only and comparison commands do not expose these controls in
-0.2.0.
+0.10.0.
 
 ## Discovery and metadata commands
 
@@ -440,6 +440,12 @@ statconvert capabilities TARGET
 Format targets show extension-refined read/write truth; backend targets show broad engine
 capabilities. Format details include container status, object selection, object kind, and
 multiple-sheet/table flags.
+
+The displayed `Streaming` row is the conservative backend capability flag, not the
+selective workflow matrix. CSV, JSONL, and NDJSON still support the documented opt-in
+`convert --stream`, plain `batch --stream`, and contract-only `validate --stream`
+workflows through the dedicated streaming planner and executor. JSON arrays and other
+formats remain non-streaming.
 
 ```bash
 statconvert capabilities zsav

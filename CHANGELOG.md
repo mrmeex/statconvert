@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.10.1 - 2026-07-29
+
+### Added
+
+- Licensed StatConvert under the GNU Affero General Public License v3.0 or later using
+  the SPDX expression `AGPL-3.0-or-later`, the official license text, and explicit
+  package license-file metadata.
+
+### Documentation
+
+- Audited the 0.10.0 command surface, formats, streaming boundaries, transform language,
+  configuration workflows, roadmap, and release-facing documentation against live CLI
+  output and implementation metadata.
+- Corrected localized stale version, recipe-status, roadmap, and capability wording
+  without changing command or package behavior.
+- Refreshed task-oriented examples for basic conversion, selective streaming, schema
+  contracts, safe derived/filter expressions, canonical ordered recipes, metadata
+  precedence, and current fixed transform order.
+- Improved links among the README, User Guide, examples, transform-language reference,
+  and AGPL license.
+
+### Notes
+
+- This patch contains no runtime, command, or supported-format behavior changes.
+
 ## 0.10.0 - 2026-07-29
 
 ### Added

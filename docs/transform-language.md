@@ -6,7 +6,7 @@ This document defines the intended StatConvert 0.10.0 transform recipe system. I
 design contract for the parser, recipe engine, configuration, preview, and future UI
 work. The 0.10.0d slice added closed expression evaluation, derived columns, conditional
 values, and expression filters. The 0.10.0e slice activated a focused normalization and
-missing-value helper set and enriched recode planning metadata. The 0.10.0f slice adds
+missing-value helper set and enriched recode planning metadata. The 0.10.0f slice added
 canonical ordered config import/export, exact-order compilation to the existing
 transformations, and a bounded internal preview API.
 
@@ -46,7 +46,7 @@ different expressions.
 
 ## Goals
 
-The 0.10.0 transform system will provide:
+The 0.10.0 transform system provides:
 
 - safe, row-local transform expressions;
 - portable, explicitly ordered recipe steps;
@@ -125,7 +125,7 @@ The planner uses deterministic best-effort state: a valid step updates projected
 an invalid step does not change them. Later steps are still planned against the most
 recent valid state, so one error does not hide independent downstream diagnostics.
 
-## Proposed TOML shape
+## Canonical TOML shape
 
 The canonical 0.10.0 representation uses an array of tables:
 
@@ -291,7 +291,7 @@ records the target, mapping keys/count, whether a default is present, its JSON-s
 value, the value-label policy, and that compatibility recodes do not alter missing input
 values. Normal execution summaries report the number of recoded columns.
 
-## Initial expression language
+## Expression language
 
 The parser accepts only a closed grammar and registered functions. Function names are
 case-sensitive lowercase identifiers. No attribute access, general indexing,
@@ -299,7 +299,7 @@ comprehensions, assignment, lambda, comments, semicolon statements, or function
 definition syntax is permitted. The implementation does not call Python `ast`, `eval`,
 or `exec`.
 
-### Core functions
+### Supported functions
 
 Text:
 
@@ -330,13 +330,13 @@ Conditional:
 
 - `if_else(condition, true_value, false_value)`
 
-These functions are the complete initial 0.10.0 parser registry. They are row-local and
-previewable. Null propagation and accepted input/result kinds must be explicit in the
-parser/type rules and must not rely on arbitrary Python behavior.
+These functions are the complete supported 0.10.0 registry. They are row-local and
+previewable. Null propagation and accepted input/result kinds are explicit in the
+parser/type rules and do not rely on arbitrary Python behavior.
 
 ### Operators
 
-The first grammar includes:
+The grammar supports:
 
 - comparisons: `==`, `!=`, `<`, `<=`, `>`, and `>=`;
 - boolean operators: `and`, `or`, and `not`; and
@@ -360,7 +360,7 @@ write explicit comparisons joined with `and`.
 
 ### Literals
 
-The first grammar includes:
+The grammar supports:
 
 - quoted strings with controlled escapes;
 - finite integers and floating-point numbers;
@@ -675,7 +675,7 @@ values, dates, and scalar types continue through the project’s shared JSON nor
 Human terminal summaries may be concise views of this model but must not define a
 different execution contract.
 
-## Implementation slices after 0.10.0a
+## Implementation history through 0.10.0
 
 - **0.10.0b:** completed the closed safe-expression tokenizer/parser, immutable AST,
   function validation, expression metadata, source spans, conservative result-kind

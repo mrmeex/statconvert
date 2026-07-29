@@ -50,6 +50,9 @@ nav:
       - CLI Reference: cli.md
       - Transform Language: transform-language.md
       - Formats and Backends: formats.md
+  - Project:
+      - Roadmap: roadmap.md
+      - License: license.md
 
 plugins:
   - search:

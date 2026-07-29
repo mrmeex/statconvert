@@ -167,7 +167,9 @@ restrictions include:
 
 See [Examples and Recipes](docs/examples.md) for copyable workflows, the
 [Format Guide](docs/formats.md) for the complete extension matrix, and the
-[CLI Reference](docs/cli.md) for command options and exit behavior.
+[CLI Reference](docs/cli.md) for command options and exit behavior. The
+[Transform Language](docs/transform-language.md) defines ordered recipes, safe
+expressions, and the deliberately excluded operations.
 
 ## Documentation
 
@@ -175,9 +177,12 @@ See [Examples and Recipes](docs/examples.md) for copyable workflows, the
 - [Administrator Guide](docs/admin-guide.md) - installation, managed deployment, and support
 - [Examples and Recipes](docs/examples.md) - copyable workflows for common tasks
 - [CLI Reference](docs/cli.md) - commands, options, output, and exit behavior
-- [Transform Language](docs/transform-language.md) - ordered recipes and safe expressions
 - [Format Guide](docs/formats.md) - format-specific usage, capabilities, metadata, and caveats
+- [Transform Language](docs/transform-language.md) - ordered recipes and safe expressions
+- [Roadmap](docs/roadmap.md) - project status, planned versions, and deferred work
+- [License](LICENSE) - GNU Affero General Public License v3.0 or later
 
 ## License
 
-License to be determined.
+StatConvert is licensed under the GNU Affero General Public License v3.0 or later
+(`AGPL-3.0-or-later`). See [LICENSE](LICENSE) for details.

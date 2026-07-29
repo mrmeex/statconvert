@@ -35,6 +35,17 @@ statconvert --version
 Use `python -m statconvert --version` when the console command is not on `PATH`. Missing
 dependencies appear as `not installed`.
 
+## Basic conversion
+
+Convert a CSV file to Parquet and intentionally replace an existing destination:
+
+```powershell
+python -m statconvert convert input.csv output.parquet --overwrite
+```
+
+Omit `--overwrite` when replacement is not intended. The equivalent `statconvert`
+console command can be used when it is on `PATH`.
+
 ## Create and validate a repeatable workflow config
 
 Create a single-command TOML starter, inspect or edit it, and validate it:
@@ -64,6 +75,12 @@ statconvert config run .\batch.toml
 Add `--overwrite-config` only when replacing the TOML file intentionally. The normal
 `--overwrite` flag is saved for future data-output replacement and does not overwrite the
 config itself.
+
+New transform config exports use canonical ordered `[[steps]]`; the file order is the
+execution order. Existing legacy top-level transform fields remain readable, but one
+config cannot mix those fields with `[[steps]]`. See
+[Run an ordered transform recipe](#run-an-ordered-transform-recipe) for a complete
+example.
 
 If either file already exists, StatConvert names the protected path and suggests the
 matching option. Use `--overwrite` for a converted dataset and `--overwrite-config` for a
@@ -133,6 +150,11 @@ statconvert metadata .\input\data.sav --export-sidecar --sidecar-output .\metada
 For a workbook, add `--object Data` so the flat export describes the selected sheet.
 Conversion commands already write sidecars automatically where needed.
 
+For sidecar-aware formats, a standardized sibling sidecar takes precedence over native
+or embedded StatConvert metadata. Parquet and Feather also embed the StatConvert payload
+for recovery when the sidecar is absent. Dictionary and helper-script exports use this
+same resolved metadata; they do not participate in precedence themselves.
+
 Apply an exported and edited sidecar to a matching sidecar-aware file:
 
 ```powershell
@@ -151,6 +173,9 @@ name; data columns missing from the sidecar are left without applied metadata.
 Export the resolved metadata as a human-readable data dictionary:
 
 ```powershell
+# Replace an existing review workbook intentionally
+python -m statconvert metadata input.sav --export-dictionary dictionary.xlsx --overwrite-dictionary
+
 # Flat review table
 statconvert metadata .\input\data.sav --export-dictionary .\review\data-dictionary.csv
 
@@ -263,6 +288,23 @@ statconvert convert .\input\data.csv .\output\data.xlsx
 
 CSV has no native variable labels or value labels. XLSX is preferred over legacy XLS for
 modern Excel users and larger or wider datasets.
+
+## Stream CSV and line-oriented JSON
+
+Streaming is opt-in and supports only the nine source/target pairs among CSV, JSONL, and
+NDJSON:
+
+```powershell
+python -m statconvert convert input.csv output.jsonl --stream --chunk-size 100000 --overwrite
+python -m statconvert batch input-folder output-folder --to jsonl --stream --chunk-size 100000 --overwrite
+statconvert convert .\input\data.jsonl .\output\data.csv --stream --chunk-size 50000
+```
+
+`--chunk-size` is a positive row count and requires `--stream`. JSON arrays (`.json`),
+other formats, transforms, reports, compare, collect, object modes, and transformed batch
+items are not streamed. The `capabilities` command reports conservative backend-wide
+streaming support, so its `Streaming: no` field does not override these explicitly
+implemented selective workflows.
 
 ## Create genuine legacy XLS output
 
@@ -429,6 +471,34 @@ statconvert validate .\input\data.csv --to xls --strict
 Target validation can catch known format limits, invalid target writability, and likely
 metadata loss. It does not guarantee that a dataset is semantically correct or accepted
 by every version of an external statistical package.
+
+## Export and validate a schema contract
+
+Export a conservative starter contract, edit it to add deliberate rules, then validate
+or report against it:
+
+```powershell
+python -m statconvert schema input.csv --export-contract contract.toml --overwrite-contract
+python -m statconvert validate input.csv --schema-contract contract.toml
+statconvert schema .\input\data.sav --export-contract .\schema.toml
+statconvert validate .\input\data.sav --schema-contract .\schema.toml
+statconvert report .\input\data.sav --output .\reports\data.html --schema-contract .\schema.toml
+```
+
+Starter contracts describe resolved columns, order, types, and nullability without
+inventing row-derived allowed values, ranges, regexes, or uniqueness rules. Add named
+allowed-value, range, regex, uniqueness, row-count, not-null, or string-length rules only
+when they represent an intended data contract.
+
+Contract validation can stream CSV, JSONL, or NDJSON input:
+
+```powershell
+python -m statconvert validate input.csv --schema-contract contract.toml --stream --chunk-size 100000
+statconvert validate .\input\data.jsonl --schema-contract .\schema.toml --stream --chunk-size 50000
+```
+
+`validate --stream` requires `--schema-contract`. It is unavailable for JSON arrays,
+other formats, object selection, destination validation, and config serialization.
 
 ## Generate an HTML, JSON, or CSV report
 
@@ -670,9 +740,36 @@ Operations can be combined. Later stages use names produced by earlier stages:
 statconvert transform .\input\data.csv .\output\data-ready.csv --rename years=age --type age=int
 ```
 
-## Filter rows
+## Derive columns and filter rows safely
 
-Keep rows where `age` is at least 18:
+Append derived columns with the closed expression language:
+
+```powershell
+python -m statconvert transform survey_raw.csv survey_clean.csv --derive email_clean="lower(strip(email))" --overwrite
+python -m statconvert transform survey_raw.csv adults.csv --derive country_clean="upper(strip(country))" --filter-expression "age >= 18 and country_clean == 'NL'" --overwrite
+statconvert transform .\input\data.csv .\output\data-coded.csv --derive "status_clean=normalize_code(status)" --recode status_clean:A=Active,I=Inactive
+statconvert transform .\input\data.csv .\output\data-grouped.csv --derive "age_group=if_else(age >= 18, 'adult', 'minor')"
+statconvert transform .\input\data.csv .\output\data-named.csv --derive 'name_clean=normalize_whitespace(["Full Name"])'
+```
+
+Bracketed JSON-quoted references such as `["Full Name"]` address awkward column names.
+Supported text helpers are `strip`, `lower`, `upper`, `contains`, `starts_with`,
+`ends_with`, `normalize_whitespace`, and `normalize_code`. Numeric helpers are `abs` and
+`round`; missing/conditional helpers are `is_null`, `not_null`, `coalesce`, `null_if`,
+`null_if_empty`, `default_if_missing`, and `if_else`.
+
+Use expression filtering for boolean combinations:
+
+```powershell
+statconvert transform .\input\data.csv .\output\adults-nl.csv --filter-expression "age >= 18 and country == 'NL'"
+```
+
+Comparisons, `and`, `or`, `not`, parentheses, and defined numeric arithmetic are
+supported. Python `eval`, imports, arbitrary calls, regex/date/conversion helpers, and
+aggregate, window, group, or join functions are not available. See the
+[Transform Language](transform-language.md) for the exact grammar and evaluation rules.
+
+The legacy structured filter remains supported. Keep rows where `age` is at least 18:
 
 ```powershell
 statconvert transform .\input\data.csv .\output\adults.csv --filter age,gte,18
@@ -690,8 +787,10 @@ Replace status codes with readable values:
 statconvert transform .\input\data.csv .\output\data-recoded.csv --recode status:1=Active,0=Inactive
 ```
 
-The fixed transformation order is select, drop, rename, type conversion, filtering, then
-recoding. Use `transform` for one input, or apply the same pipeline to many planned items:
+The direct CLI order is fixed: select, drop, rename, type conversion, derive, structured
+filter, expression filter, then recode. Repeated derives retain command order, and recode
+can target a derived column. Use `transform` for one input, or apply the established
+batch-compatible pipeline to many planned items:
 
 ```powershell
 statconvert batch .\incoming .\converted --to parquet --transform --select id --select name --filter active,eq,true
@@ -699,6 +798,59 @@ statconvert batch .\incoming .\converted --to parquet --transform --select id --
 
 Batch dry-run plans paths and parses the options without reading datasets or checking
 whether referenced columns exist.
+
+## Run an ordered transform recipe
+
+Canonical transform configs use `[[steps]]` and execute them in file order:
+
+```toml
+command = "transform"
+input = "survey_raw.csv"
+output = "survey_clean.csv"
+overwrite = true
+
+[[steps]]
+type = "derive"
+column = "email_clean"
+expression = "lower(strip(email))"
+
+[[steps]]
+type = "derive"
+column = "country_clean"
+expression = "upper(strip(country))"
+
+[[steps]]
+type = "filter"
+expression = "country_clean == 'NL'"
+
+[[steps]]
+type = "recode"
+column = "status"
+default = "Unknown"
+
+[steps.map]
+"1" = "Active"
+"2" = "Inactive"
+"9" = "Unknown"
+```
+
+Validate and run the recipe:
+
+```powershell
+python -m statconvert config validate survey-cleanup.toml
+python -m statconvert config run survey-cleanup.toml
+```
+
+To export a deterministic ordered recipe without transforming data:
+
+```powershell
+statconvert transform .\input\data.csv .\output\data-clean.csv --derive "country_clean=normalize_code(country)" --filter-expression "country_clean == 'NL'" --write-config .\transform.toml
+```
+
+Legacy top-level transform fields remain compatible and retain their fixed order.
+Mixing legacy operation fields with `[[steps]]` is rejected because their combined order
+would be ambiguous. The bounded preview foundation is internal only; there is no preview
+CLI or GUI command. A full GUI through future `statconvert ui` remains planned for 1.0.0.
 
 ## Choose separate outputs for large object sets
 
@@ -785,8 +937,13 @@ format, metadata, or value differences rather than a command crash.
 
 | Goal | Start here |
 |---|---|
+| I need a basic conversion | [Basic conversion](#basic-conversion) |
 | I need Excel output | [Convert CSV to Excel XLSX](#convert-csv-to-excel-xlsx) or [Convert SPSS to Excel](#convert-spss-to-excel) |
 | I need old Excel output | [Create genuine legacy XLS output](#create-genuine-legacy-xls-output) |
+| I need bounded text conversion | [Stream CSV and line-oriented JSON](#stream-csv-and-line-oriented-json) |
+| I need a reusable data contract | [Export and validate a schema contract](#export-and-validate-a-schema-contract) |
+| I need derived columns or expression filters | [Derive columns and filter rows safely](#derive-columns-and-filter-rows-safely) |
+| I need exact transform ordering | [Run an ordered transform recipe](#run-an-ordered-transform-recipe) |
 | I need to select one sheet | [Work with Excel workbook sheets](#work-with-excel-workbook-sheets) |
 | I need one object from RData | [Work with RData or RDA workspaces](#work-with-rdata-or-rda-workspaces) |
 | I need many files converted | [Batch convert a folder](#batch-convert-a-folder) |
@@ -795,4 +952,6 @@ format, metadata, or value differences rather than a command crash.
 | I need automation output | [Use JSON output in scripts](#use-json-output-in-scripts) and [Write logs for troubleshooting](#write-logs-for-troubleshooting) |
 
 For deeper behavior, return to the [User Guide](user-guide.md),
-[CLI Reference](cli.md), or [Format Guide](formats.md).
+[CLI Reference](cli.md), [Format Guide](formats.md), or
+[Transform Language](transform-language.md). StatConvert is licensed under the
+[GNU Affero General Public License v3.0 or later](license.md).

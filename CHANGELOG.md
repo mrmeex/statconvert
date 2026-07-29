@@ -1,5 +1,79 @@
 # Changelog
 
+## 0.10.0 - 2026-07-29
+
+### Added
+
+- Completed the 0.10.0a transform recipe and UI-ready language design, including an
+  explicitly ordered `[[steps]]` TOML model, seven planned step types, CLI compatibility
+  mapping, structured per-step errors, JSON-safe result metadata, and an internal preview
+  contract.
+- Defined the closed initial row-local expression function set, operators, literals,
+  awkward-column syntax, expression metadata, deferred pre-UI function library, and
+  intentionally excluded aggregate/window operations.
+- Added non-executing transform recipe, step, step-metadata, and expression-function
+  specification scaffolding with deterministic JSON-safe serialization and focused
+  validation tests.
+- Added the 0.10.0b internal closed expression tokenizer, immutable AST,
+  recursive-descent parser, lowercase core-function and arity validation, explicit
+  deferred/non-row-local function errors, and a non-throwing analysis API.
+- Added deterministic first-seen column/function metadata, conservative result-kind
+  inference, and zero-based half-open spans for tokens, AST nodes, function and column
+  references, operators, and JSON-safe errors.
+- Added security regression coverage rejecting Python execution helpers, imports,
+  attributes, general indexing, assignment, statements, comments, containers, lambdas,
+  comprehensions, and formatted-string syntax.
+- Added the 0.10.0c internal ordered recipe planner for select, drop, simultaneous rename,
+  type conversion, derive, filter, and recode steps, including projected input/output
+  columns, dependencies, intended types, expression analysis, UI flags, and deterministic
+  best-effort state.
+- Added stable JSON-safe planning issues for unknown/duplicate/colliding columns, invalid
+  steps/expressions/recodes, unsupported target types, and missing expression
+  dependencies, preserving expression source spans.
+- Added internal compatibility translation from existing transform options into the
+  current fixed select, drop, rename, type, filter, and recode order, retaining legacy
+  structured filter and simultaneous rename semantics without changing live execution.
+- Added the 0.10.0d closed vectorized AST evaluator for the core text, numeric, missing,
+  conditional, comparison, boolean, and arithmetic operations with structured safe
+  evaluation errors.
+- Added repeatable `transform --derive COLUMN=EXPRESSION` and
+  `--filter-expression EXPRESSION`, conditional `if_else`, planner-backed dependency
+  validation, and fixed select/drop/rename/type/derive/structured-filter/expression-filter/
+  recode ordering.
+- Added explicit policies for preserved text missing values, false missing masks,
+  literal case-sensitive matching, numeric-only arithmetic, aligned conditional branches,
+  and clear division-by-zero failure.
+- Added conservative derived-column metadata synchronization plus fixed-order
+  compatibility config fields for derive/expression-filter commands; canonical ordered
+  `[[steps]]` execution remains deferred.
+- Activated the focused row-local `normalize_whitespace`, `normalize_code`, `null_if`,
+  `null_if_empty`, and `default_if_missing` expression helpers with deterministic
+  string, equality, missing-value, and index-alignment policies.
+- Added recode planner metadata for target mappings, map count/keys, default behavior,
+  value-label updates, and missing-value behavior; transform summaries now report
+  recoded-column counts.
+- Verified that fixed-order recode remains last, can target derived columns, observes
+  filtered rows, and retains the existing CLI/config and metadata synchronization
+  behavior.
+- Added canonical ordered `[[steps]]` transform config import, deterministic export from
+  `transform --write-config`, exact file-order execution through existing transformation
+  classes, and schema-aware `config validate`.
+- Preserved legacy top-level transform configs and added explicit rejection of ambiguous
+  configs that mix those fields with `[[steps]]`.
+- Added a bounded, non-mutating, JSON-safe internal transform preview API with per-step
+  statuses, row/column changes, expression metadata, diagnostics, and sample output rows.
+- Added concise ordered-recipe and recipe-step counts to config-run transform summaries.
+
+### Notes
+
+- Existing commands without expression options retain their prior behavior. Structured
+  `--filter COLUMN,OPERATOR,VALUE` remains unchanged; expression filtering uses the
+  separate `--filter-expression` option.
+- Safe expression execution is limited to the documented core row-local language.
+  Regex, date/time, explicit conversion, replacement/substring/concatenation, aggregate,
+  grouping, and window helpers remain deferred. Streaming transform execution is not
+  included, and the GUI remains future 1.0.0 work.
+
 ## 0.9.0 - 2026-07-27
 
 ### Added

@@ -20,7 +20,11 @@ from statconvert.registry import (
     read_dataset,
     write_dataset,
 )
-from statconvert.transformations import TransformationPipeline
+from statconvert.transformations import (
+    TransformationPipeline,
+    compile_transform_recipe,
+)
+from statconvert.transformations.recipes import TransformRecipe
 
 
 def transform_dataset(
@@ -42,7 +46,7 @@ def transform_dataset(
 def transform_file(
     input_file: str,
     output_file: str,
-    pipeline: TransformationPipeline,
+    pipeline: TransformationPipeline | None = None,
     overwrite: bool = False,
     create_dirs: bool = False,
     dry_run: bool = False,
@@ -53,6 +57,7 @@ def transform_file(
     read_options: DatasetReadOptions | None = None,
     write_options: DatasetWriteOptions | None = None,
     on_option_warning: Callable[[str], None] | None = None,
+    recipe: TransformRecipe | None = None,
 ) -> Dataset:
     """
     Read a file, apply transformations and optionally write the result.
@@ -65,6 +70,11 @@ def transform_file(
         output_file
     )
     logger = get_logger()
+
+    if (pipeline is None) == (recipe is None):
+        raise ConversionError(
+            "Transform execution requires exactly one pipeline or ordered recipe."
+        )
 
     if not input_path.exists():
         raise ConversionError(
@@ -100,6 +110,12 @@ def transform_file(
         dataset.rows,
         len(dataset.columns),
     )
+    if recipe is not None:
+        pipeline = compile_transform_recipe(
+            recipe,
+            [str(column) for column in dataset.columns],
+        )
+    assert pipeline is not None
     logger.debug("Applying transformation pipeline")
     transformed = transform_dataset(
         dataset,

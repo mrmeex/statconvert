@@ -90,7 +90,7 @@ def _convert_arguments(options: dict[str, Any]) -> dict[str, Any]:
 
 
 def _transform_arguments(options: dict[str, Any]) -> dict[str, Any]:
-    return {
+    arguments = {
         "input_file": options["input"],
         "output_file": options["output"],
         "object_selector": options.get("object"),
@@ -101,7 +101,9 @@ def _transform_arguments(options: dict[str, Any]) -> dict[str, Any]:
         "type_items": options.get("type"),
         "type_errors": options.get("type_errors", "raise"),
         "datetime_format": options.get("datetime_format"),
+        "derive_items": options.get("derive"),
         "filter_items": options.get("filter"),
+        "filter_expression_items": options.get("filter_expression"),
         "filter_mode": options.get("filter_mode", "and"),
         "recode": options.get("recode"),
         "recode_default": options.get("recode_default"),
@@ -124,6 +126,9 @@ def _transform_arguments(options: dict[str, Any]) -> dict[str, Any]:
         "write_config_file": None,
         "overwrite_config": False,
     }
+    if "steps" in options:
+        arguments["ordered_steps"] = options["steps"]
+    return arguments
 
 
 def _batch_arguments(options: dict[str, Any]) -> dict[str, Any]:

@@ -5,11 +5,11 @@ inspecting, validating, batch-processing, comparing, reporting, and logging stat
 datasets. It uses a backend registry and a common `Dataset` model so format-specific code
 stays out of conversion and analysis workflows.
 
-Version 0.9.0 adds opt-in streaming conversion, batch conversion, and schema-contract
-validation for CSV, JSONL, and NDJSON. `--chunk-size ROWS` controls bounded reads for
-these workflows, while ordinary in-memory behavior remains the default. JSON arrays and
-all other formats continue to use the normal in-memory paths. No new dependencies are
-introduced.
+Version 0.10.0 adds safe derived columns and expression filters, canonical ordered
+`[[steps]]` transform recipes, deterministic config import/export, and a bounded internal
+preview foundation for future UI work. Existing transform/config behavior remains
+compatible, and the closed expression engine does not permit arbitrary Python. No new
+dependencies are introduced.
 
 ## Implemented features
 
@@ -17,7 +17,12 @@ introduced.
 - Normalized schema, variable-label, value-label, missing-value, and metadata access
 - Versioned metadata sidecars, Arrow-embedded StatConvert metadata, resolved-metadata
   export/apply, human-readable data dictionaries, and external-tool helper scripts
-- Ordered transformations: select, drop, rename, type conversion, filtering, and recoding
+- Ordered transformations: select, drop, rename, type conversion, derived columns,
+  expression and structured filtering, and recoding
+- Canonical ordered `[[steps]]` TOML recipes with deterministic export, schema-aware
+  validation, exact-order execution, and legacy transform-config compatibility
+- Closed row-local expression functions for text, numeric, missing-value, conditional,
+  and normalization workflows
 - Dataset summary, descriptive profiles, frequencies, and missing-value analysis
 - Dataset-quality and target-format validation, versioned schema contracts, and named
   allowed-value, range, regex, uniqueness, row-count, not-null, and length rules
@@ -93,6 +98,8 @@ statconvert report input.sav --output quality.html --schema-contract schema.toml
 statconvert compare before.sav after.parquet
 statconvert compare before.csv after.csv --ignore-columns exported_at --numeric-tolerance 0.001
 statconvert compare before.csv after.csv --key id --max-differences 10
+statconvert transform input.csv output.csv --derive "email_clean=lower(strip(email))"
+statconvert transform input.csv output.csv --filter-expression "age >= 18"
 statconvert report input.sav --output report.html
 statconvert batch input-folder output-folder --to parquet
 statconvert batch incoming-csv output-jsonl --to jsonl --stream --chunk-size 50000
@@ -102,6 +109,8 @@ statconvert config validate batch.toml
 statconvert config run batch.toml
 statconvert convert input.csv output.parquet --write-config convert.toml
 statconvert transform input.csv output.parquet --select id --write-config transform.toml
+statconvert config validate transform.toml
+statconvert config run transform.toml
 statconvert batch incoming converted --to parquet --workers 1 --write-config batch.toml
 statconvert compare old.csv new.csv --key id --write-config compare.toml
 statconvert validate input.csv --schema-contract schema.toml --write-config validate.toml
@@ -114,6 +123,11 @@ and `collect` workflows. Each matching command accepts `--write-config FILE`, wh
 writes validated TOML and does not run the workflow; use `--overwrite-config` to replace
 an existing config. Config loading uses Python 3.11's standard-library `tomllib` and adds
 no required dependency.
+
+New transform configs use canonical ordered `[[steps]]`. Steps execute in file order and
+support select, drop, rename, type conversion, derive, expression filter, and recode.
+Existing top-level transform configs remain supported, but cannot be mixed with
+`[[steps]]`.
 
 Human batch runs show planned workload settings before execution, stable active-worker
 slots while work is running, and complete success, failure, skipped, and blocked counts
@@ -161,6 +175,7 @@ See [Examples and Recipes](docs/examples.md) for copyable workflows, the
 - [Administrator Guide](docs/admin-guide.md) - installation, managed deployment, and support
 - [Examples and Recipes](docs/examples.md) - copyable workflows for common tasks
 - [CLI Reference](docs/cli.md) - commands, options, output, and exit behavior
+- [Transform Language](docs/transform-language.md) - ordered recipes and safe expressions
 - [Format Guide](docs/formats.md) - format-specific usage, capabilities, metadata, and caveats
 
 ## License

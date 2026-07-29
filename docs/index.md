@@ -30,6 +30,8 @@ statconvert validate survey.sav
 statconvert schema survey.sav --export-contract schema.toml
 statconvert validate survey.sav --schema-contract schema.toml
 statconvert validate records.csv --schema-contract schema.toml --stream
+statconvert transform input.csv output.csv --derive "email_clean=lower(strip(email))"
+statconvert transform input.csv output.csv --filter-expression "age >= 18"
 ```
 </section>
 
@@ -53,6 +55,10 @@ statconvert validate records.csv --schema-contract schema.toml --stream
   <article>
     <h2>Stream line-oriented data</h2>
     <p>Opt into chunked CSV, JSONL, and NDJSON conversion, batch, and contract-validation workflows.</p>
+  </article>
+  <article>
+    <h2>Build safe transform recipes</h2>
+    <p>Derive, filter, normalize, and recode data with ordered TOML steps and a closed expression language.</p>
   </article>
 </section>
 

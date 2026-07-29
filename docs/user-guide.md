@@ -82,8 +82,9 @@ statconvert config run batch.toml
 
 The starter uses snake_case fields corresponding to existing CLI options. `config run`
 executes `convert`, `transform`, `batch`, `compare`, `validate`, `report`, and `collect`.
-Each file still represents one command, not a multi-step workflow. Config loading uses Python
-3.11's standard-library `tomllib` and adds no required dependency.
+Each file represents one command. Transform configs may contain an ordered list of
+transformation steps. Config loading uses Python 3.11's standard-library `tomllib` and
+adds no required dependency.
 
 You can also capture an existing command without running it:
 
@@ -108,6 +109,43 @@ format typos may include a suggestion, and a missing required field points to
 `statconvert config init` for a valid starter file. The same output safety wording is used
 when a saved config is run: `--overwrite` controls workflow outputs, while
 `--overwrite-config` controls only config replacement.
+
+New transform exports use canonical ordered steps:
+
+```toml
+command = "transform"
+input = "survey_raw.csv"
+output = "survey_clean.csv"
+overwrite = true
+
+[[steps]]
+type = "derive"
+column = "email_clean"
+expression = "lower(strip(email))"
+
+[[steps]]
+type = "derive"
+column = "country_clean"
+expression = "normalize_code(country)"
+
+[[steps]]
+type = "filter"
+expression = "age >= 18 and country_clean == 'NL'"
+
+[[steps]]
+type = "recode"
+column = "status"
+
+[steps.map]
+A = "Active"
+I = "Inactive"
+```
+
+Supported types are `select`, `drop`, `rename`, `convert_type`, `derive`, `filter`, and
+`recode`. File order is authoritative. Existing top-level transform fields remain
+supported in older configs, but a config cannot mix them with `[[steps]]`.
+`config validate` checks the recipe against the declared input columns without writing;
+`config run` compiles it to the same transformations used by direct commands.
 
 ## Checking supported formats
 
@@ -776,21 +814,50 @@ statconvert transform input.csv output.csv --select id --select name
 statconvert transform input.csv output.csv --rename old_name=new_name
 statconvert transform input.csv output.csv --type age=int
 statconvert transform input.csv output.csv --filter age,gte,18
+statconvert transform input.csv output.csv --derive "email_clean=lower(strip(email))"
+statconvert transform input.csv output.csv --derive "country_clean=upper(strip(country))"
+statconvert transform input.csv output.csv --derive "age_group=if_else(age >= 18, 'adult', 'minor')"
+statconvert transform input.csv output.csv --derive "name_clean=normalize_whitespace(name)"
+statconvert transform input.csv output.csv --derive "status_code=normalize_code(status)" --recode status_code:A=Active,I=Inactive
+statconvert transform input.csv output.csv --derive "note_clean=null_if_empty(note)"
+statconvert transform input.csv output.csv --derive "income_clean=default_if_missing(income, 0)"
+statconvert transform input.csv output.csv --filter-expression "age >= 18 and country == 'NL'"
 statconvert transform input.xlsx output.csv --csv-delimiter ";"
 ```
 
 Transformations can select or drop columns, rename columns, change types, filter rows, and
-recode values. When several operations are combined, the order is fixed: select, drop,
-rename, type conversion, filtering, then recoding. This makes a command predictable but
-means later operations must use names and values produced by earlier operations.
+recode values, and append expression-derived columns. When several operations are
+combined, the order is fixed: select, drop, rename, type conversion, derive, structured
+filter, expression filter, then recode. Repeated derives run in supplied order, so a
+later derive or expression filter can reference an earlier derived column.
+
+`--filter` retains its existing `COLUMN,OPERATOR,VALUE` syntax.
+`--filter-expression` is separate and accepts the closed expression language. Text
+functions preserve missing values, predicate and filter missing values are false,
+matching is literal/case-sensitive, arithmetic is numeric-only, and division by zero
+fails. `if_else` treats a missing condition as false. Expressions cannot run arbitrary
+Python or use aggregate, grouping, or window functions.
+
+`normalize_whitespace` trims text and collapses whitespace runs without changing case.
+`normalize_code` also uppercases, but rejects numeric values instead of converting them
+to strings. `null_if_empty` detects trimmed empty text while preserving the original
+non-empty value. `null_if` replaces literal equality matches with missing, and
+`default_if_missing` supplies an aligned fallback. These helpers preserve existing
+missing values unless their documented purpose is to null or fill them.
+
+Recode runs last, after derived columns and filters. It can therefore target a derived
+column, such as normalized status codes, and sees only retained rows. Unmapped values are
+preserved unless `--recode-default` is supplied; existing missing values remain missing.
 
 Use `transform --dry-run` to inspect the planned pipeline without writing. The complete
 syntax for filters, recoding, type errors, validation, and object selection is in the
 [CLI Reference](cli.md#transform).
 
-For many inputs, use `batch --transform` with the same options. Batch dry-run is strictly
-planning-only: it parses the transformation syntax but does not apply the pipeline or
-verify referenced columns against dataset contents.
+For many inputs, `batch --transform` continues to support the established select, drop,
+rename, type, structured filter, and recode options. The new derive and expression-filter
+options are currently limited to the single-file `transform` workflow. Batch dry-run is
+strictly planning-only: it parses its transformation syntax but does not apply the
+pipeline or verify referenced columns against dataset contents.
 
 Normal batch, manifest batch, all-object batch, and batch transformation execution handle
 each item independently and retain only lightweight status, shape, and error metadata

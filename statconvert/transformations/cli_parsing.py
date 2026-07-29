@@ -4,7 +4,9 @@ from typing import Any
 
 from statconvert.transformations import (
     ConvertTypesTransformation,
+    DeriveColumnTransformation,
     DropColumnsTransformation,
+    ExpressionFilterTransformation,
     FilterCondition,
     FilterRowsTransformation,
     RecodeValuesTransformation,
@@ -199,7 +201,9 @@ def build_pipeline_from_cli_options(
     type_items: list[str] | None = None,
     type_errors: str = "raise",
     datetime_format: str | None = None,
+    derive_items: list[str] | None = None,
     filter_items: list[str] | None = None,
+    filter_expression_items: list[str] | None = None,
     filter_mode: str = "and",
     recode_items: list[str] | None = None,
     recode_default: Any = None,
@@ -214,7 +218,7 @@ def build_pipeline_from_cli_options(
     pipeline = TransformationPipeline()
 
     # Pipeline order is stable by design:
-    # schema narrowing, renaming, typing, row filtering, then value recoding.
+    # schema narrowing, renaming, typing, deriving, row filtering, then recoding.
     if select_columns:
         pipeline.add(
             SelectColumnsTransformation(
@@ -258,6 +262,18 @@ def build_pipeline_from_cli_options(
             )
         )
 
+    if derive_items:
+        for column, expression in parse_key_value_items(
+            derive_items,
+            "--derive",
+        ).items():
+            pipeline.add(
+                DeriveColumnTransformation(
+                    column=column,
+                    expression=expression,
+                )
+            )
+
     if filter_items:
         pipeline.add(
             FilterRowsTransformation(
@@ -268,6 +284,15 @@ def build_pipeline_from_cli_options(
                 reset_index=reset_index,
             )
         )
+
+    if filter_expression_items:
+        for expression in filter_expression_items:
+            pipeline.add(
+                ExpressionFilterTransformation(
+                    expression=expression,
+                    reset_index=reset_index,
+                )
+            )
 
     if recode_items:
         pipeline.add(

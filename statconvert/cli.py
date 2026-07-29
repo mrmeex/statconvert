@@ -102,7 +102,12 @@ from statconvert.metadata.sidecar import (
 from statconvert.metadata.dictionary import export_data_dictionary
 from statconvert.metadata.scripts import export_metadata_script
 from statconvert.transformer import transform_file
+from statconvert.transformations import (
+    compile_transform_recipe,
+    recipe_from_ordered_steps,
+)
 from statconvert.transformations.cli_parsing import build_pipeline_from_cli_options
+from statconvert.transformations.recipes import TransformStepType
 from statconvert.version import format_version_status
 
 from statconvert.ui import (
@@ -441,6 +446,28 @@ def config_validate(config_file: str):
 
     try:
         config = load_config(config_file)
+        if config.command == "transform" and "steps" in config.options:
+            read_options, _ = _dataset_io_options(
+                config.options.get("input_encoding"),
+                config.options.get("output_encoding"),
+                config.options.get("csv_delimiter"),
+                config.options.get("csv_decimal"),
+            )
+            dataset = read_dataset(
+                config.options["input"],
+                object_selector=config.options.get("object"),
+                options=read_options,
+            )
+            recipe = recipe_from_ordered_steps(
+                input_file=config.options["input"],
+                output_file=config.options["output"],
+                steps=config.options["steps"],
+                overwrite=bool(config.options.get("overwrite", False)),
+            )
+            compile_transform_recipe(
+                recipe,
+                [str(column) for column in dataset.columns],
+            )
         show_config_valid(Path(config_file), config.command)
     except Exception as exc:
         handle_exception(exc)
@@ -457,7 +484,7 @@ def config_run(config_file: str):
             config,
             {
                 "convert": convert,
-                "transform": transform,
+                "transform": _run_transform_config,
                 "batch": _run_batch_config,
                 "compare": _run_compare_config,
                 "validate": validate,
@@ -501,6 +528,87 @@ def _run_batch_config(
     }
     batch_context = _ConfigBatchContext(supplied_parameters)
     batch(ctx=batch_context, **arguments)
+
+
+def _run_transform_config(
+    *,
+    ordered_steps: list[dict[str, Any]] | None = None,
+    **arguments: Any,
+) -> None:
+    """Run legacy options or one canonical ordered recipe through shared logic."""
+
+    if ordered_steps is None:
+        transform(**arguments)
+        return
+
+    input_file = arguments["input_file"]
+    output_file = arguments["output_file"]
+    overwrite = arguments["overwrite"]
+    dry_run = arguments["dry_run"]
+    recipe = recipe_from_ordered_steps(
+        input_file=input_file,
+        output_file=output_file,
+        steps=ordered_steps,
+        overwrite=overwrite,
+    )
+    with command_log_wrapper(
+        command="transform",
+        parameters={
+            "input_file": input_file,
+            "output_file": output_file,
+            "ordered_recipe": True,
+            "recipe_step_count": len(recipe.steps),
+            "dry_run": dry_run,
+        },
+        log_file=arguments.get("log_file"),
+        log_level=arguments.get("log_level", "info"),
+        log_append=arguments.get("log_append", False),
+        developer_log=arguments.get("developer_log", False),
+    ):
+        read_options, write_options = _dataset_io_options(
+            arguments.get("input_encoding"),
+            arguments.get("output_encoding"),
+            arguments.get("csv_delimiter"),
+            arguments.get("csv_decimal"),
+        )
+        dataset = transform_file(
+            input_file=input_file,
+            output_file=output_file,
+            recipe=recipe,
+            overwrite=overwrite,
+            create_dirs=arguments["create_dirs"],
+            dry_run=dry_run,
+            validate=arguments["validate_inputs"],
+            strict_validation=arguments["strict_validation"],
+            object_selector=arguments.get("object_selector"),
+            read_options=read_options,
+            write_options=write_options,
+            on_option_warning=show_warning,
+            on_validation=lambda issues: show_validation_issues(
+                issues,
+                strict=arguments["strict_validation"],
+                target_format=Path(output_file).suffix.lower() or None,
+            ),
+        )
+        show_transformation_summary(
+            input_file=input_file,
+            output_file=output_file,
+            pipeline=None,
+            transformed_dataset=dataset,
+            dry_run=dry_run,
+            ordered_recipe=True,
+            recipe_step_count=len(recipe.steps),
+            derived_count=sum(
+                step.step_type == TransformStepType.DERIVE for step in recipe.steps
+            ),
+            expression_filter_count=sum(
+                step.step_type == TransformStepType.FILTER for step in recipe.steps
+            ),
+            recode_count=sum(
+                step.step_type == TransformStepType.RECODE for step in recipe.steps
+            ),
+        )
+        show_success("Transformation completed.")
 
 
 def _run_compare_config(**arguments: Any) -> None:
@@ -1302,10 +1410,20 @@ def transform(
         "--datetime-format",
         help="Datetime parsing format for type conversion.",
     ),
+    derive_items: list[str] | None = typer.Option(
+        None,
+        "--derive",
+        help="Append a derived column using COLUMN=EXPRESSION. Can be repeated.",
+    ),
     filter_items: list[str] | None = typer.Option(
         None,
         "--filter",
         help="Filter rows using COLUMN,OPERATOR,VALUE. Can be repeated.",
+    ),
+    filter_expression_items: list[str] | None = typer.Option(
+        None,
+        "--filter-expression",
+        help="Filter rows using a safe boolean expression. Can be repeated.",
     ),
     filter_mode: str = typer.Option(
         "and",
@@ -1386,7 +1504,9 @@ def transform(
                 type_items=type_items,
                 type_errors=type_errors,
                 datetime_format=datetime_format,
+                derive_items=derive_items,
                 filter_items=filter_items,
+                filter_expression_items=filter_expression_items,
                 filter_mode=filter_mode,
                 recode_items=recode,
                 recode_default=recode_default,
@@ -1408,7 +1528,9 @@ def transform(
                 type_items=type_items,
                 type_errors=type_errors,
                 datetime_format=datetime_format,
+                derive_items=derive_items,
                 filter_items=filter_items,
+                filter_expression_items=filter_expression_items,
                 filter_mode=filter_mode,
                 recode=recode,
                 recode_default=recode_default,
@@ -1442,7 +1564,9 @@ def transform(
                 "drop": drop,
                 "rename": rename,
                 "type": type_items,
+                "derive": derive_items,
                 "filters": filter_items,
+                "filter_expressions": filter_expression_items,
                 "recode": recode,
                 "validate": validate_inputs,
                 "strict_validation": strict_validation,
@@ -1475,7 +1599,9 @@ def transform(
                 type_items=type_items,
                 type_errors=type_errors,
                 datetime_format=datetime_format,
+                derive_items=derive_items,
                 filter_items=filter_items,
+                filter_expression_items=filter_expression_items,
                 filter_mode=filter_mode,
                 recode_items=recode,
                 recode_default=recode_default,

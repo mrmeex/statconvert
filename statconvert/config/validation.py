@@ -11,6 +11,10 @@ from statconvert.registry import (
     resolve_format_info,
     supported_extensions,
 )
+from statconvert.transformations.expressions import parse_expression
+from statconvert.transformations.recipe_execution import recipe_from_ordered_steps
+from statconvert.transformations.recipes import TransformStepType
+from statconvert.transformations.types import _normalize_target_type
 
 from .models import SUPPORTED_COMMANDS, CommandName, WorkflowConfig
 
@@ -54,6 +58,10 @@ def _is_string_map(value: object) -> bool:
     )
 
 
+def _is_step_list(value: object) -> bool:
+    return isinstance(value, list) and all(isinstance(item, dict) for item in value)
+
+
 @dataclass(frozen=True)
 class Field:
     validator: Validator
@@ -70,6 +78,7 @@ INT = Field(_is_int, "an integer")
 NUMBER = Field(_is_number, "a number")
 STRING_LIST = Field(_is_string_list, "a list of strings")
 STRING_MAP = Field(_is_string_map, "a table of string values")
+STEP_LIST = Field(_is_step_list, "a list of step tables")
 
 
 def _required(field: Field) -> Field:
@@ -110,10 +119,13 @@ COMMAND_FIELDS: dict[CommandName, dict[str, Field]] = {
     "transform": {
         "input": _required(PATH),
         "output": _required(PATH),
+        "steps": STEP_LIST,
         "select": STRING_LIST,
         "drop": STRING_LIST,
         "rename": STRING_MAP,
+        "derive": STRING_LIST,
         "filter": STRING_LIST,
+        "filter_expression": STRING_LIST,
         "recode": STRING_LIST,
         "type": STRING_LIST,
         "type_errors": NAME,
@@ -334,6 +346,8 @@ def _validate_command_rules(command: CommandName, options: dict[str, Any]) -> No
 
     if command == "compare":
         _validate_compare(options)
+    elif command == "transform":
+        _validate_transform(options)
     elif command == "convert":
         if options.get("object") is not None and options.get("all_objects"):
             raise ConfigError(
@@ -389,6 +403,80 @@ def _validate_command_rules(command: CommandName, options: dict[str, Any]) -> No
             "Config error: unsupported log_level. "
             "Use one of: debug, info, warning, error."
         )
+
+
+def _validate_transform(options: dict[str, Any]) -> None:
+    steps = options.get("steps")
+    if steps is None:
+        return
+
+    legacy_fields = {
+        "select",
+        "drop",
+        "rename",
+        "type",
+        "type_errors",
+        "datetime_format",
+        "derive",
+        "filter",
+        "filter_expression",
+        "filter_mode",
+        "recode",
+        "recode_default",
+        "update_value_labels",
+        "ignore_missing_columns",
+        "reset_index",
+    }
+    mixed = sorted(legacy_fields & set(options))
+    if mixed:
+        raise ConfigError(
+            "Config error: transform config cannot mix ordered [[steps]] "
+            "with legacy transform fields.",
+            suggestion=(
+                "Use only [[steps]], or remove [[steps]] and use the legacy fields."
+            ),
+        )
+
+    try:
+        recipe = recipe_from_ordered_steps(
+            input_file=options["input"],
+            output_file=options["output"],
+            steps=steps,
+            overwrite=bool(options.get("overwrite", False)),
+        )
+    except Exception as exc:
+        raise ConfigError(f"Config error: {exc}") from exc
+
+    for index, step in enumerate(recipe.steps):
+        if step.step_type in {TransformStepType.DERIVE, TransformStepType.FILTER}:
+            expression = step.parameters.get("expression")
+            if expression is not None:
+                analysis = parse_expression(expression)
+                if not analysis.valid:
+                    issue = analysis.errors[0]
+                    raise ConfigError(
+                        "Config error: ordered transform step "
+                        f"{index} ({step.step_type.value}) field 'expression' "
+                        f"[{issue.code}] {issue.message} "
+                        f"(expression span {issue.start}:{issue.end}).",
+                        suggestion=issue.suggestion,
+                    )
+        if step.step_type == TransformStepType.CONVERT_TYPE:
+            try:
+                _normalize_target_type(str(step.parameters["data_type"]))
+            except Exception as exc:
+                raise ConfigError(
+                    "Config error: ordered transform step "
+                    f"{index} (convert_type) field 'data_type' "
+                    f"[transform_unsupported_type] {exc}"
+                ) from exc
+        if step.step_type == TransformStepType.RECODE and not step.parameters["map"]:
+            raise ConfigError(
+                "Config error: ordered transform step "
+                f"{index} (recode) field 'map' "
+                "[transform_invalid_recode_map] Recode map must not be empty."
+            )
+    options["steps"] = [step.to_dict() for step in recipe.steps]
 
     type_errors = options.get("type_errors")
     if isinstance(type_errors, str) and type_errors.lower() not in {

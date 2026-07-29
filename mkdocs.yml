@@ -48,6 +48,7 @@ nav:
       - Administrator Guide: admin-guide.md
   - Reference:
       - CLI Reference: cli.md
+      - Transform Language: transform-language.md
       - Formats and Backends: formats.md
 
 plugins:

@@ -323,7 +323,11 @@ Options:
   `integer`/`int`, `float`, `boolean`/`bool`, `datetime`, `date`, and `category`.
 - `--type-errors raise|coerce|ignore` - type error policy (default `raise`).
 - `--datetime-format FORMAT` - pandas datetime parsing format.
+- `--derive COLUMN=EXPRESSION` - append a safely derived column; repeatable. Later
+  derived expressions may reference columns derived earlier in the command.
 - `--filter COLUMN,OPERATOR,VALUE` - filter rows; repeatable. Missing checks omit VALUE.
+- `--filter-expression EXPRESSION` - filter rows with a safe boolean expression;
+  repeatable. This is separate from the existing structured `--filter` syntax.
 - `--filter-mode and|or` - combine filters (default `and`).
 - `--recode COLUMN:OLD=NEW,OLD=NEW` - recode values; repeatable.
 - `--recode-default VALUE` - value for unmapped non-missing recode values.
@@ -343,17 +347,59 @@ Filter operators are `eq`, `ne`, `gt`, `gte`, `lt`, `lte`, `in`, `not_in`, `cont
 `not_contains`, `startswith`, `endswith`, `is_missing`, and `not_missing`. Symbol aliases
 such as `==`, `!=`, `>`, `>=`, `<`, and `<=` are accepted. Membership values use `|`.
 
-The pipeline order is fixed: select, drop, rename, type conversion, filtering, then
-recoding. Validation runs on the transformed `Dataset` before writing.
+The pipeline order is fixed: select, drop, rename, type conversion, derive, structured
+filter, expression filter, then recode. Repeated derives and expression filters retain
+their supplied order. Validation runs on the transformed `Dataset` before writing.
 
 ```bash
 statconvert transform input.sav output.csv --select age sex
 statconvert transform input.csv output.parquet --rename age=Age --type Age=int
 statconvert transform input.csv output.xlsx --filter age,gte,18 --recode status:A=Active,I=Inactive
+statconvert transform input.csv output.csv --derive "email_clean=lower(strip(email))"
+statconvert transform input.csv output.csv --derive "age_group=if_else(age >= 18, 'adult', 'minor')"
+statconvert transform input.csv output.csv --derive "name_clean=normalize_whitespace(name)"
+statconvert transform input.csv output.csv --derive "status_code=normalize_code(status)" --recode status_code:A=Active,I=Inactive
+statconvert transform input.csv output.csv --derive "note_clean=null_if_empty(note)"
+statconvert transform input.csv output.csv --derive "income_clean=default_if_missing(income, 0)"
+statconvert transform input.csv output.csv --filter-expression "age >= 18 and country == 'NL'"
+statconvert transform input.csv output.csv --filter-expression "not_null(null_if_empty(email))"
 statconvert transform input.csv output.csv --drop notes --dry-run
 statconvert transform workbook.ods output.csv --object "Survey Data"
 statconvert transform input.xlsx output.csv --csv-delimiter ";"
 ```
+
+Core expression functions are `strip`, `lower`, `upper`, `contains`, `starts_with`,
+`ends_with`, `normalize_whitespace`, `normalize_code`, `abs`, `round`, `is_null`,
+`not_null`, `coalesce`, `null_if`, `null_if_empty`, `default_if_missing`, and `if_else`.
+Expressions support comparisons, `and`/`or`/`not`, numeric arithmetic, literals, and
+plain or bracketed JSON-quoted column references. They are a closed language: Python
+evaluation, imports, aggregation, grouping, and window functions are unavailable.
+
+Text functions preserve missing values; text predicates are literal and case-sensitive
+with missing input treated as false. Boolean/filter missing values are false. Arithmetic
+is numeric-only, and division by zero fails clearly. `normalize_whitespace` trims and
+collapses whitespace; `normalize_code` additionally uppercases and rejects numeric
+values. `null_if_empty` tests trimmed emptiness but preserves original non-empty text.
+`null_if` uses literal equality, and `default_if_missing` fills missing values.
+
+Recode remains last in the pipeline, can target a derived column, preserves missing
+values, and by default preserves unmapped values. `--recode-default` replaces only
+unmapped non-missing values.
+
+`transform --write-config recipe.toml` exports these operations as deterministic ordered
+`[[steps]]`. Validate and execute the result with:
+
+```bash
+statconvert config validate recipe.toml
+statconvert config run recipe.toml
+```
+
+Canonical recipes support `select`, `drop`, `rename`, `convert_type`, `derive`, `filter`,
+and `recode`. Steps run in file order and may be interleaved. `filter` uses an expression;
+legacy top-level `filter` fields retain structured filter syntax. Existing top-level
+transform configs remain supported, but mixing them with `[[steps]]` is rejected.
+Ordered validation reports the zero-based step, type, field, stable code, expression
+span where applicable, and suggestion.
 
 Encoding and CSV options are available only on the datafile-writing commands `convert`,
 `collect`, `transform`, and `batch`. `--input-encoding` affects only readers that support explicit

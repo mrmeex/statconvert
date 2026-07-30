@@ -270,9 +270,11 @@ class _Parser:
                 suggestion,
             )
 
-        if not (
-            spec.minimum_arguments <= argument_count <= spec.maximum_arguments
-        ):
+        maximum_valid = (
+            spec.maximum_arguments is None
+            or argument_count <= spec.maximum_arguments
+        )
+        if argument_count < spec.minimum_arguments or not maximum_valid:
             expected = _format_arity(spec)
             self._raise(
                 "wrong_arity",
@@ -328,6 +330,10 @@ def _token_span(token: Token) -> SourceSpan:
 
 
 def _format_arity(spec: ExpressionFunctionSpec) -> str:
+    if spec.maximum_arguments is None:
+        count = spec.minimum_arguments
+        noun = "argument" if count == 1 else "arguments"
+        return f"at least {count} {noun}"
     if spec.minimum_arguments == spec.maximum_arguments:
         count = spec.minimum_arguments
         noun = "argument" if count == 1 else "arguments"

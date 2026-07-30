@@ -31,7 +31,8 @@ statconvert schema survey.sav --export-contract schema.toml
 statconvert validate survey.sav --schema-contract schema.toml
 statconvert validate records.csv --schema-contract schema.toml --stream
 statconvert transform input.csv output.csv --derive "email_clean=lower(strip(email))"
-statconvert transform input.csv output.csv --filter-expression "age >= 18"
+statconvert transform input.csv output.csv --derive "joined=concat(code, '-', year(parse_date(date_text, '%Y-%m-%d')))"
+statconvert transform input.csv output.csv --filter-expression "is_email(email) and between(age, 18, 65)"
 ```
 </section>
 
@@ -63,8 +64,9 @@ statconvert transform input.csv output.csv --filter-expression "age >= 18"
 </section>
 
 <p>
-  StatConvert 0.11.0 is a release-quality and documentation-boundary update. It
-  does not change conversion commands, supported formats, or runtime behavior.
+  StatConvert 0.12.0 adds 26 safe row-local text, conversion, date/time, and
+  validation/list helpers, plus richer metadata for future GUI support. It adds no
+  runtime dependency and does not implement a GUI or streaming transform execution.
 </p>
 
 <footer class="statconvert-home-footer">

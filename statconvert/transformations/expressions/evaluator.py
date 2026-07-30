@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from numbers import Number
+from datetime import date, datetime, timedelta
+import math
+from numbers import Integral, Number
 import re
 from typing import Any
+import unicodedata
 
 import pandas as pd
 
@@ -21,6 +24,30 @@ from .ast import (
     UnaryOpNode,
 )
 from .metadata import ParsedExpression, parse_expression
+
+
+MAX_REGEX_PATTERN_LENGTH = 256
+MAX_REGEX_INPUT_LENGTH = 10_000
+_NUMERIC_TEXT_PATTERN = re.compile(
+    r"^[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?$"
+)
+_INTEGER_TEXT_PATTERN = re.compile(r"^[+-]?[0-9]+$")
+_BOOLEAN_TRUE_TOKENS = frozenset({"true", "yes", "y", "t", "1"})
+_BOOLEAN_FALSE_TOKENS = frozenset({"false", "no", "n", "f", "0"})
+_MIN_INT64 = -(2**63)
+_MAX_INT64 = 2**63 - 1
+_DATE_FORMAT_DIRECTIVES = frozenset({"Y", "m", "d"})
+_DATE_PARSE_PATTERNS = {
+    "Y": r"[0-9]{4}",
+    "m": r"[0-9]{2}",
+    "d": r"[0-9]{2}",
+}
+
+
+@dataclass(frozen=True)
+class _DateFormatSpec:
+    value: str
+    input_pattern: re.Pattern[str]
 
 
 @dataclass(frozen=True)
@@ -260,6 +287,139 @@ def _evaluate_function(
     expression: str,
 ) -> Any:
     name = node.name
+    if name == "replace":
+        return _evaluate_replace(arguments, dataframe.index)
+
+    if name == "regex_match":
+        pattern = _compile_regex(
+            arguments[1],
+            expression,
+            node.arguments[1].span,
+            name,
+        )
+        return _evaluate_regex_match(
+            arguments[0],
+            pattern,
+            dataframe.index,
+            expression,
+            node.arguments[0].span,
+            name,
+        )
+
+    if name == "regex_replace":
+        pattern = _compile_regex(
+            arguments[1],
+            expression,
+            node.arguments[1].span,
+            name,
+        )
+        replacement = _regex_replacement(
+            arguments[2],
+            pattern,
+            expression,
+            node.arguments[2].span,
+            name,
+        )
+        if replacement is None:
+            return _missing_result(arguments, dataframe.index, "string")
+        return _evaluate_regex_replace(
+            arguments[0],
+            pattern,
+            replacement,
+            dataframe.index,
+            expression,
+            node.arguments[0].span,
+            name,
+        )
+
+    if name == "length":
+        return _evaluate_length(arguments[0], dataframe.index)
+
+    if name == "substring":
+        return _evaluate_substring(
+            arguments,
+            dataframe.index,
+            expression,
+            node,
+        )
+
+    if name == "concat":
+        return _evaluate_concat(arguments, dataframe.index)
+
+    if name == "remove_accents":
+        return _evaluate_remove_accents(arguments[0], dataframe.index)
+
+    if name == "to_string":
+        return _evaluate_to_string(arguments[0], dataframe.index)
+
+    if name == "to_number":
+        return _evaluate_to_number(arguments[0], dataframe.index)
+
+    if name == "to_integer":
+        return _evaluate_to_integer(arguments[0], dataframe.index)
+
+    if name == "to_float":
+        return _evaluate_to_float(arguments[0], dataframe.index)
+
+    if name == "to_boolean":
+        return _evaluate_to_boolean(arguments[0], dataframe.index)
+
+    if name == "parse_date":
+        format_spec = _date_format(
+            arguments[1],
+            expression,
+            node.arguments[1].span,
+            name,
+            require_complete_date=True,
+        )
+        return _evaluate_parse_date(arguments[0], format_spec, dataframe.index)
+
+    if name == "format_date":
+        format_spec = _date_format(
+            arguments[1],
+            expression,
+            node.arguments[1].span,
+            name,
+        )
+        return _evaluate_format_date(arguments[0], format_spec, dataframe.index)
+
+    if name in {"year", "month", "day", "weekday"}:
+        return _evaluate_date_part(name, arguments[0], dataframe.index)
+
+    if name == "date_diff":
+        return _evaluate_date_diff(arguments, dataframe.index)
+
+    if name == "add_days":
+        return _evaluate_add_days(arguments, dataframe.index)
+
+    if name == "between":
+        return _evaluate_between(arguments, dataframe.index, expression, node)
+
+    if name in {"is_in", "not_in"}:
+        return _evaluate_membership(
+            arguments,
+            dataframe.index,
+            expression,
+            node,
+            negate=name == "not_in",
+        )
+
+    if name == "is_number":
+        return _evaluate_is_number(arguments[0], dataframe.index)
+
+    if name == "is_date":
+        format_spec = _date_format(
+            arguments[1],
+            expression,
+            node.arguments[1].span,
+            name,
+            require_complete_date=True,
+        )
+        return _evaluate_is_date(arguments[0], format_spec, dataframe.index)
+
+    if name == "is_email":
+        return _evaluate_is_email(arguments[0], dataframe.index)
+
     if name in {"strip", "lower", "upper"}:
         value = _string_operand(arguments[0], expression, node.arguments[0].span, name)
         if isinstance(value, pd.Series):
@@ -374,6 +534,755 @@ def _evaluate_function(
         node.name_span,
         function=name,
     )
+
+
+_INVALID_TEXT = object()
+
+
+def _evaluate_replace(arguments: list[Any], index: pd.Index) -> Any:
+    def replace_one(value: Any, old: Any, new: Any) -> Any:
+        converted = tuple(_deterministic_text(item) for item in (value, old, new))
+        if any(item is None or item is _INVALID_TEXT for item in converted):
+            return pd.NA
+        text, old_text, new_text = converted
+        return text.replace(old_text, new_text)
+
+    return _apply_row_local(arguments, index, replace_one, dtype="string")
+
+
+def _compile_regex(
+    value: Any,
+    expression: str,
+    span: SourceSpan,
+    function: str,
+) -> re.Pattern[str]:
+    if isinstance(value, pd.Series):
+        _raise(
+            "expression_non_scalar_control",
+            f"Function '{function}' requires a scalar regular expression pattern.",
+            expression,
+            span,
+            function=function,
+        )
+    if _is_scalar_missing(value):
+        _raise(
+            "expression_null_control",
+            f"Function '{function}' requires a non-null regular expression pattern.",
+            expression,
+            span,
+            function=function,
+        )
+    if not isinstance(value, str):
+        _raise(
+            "expression_incompatible_type",
+            f"Function '{function}' requires a string regular expression pattern.",
+            expression,
+            span,
+            function=function,
+        )
+    if len(value) > MAX_REGEX_PATTERN_LENGTH:
+        _raise(
+            "expression_regex_pattern_too_long",
+            (
+                f"Function '{function}' regular expression pattern exceeds "
+                f"{MAX_REGEX_PATTERN_LENGTH} characters."
+            ),
+            expression,
+            span,
+            function=function,
+            suggestion="Use a shorter bounded pattern.",
+        )
+    try:
+        return re.compile(value)
+    except re.error as exc:
+        _raise(
+            "expression_invalid_regex",
+            f"Function '{function}' has an invalid regular expression pattern: {exc}.",
+            expression,
+            span,
+            function=function,
+            suggestion="Correct the regular expression pattern.",
+        )
+
+
+def _evaluate_regex_match(
+    value: Any,
+    pattern: re.Pattern[str],
+    index: pd.Index,
+    expression: str,
+    span: SourceSpan,
+    function: str,
+) -> Any:
+    def match_one(item: Any) -> bool:
+        text = _bounded_regex_text(item, expression, span, function)
+        if text is None or text is _INVALID_TEXT:
+            return False
+        return pattern.search(text) is not None
+
+    return _apply_row_local([value], index, match_one, dtype="bool")
+
+
+def _regex_replacement(
+    value: Any,
+    pattern: re.Pattern[str],
+    expression: str,
+    span: SourceSpan,
+    function: str,
+) -> str | None:
+    if isinstance(value, pd.Series):
+        _raise(
+            "expression_non_scalar_control",
+            f"Function '{function}' requires a scalar replacement value.",
+            expression,
+            span,
+            function=function,
+        )
+    replacement = _deterministic_text(value)
+    if replacement is None:
+        return None
+    if replacement is _INVALID_TEXT:
+        _raise(
+            "expression_incompatible_type",
+            f"Function '{function}' requires a text-convertible replacement value.",
+            expression,
+            span,
+            function=function,
+        )
+    try:
+        pattern.sub(replacement, "")
+    except re.error as exc:
+        _raise(
+            "expression_invalid_regex_replacement",
+            f"Function '{function}' has an invalid replacement value: {exc}.",
+            expression,
+            span,
+            function=function,
+            suggestion="Correct the regular expression replacement.",
+        )
+    return replacement
+
+
+def _evaluate_regex_replace(
+    value: Any,
+    pattern: re.Pattern[str],
+    replacement: str,
+    index: pd.Index,
+    expression: str,
+    span: SourceSpan,
+    function: str,
+) -> Any:
+    def replace_one(item: Any) -> Any:
+        text = _bounded_regex_text(item, expression, span, function)
+        if text is None or text is _INVALID_TEXT:
+            return pd.NA
+        return pattern.sub(replacement, text)
+
+    return _apply_row_local([value], index, replace_one, dtype="string")
+
+
+def _bounded_regex_text(
+    value: Any,
+    expression: str,
+    span: SourceSpan,
+    function: str,
+) -> str | None | object:
+    text = _deterministic_text(value)
+    if isinstance(text, str) and len(text) > MAX_REGEX_INPUT_LENGTH:
+        _raise(
+            "expression_regex_input_too_long",
+            (
+                f"Function '{function}' input exceeds "
+                f"{MAX_REGEX_INPUT_LENGTH} characters."
+            ),
+            expression,
+            span,
+            function=function,
+            suggestion="Shorten the input before applying a regular expression.",
+        )
+    return text
+
+
+def _evaluate_length(value: Any, index: pd.Index) -> Any:
+    def length_one(item: Any) -> Any:
+        text = _deterministic_text(item)
+        if text is None or text is _INVALID_TEXT:
+            return pd.NA
+        return len(text)
+
+    return _apply_row_local([value], index, length_one, dtype="Int64")
+
+
+def _evaluate_substring(
+    arguments: list[Any],
+    index: pd.Index,
+    expression: str,
+    node: FunctionCallNode,
+) -> Any:
+    start, end = arguments[1], arguments[2]
+    if isinstance(start, pd.Series) or isinstance(end, pd.Series):
+        span = (
+            node.arguments[1].span
+            if isinstance(start, pd.Series)
+            else node.arguments[2].span
+        )
+        _raise(
+            "expression_non_scalar_control",
+            "Function 'substring' requires scalar start and end indexes.",
+            expression,
+            span,
+            function="substring",
+        )
+    start_index = _exact_non_negative_integer(start)
+    end_index = _exact_non_negative_integer(end)
+    if start_index is None or end_index is None:
+        return _missing_result(arguments, index, "string")
+
+    def substring_one(value: Any) -> Any:
+        text = _deterministic_text(value)
+        if text is None or text is _INVALID_TEXT:
+            return pd.NA
+        return text[start_index:end_index]
+
+    return _apply_row_local([arguments[0]], index, substring_one, dtype="string")
+
+
+def _evaluate_concat(arguments: list[Any], index: pd.Index) -> Any:
+    def concat_one(*values: Any) -> Any:
+        parts: list[str] = []
+        for value in values:
+            text = _deterministic_text(value)
+            if text is _INVALID_TEXT:
+                return pd.NA
+            parts.append("" if text is None else text)
+        return "".join(parts)
+
+    return _apply_row_local(arguments, index, concat_one, dtype="string")
+
+
+def _evaluate_remove_accents(value: Any, index: pd.Index) -> Any:
+    def remove_one(item: Any) -> Any:
+        text = _deterministic_text(item)
+        if text is None or text is _INVALID_TEXT:
+            return pd.NA
+        decomposed = unicodedata.normalize("NFKD", text)
+        unaccented = "".join(
+            character
+            for character in decomposed
+            if unicodedata.category(character) != "Mn"
+        )
+        return unicodedata.normalize("NFC", unaccented)
+
+    return _apply_row_local([value], index, remove_one, dtype="string")
+
+
+def _evaluate_to_string(value: Any, index: pd.Index) -> Any:
+    def convert_one(item: Any) -> Any:
+        converted = _deterministic_text(item)
+        return pd.NA if converted is None or converted is _INVALID_TEXT else converted
+
+    return _apply_row_local([value], index, convert_one, dtype="string")
+
+
+def _evaluate_to_number(value: Any, index: pd.Index) -> Any:
+    def convert_one(item: Any) -> Any:
+        converted = _convert_number(item)
+        return pd.NA if converted is None else converted
+
+    return _apply_row_local([value], index, convert_one, dtype="object")
+
+
+def _evaluate_to_integer(value: Any, index: pd.Index) -> Any:
+    def convert_one(item: Any) -> Any:
+        converted = _convert_number(item)
+        if converted is None:
+            return pd.NA
+        try:
+            integer = int(converted)
+        except (TypeError, ValueError, OverflowError):
+            return pd.NA
+        if converted != integer or not _MIN_INT64 <= integer <= _MAX_INT64:
+            return pd.NA
+        return integer
+
+    return _apply_row_local([value], index, convert_one, dtype="Int64")
+
+
+def _evaluate_to_float(value: Any, index: pd.Index) -> Any:
+    def convert_one(item: Any) -> Any:
+        converted = _convert_number(item)
+        if converted is None:
+            return pd.NA
+        try:
+            result = float(converted)
+        except (TypeError, ValueError, OverflowError):
+            return pd.NA
+        return result if math.isfinite(result) else pd.NA
+
+    return _apply_row_local([value], index, convert_one, dtype="Float64")
+
+
+def _evaluate_to_boolean(value: Any, index: pd.Index) -> Any:
+    def convert_one(item: Any) -> Any:
+        if _is_scalar_missing(item):
+            return pd.NA
+        if isinstance(item, bool):
+            return item
+        if _is_finite_number(item):
+            if item == 1:
+                return True
+            if item == 0:
+                return False
+            return pd.NA
+        if isinstance(item, str):
+            token = item.strip().lower()
+            if token in _BOOLEAN_TRUE_TOKENS:
+                return True
+            if token in _BOOLEAN_FALSE_TOKENS:
+                return False
+        return pd.NA
+
+    return _apply_row_local([value], index, convert_one, dtype="boolean")
+
+
+def _date_format(
+    value: Any,
+    expression: str,
+    span: SourceSpan,
+    function: str,
+    *,
+    require_complete_date: bool = False,
+) -> _DateFormatSpec:
+    if isinstance(value, pd.Series):
+        _raise(
+            "expression_non_scalar_control",
+            f"Function '{function}' requires a scalar date format.",
+            expression,
+            span,
+            function=function,
+        )
+    if _is_scalar_missing(value):
+        _raise(
+            "expression_null_control",
+            f"Function '{function}' requires a non-null date format.",
+            expression,
+            span,
+            function=function,
+        )
+    if not isinstance(value, str):
+        _raise(
+            "expression_incompatible_type",
+            f"Function '{function}' requires a string date format.",
+            expression,
+            span,
+            function=function,
+        )
+
+    pattern_parts: list[str] = []
+    directives: set[str] = set()
+    position = 0
+    while position < len(value):
+        character = value[position]
+        if character != "%":
+            pattern_parts.append(re.escape(character))
+            position += 1
+            continue
+        if position + 1 >= len(value):
+            _raise_invalid_date_format(value, expression, span, function)
+        directive = value[position + 1]
+        if directive == "%":
+            pattern_parts.append("%")
+        elif directive in _DATE_FORMAT_DIRECTIVES:
+            if require_complete_date and directive in directives:
+                _raise_invalid_date_format(value, expression, span, function)
+            directives.add(directive)
+            pattern_parts.append(_DATE_PARSE_PATTERNS[directive])
+        else:
+            _raise_invalid_date_format(value, expression, span, function)
+        position += 2
+
+    if not directives:
+        _raise_invalid_date_format(value, expression, span, function)
+    if require_complete_date and directives != _DATE_FORMAT_DIRECTIVES:
+        _raise(
+            "expression_invalid_date_format",
+            (
+                f"Function '{function}' date format must include exactly the portable "
+                "date fields %Y, %m, and %d."
+            ),
+            expression,
+            span,
+            function=function,
+            suggestion="Use a format such as '%Y-%m-%d'.",
+        )
+    try:
+        input_pattern = re.compile("".join(pattern_parts))
+    except re.error:
+        _raise_invalid_date_format(value, expression, span, function)
+    return _DateFormatSpec(value=value, input_pattern=input_pattern)
+
+
+def _raise_invalid_date_format(
+    value: str,
+    expression: str,
+    span: SourceSpan,
+    function: str,
+) -> None:
+    _raise(
+        "expression_invalid_date_format",
+        (
+            f"Function '{function}' has unsupported or malformed date format "
+            f"{value!r}."
+        ),
+        expression,
+        span,
+        function=function,
+        suggestion="Use only %Y, %m, %d, literal separators, and %% for percent.",
+    )
+
+
+def _evaluate_parse_date(
+    value: Any,
+    format_spec: _DateFormatSpec,
+    index: pd.Index,
+) -> Any:
+    def parse_one(item: Any) -> Any:
+        parsed = _parse_date_value(item, format_spec)
+        return pd.NA if parsed is None else parsed
+
+    return _apply_row_local([value], index, parse_one, dtype="object")
+
+
+def _parse_date_value(value: Any, format_spec: _DateFormatSpec) -> date | None:
+    existing = _calendar_date(value)
+    if existing is not None:
+        return existing
+    if not isinstance(value, str) or format_spec.input_pattern.fullmatch(value) is None:
+        return None
+    try:
+        return datetime.strptime(value, format_spec.value).date()
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def _evaluate_format_date(
+    value: Any,
+    format_spec: _DateFormatSpec,
+    index: pd.Index,
+) -> Any:
+    def format_one(item: Any) -> Any:
+        calendar_date = _calendar_date(item)
+        if calendar_date is None:
+            return pd.NA
+        result: list[str] = []
+        position = 0
+        while position < len(format_spec.value):
+            character = format_spec.value[position]
+            if character != "%":
+                result.append(character)
+                position += 1
+                continue
+            directive = format_spec.value[position + 1]
+            replacements = {
+                "%": "%",
+                "Y": f"{calendar_date.year:04d}",
+                "m": f"{calendar_date.month:02d}",
+                "d": f"{calendar_date.day:02d}",
+            }
+            result.append(replacements[directive])
+            position += 2
+        return "".join(result)
+
+    return _apply_row_local([value], index, format_one, dtype="string")
+
+
+def _evaluate_date_part(name: str, value: Any, index: pd.Index) -> Any:
+    def extract_one(item: Any) -> Any:
+        calendar_date = _calendar_date(item)
+        if calendar_date is None:
+            return pd.NA
+        if name == "weekday":
+            return calendar_date.isoweekday()
+        return getattr(calendar_date, name)
+
+    return _apply_row_local([value], index, extract_one, dtype="Int64")
+
+
+def _evaluate_date_diff(arguments: list[Any], index: pd.Index) -> Any:
+    def difference_one(start: Any, end: Any) -> Any:
+        start_date = _calendar_date(start)
+        end_date = _calendar_date(end)
+        if start_date is None or end_date is None:
+            return pd.NA
+        return (end_date - start_date).days
+
+    return _apply_row_local(arguments, index, difference_one, dtype="Int64")
+
+
+def _evaluate_add_days(arguments: list[Any], index: pd.Index) -> Any:
+    def add_one(value: Any, days: Any) -> Any:
+        calendar_date = _calendar_date(value)
+        day_count = _exact_integer(days)
+        if calendar_date is None or day_count is None:
+            return pd.NA
+        try:
+            return calendar_date + timedelta(days=day_count)
+        except (OverflowError, ValueError):
+            return pd.NA
+
+    return _apply_row_local(arguments, index, add_one, dtype="object")
+
+
+def _calendar_date(value: Any) -> date | None:
+    if _is_scalar_missing(value):
+        return None
+    if isinstance(value, datetime):
+        if value.tzinfo is not None and value.utcoffset() is not None:
+            return None
+        return value.date()
+    if isinstance(value, date):
+        return value
+    return None
+
+
+def _evaluate_between(
+    arguments: list[Any],
+    index: pd.Index,
+    expression: str,
+    node: FunctionCallNode,
+) -> Any:
+    def between_one(value: Any, minimum: Any, maximum: Any) -> bool:
+        if any(_is_scalar_missing(item) for item in (value, minimum, maximum)):
+            return False
+        converted = tuple(
+            _comparison_family_value(item) for item in (value, minimum, maximum)
+        )
+        families = {item[0] for item in converted if item is not None}
+        if None in converted or len(families) != 1:
+            _raise(
+                "expression_incompatible_type",
+                (
+                    "Function 'between' requires value, minimum, and maximum to use "
+                    "one finite numeric, date-like, or string family."
+                ),
+                expression,
+                node.span,
+                function="between",
+            )
+        comparable = tuple(item[1] for item in converted if item is not None)
+        try:
+            return bool(comparable[1] <= comparable[0] <= comparable[2])
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ExpressionEvaluationError(
+                ExpressionEvaluationIssue(
+                    code="expression_incompatible_type",
+                    message="Function 'between' received incompatible range values.",
+                    expression=expression,
+                    source_span=node.span,
+                    function="between",
+                )
+            ) from exc
+
+    return _apply_row_local(arguments, index, between_one, dtype="bool")
+
+
+def _comparison_family_value(value: Any) -> tuple[str, Any] | None:
+    if isinstance(value, str):
+        return ("string", value)
+    if _is_finite_number(value):
+        return ("number", value)
+    calendar_date = _calendar_date(value)
+    if calendar_date is not None:
+        return ("date", calendar_date)
+    return None
+
+
+def _evaluate_membership(
+    arguments: list[Any],
+    index: pd.Index,
+    expression: str,
+    node: FunctionCallNode,
+    *,
+    negate: bool,
+) -> Any:
+    function = "not_in" if negate else "is_in"
+
+    def membership_one(value: Any, *options: Any) -> bool:
+        if _is_scalar_missing(value):
+            matched = False
+        else:
+            matched = any(
+                _membership_equal(value, option, expression, node, function)
+                for option in options
+                if not _is_scalar_missing(option)
+            )
+        return not matched if negate else matched
+
+    return _apply_row_local(arguments, index, membership_one, dtype="bool")
+
+
+def _membership_equal(
+    value: Any,
+    option: Any,
+    expression: str,
+    node: FunctionCallNode,
+    function: str,
+) -> bool:
+    try:
+        result = value == option
+        if _is_scalar_missing(result):
+            return False
+        if hasattr(result, "__len__") and not isinstance(result, (str, bytes)):
+            raise ValueError("non-scalar equality result")
+        return bool(result)
+    except (TypeError, ValueError) as exc:
+        raise ExpressionEvaluationError(
+            ExpressionEvaluationIssue(
+                code="expression_incompatible_type",
+                message=f"Function '{function}' received equality-incompatible values.",
+                expression=expression,
+                source_span=node.span,
+                function=function,
+            )
+        ) from exc
+
+
+def _evaluate_is_number(value: Any, index: pd.Index) -> Any:
+    return _apply_row_local(
+        [value],
+        index,
+        lambda item: _convert_number(item) is not None,
+        dtype="bool",
+    )
+
+
+def _evaluate_is_date(
+    value: Any,
+    format_spec: _DateFormatSpec,
+    index: pd.Index,
+) -> Any:
+    return _apply_row_local(
+        [value],
+        index,
+        lambda item: _parse_date_value(item, format_spec) is not None,
+        dtype="bool",
+    )
+
+
+def _evaluate_is_email(value: Any, index: pd.Index) -> Any:
+    def validate_one(item: Any) -> bool:
+        text = _deterministic_text(item)
+        if text is None or text is _INVALID_TEXT or len(text) > 254:
+            return False
+        if text.count("@") != 1 or any(character.isspace() for character in text):
+            return False
+        local, domain = text.split("@")
+        if not local or not domain or "." not in domain:
+            return False
+        if (
+            local.startswith(".")
+            or local.endswith(".")
+            or domain.startswith(".")
+            or domain.endswith(".")
+            or ".." in domain
+        ):
+            return False
+        return True
+
+    return _apply_row_local([value], index, validate_one, dtype="bool")
+
+
+def _convert_number(value: Any) -> Number | None:
+    if _is_scalar_missing(value) or isinstance(value, bool):
+        return None
+    if _is_finite_number(value):
+        return value
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    if not text or _NUMERIC_TEXT_PATTERN.fullmatch(text) is None:
+        return None
+    try:
+        converted: Number
+        if _INTEGER_TEXT_PATTERN.fullmatch(text) is not None:
+            converted = int(text)
+        else:
+            converted = float(text)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return converted if _is_finite_number(converted) else None
+
+
+def _is_finite_number(value: Any) -> bool:
+    if not isinstance(value, Number) or isinstance(value, (bool, complex)):
+        return False
+    if isinstance(value, Integral):
+        return True
+    try:
+        return bool(math.isfinite(value))
+    except (TypeError, ValueError, OverflowError):
+        return False
+
+
+def _deterministic_text(value: Any) -> str | None | object:
+    if _is_scalar_missing(value):
+        return None
+    if isinstance(value, str):
+        return value
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, Number) and not isinstance(value, complex):
+        try:
+            if not math.isfinite(value):
+                return _INVALID_TEXT
+        except TypeError:
+            return _INVALID_TEXT
+        return str(value)
+    if isinstance(value, (date, datetime)):
+        return value.isoformat()
+    return _INVALID_TEXT
+
+
+def _exact_non_negative_integer(value: Any) -> int | None:
+    integer = _exact_integer(value)
+    return integer if integer is not None and integer >= 0 else None
+
+
+def _exact_integer(value: Any) -> int | None:
+    number = _convert_number(value)
+    if number is None:
+        return None
+    try:
+        integer = int(number)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return integer if number == integer else None
+
+
+def _apply_row_local(
+    arguments: list[Any],
+    index: pd.Index,
+    operation: Any,
+    *,
+    dtype: str,
+) -> Any:
+    if not any(isinstance(argument, pd.Series) for argument in arguments):
+        return operation(*arguments)
+    aligned = [_as_series(argument, index) for argument in arguments]
+    values = [
+        operation(*row)
+        for row in zip(*(series.tolist() for series in aligned), strict=True)
+    ]
+    return pd.Series(values, index=index, dtype=dtype)
+
+
+def _missing_result(
+    arguments: list[Any],
+    index: pd.Index,
+    dtype: str,
+) -> Any:
+    if any(isinstance(argument, pd.Series) for argument in arguments):
+        return pd.Series(pd.NA, index=index, dtype=dtype)
+    return pd.NA
 
 
 def _string_operand(

@@ -750,13 +750,66 @@ python -m statconvert transform survey_raw.csv adults.csv --derive country_clean
 statconvert transform .\input\data.csv .\output\data-coded.csv --derive "status_clean=normalize_code(status)" --recode status_clean:A=Active,I=Inactive
 statconvert transform .\input\data.csv .\output\data-grouped.csv --derive "age_group=if_else(age >= 18, 'adult', 'minor')"
 statconvert transform .\input\data.csv .\output\data-named.csv --derive 'name_clean=normalize_whitespace(["Full Name"])'
+statconvert transform .\input\data.csv .\output\data-redacted.csv --derive "note_clean=replace(note, 'secret', '[redacted]')"
+statconvert transform .\input\data.csv .\output\data-slugs.csv --derive "slug=regex_replace(lower(name), '[^a-z0-9]+', '-')"
+statconvert transform .\input\data.csv .\output\data-labels.csv --derive "label=concat(code, ' - ', remove_accents(name))"
+statconvert transform .\input\data.csv .\output\matching.csv --filter-expression "regex_match(code, '^[A-Z]{2}[0-9]{4}$')"
+statconvert transform .\input\data.csv .\output\amounts.csv --derive "amount_number=to_number(amount_text)"
+statconvert transform .\input\data.csv .\output\ages.csv --derive "age=to_integer(age_text)"
+statconvert transform .\input\data.csv .\output\active.csv --filter-expression "to_boolean(active_text)"
+statconvert transform .\input\data.csv .\output\dated.csv --derive "opened_date=parse_date(opened, '%Y-%m-%d')" --derive "due_date=add_days(opened_date, 30)"
+statconvert transform .\input\data.csv .\output\date-labels.csv --derive "opened_date=parse_date(opened, '%Y-%m-%d')" --derive "opened_label=format_date(opened_date, '%d/%m/%Y')"
+statconvert transform .\input\data.csv .\output\weekdays.csv --derive "opened_date=parse_date(opened, '%Y-%m-%d')" --filter-expression "weekday(opened_date) <= 5"
+statconvert transform .\input\data.csv .\output\valid-emails.csv --derive "email_valid=is_email(email)" --filter-expression "email_valid"
+statconvert transform .\input\data.csv .\output\valid-scores.csv --filter-expression "is_number(score) and between(to_number(score), 0, 100)"
+statconvert transform .\input\data.csv .\output\selected.csv --filter-expression "is_in(status, 'A', 'B') and not_in(status, 'deleted')"
+statconvert transform .\input\data.csv .\output\valid-dates.csv --filter-expression "is_date(raw_date, '%Y-%m-%d')"
 ```
 
 Bracketed JSON-quoted references such as `["Full Name"]` address awkward column names.
 Supported text helpers are `strip`, `lower`, `upper`, `contains`, `starts_with`,
-`ends_with`, `normalize_whitespace`, and `normalize_code`. Numeric helpers are `abs` and
-`round`; missing/conditional helpers are `is_null`, `not_null`, `coalesce`, `null_if`,
-`null_if_empty`, `default_if_missing`, and `if_else`.
+`ends_with`, `normalize_whitespace`, `normalize_code`, `replace`, `regex_match`,
+`regex_replace`, `length`, `substring`, `concat`, and `remove_accents`. Numeric helpers
+are `abs` and `round`; missing/conditional helpers are `is_null`, `not_null`, `coalesce`,
+`null_if`, `null_if_empty`, `default_if_missing`, and `if_else`.
+Conversion helpers are `to_string`, `to_number`, `to_integer`, `to_float`, and
+`to_boolean`.
+
+`replace` is literal and global; `regex_replace` is regex-based and global.
+Regular-expression patterns are scalar values limited to 256 characters, and each input
+value is limited to 10,000 characters. Invalid patterns, replacement syntax, and
+over-limit inputs produce structured expression errors. `substring(value, start, end)`
+uses zero-based, end-exclusive, non-negative indexes. `concat` accepts one or more
+arguments and treats missing values as empty text. `remove_accents` performs deterministic
+Unicode accent removal without transliterating unrelated characters.
+
+Invalid conversion data returns missing instead of aborting the transform. `to_number`
+keeps finite numeric inputs, returns an integer for integer-form text, and returns a float
+for decimal or exponent text. `to_integer` accepts exact integral values including
+`"12.0"` but returns missing for `"12.5"` or signed-64-bit overflow. `to_float` always
+returns a finite float. Numeric parsing is locale-independent and does not accept commas
+or thousands separators. `to_boolean` accepts booleans, numeric `1`/`0`, and trimmed,
+case-insensitive `true`/`false`, `yes`/`no`, `y`/`n`, `t`/`f`, and `1`/`0`.
+
+Date/time helpers are `parse_date`, `format_date`, `year`, `month`, `day`, `weekday`,
+`date_diff`, and `add_days`. Formats accept only `%Y`, `%m`, `%d`, escaped `%%`, and
+literal separators; parsing requires all three date fields with exact numeric widths.
+Invalid row values return missing, while null, non-scalar, malformed, or unsupported
+format controls produce structured expression errors. `weekday` uses Monday `1` through
+Sunday `7`. `date_diff(start, end)` returns `end - start` in calendar days. `add_days`
+accepts positive, zero, and negative exact integers but returns missing for fractional
+or overflowing offsets. Text must pass through `parse_date`; there is no natural-language
+or timezone parsing, and `to_date` is unsupported.
+
+Validation/list helpers are inclusive `between`, variadic `is_in` and `not_in`,
+`is_number`, `is_date`, and pragmatic `is_email`. Missing range operands return false.
+`is_in` requires at least one option, returns false for a missing value, and ignores
+missing options; `not_in` is its exact inverse, so a missing value returns true.
+`is_number` accepts exactly the finite values and numeric text recognized by `to_number`.
+`is_date` uses the same scalar format validation and row parsing as `parse_date`.
+`is_email` is intentionally not RFC-complete: after deterministic text conversion it
+requires exactly one `@`, non-empty parts, no whitespace or edge dots, a dotted domain
+without empty labels, and at most 254 characters.
 
 Use expression filtering for boolean combinations:
 
@@ -765,8 +818,8 @@ statconvert transform .\input\data.csv .\output\adults-nl.csv --filter-expressio
 ```
 
 Comparisons, `and`, `or`, `not`, parentheses, and defined numeric arithmetic are
-supported. Python `eval`, imports, arbitrary calls, regex/date/conversion helpers, and
-aggregate, window, group, or join functions are not available. See the
+supported. Python `eval`, imports, arbitrary calls, timezone or natural-language date
+helpers, and aggregate, window, group, or join functions are not available. See the
 [CLI Reference](cli.md#transform) for the exact grammar and evaluation rules.
 
 The legacy structured filter remains supported. Keep rows where `age` is at least 18:
@@ -952,5 +1005,6 @@ format, metadata, or value differences rather than a command crash.
 | I need automation output | [Use JSON output in scripts](#use-json-output-in-scripts) and [Write logs for troubleshooting](#write-logs-for-troubleshooting) |
 
 For deeper behavior, return to the [User Guide](user-guide.md),
-[CLI Reference](cli.md), or [Format Guide](formats.md). StatConvert is licensed under the
+[CLI Reference](cli.md), [Format Guide](formats.md), or
+[CLI Reference](cli.md#transform). StatConvert is licensed under the
 [GNU Affero General Public License v3.0 or later](license.md).

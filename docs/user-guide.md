@@ -821,7 +821,23 @@ statconvert transform input.csv output.csv --derive "name_clean=normalize_whites
 statconvert transform input.csv output.csv --derive "status_code=normalize_code(status)" --recode status_code:A=Active,I=Inactive
 statconvert transform input.csv output.csv --derive "note_clean=null_if_empty(note)"
 statconvert transform input.csv output.csv --derive "income_clean=default_if_missing(income, 0)"
+statconvert transform input.csv output.csv --derive "name_ascii=remove_accents(name)"
+statconvert transform input.csv output.csv --derive "code_prefix=substring(code, 0, 3)"
+statconvert transform input.csv output.csv --derive "label=concat(code, ' - ', name)"
+statconvert transform input.csv output.csv --derive "slug=regex_replace(lower(name), '[^a-z0-9]+', '-')"
+statconvert transform input.csv output.csv --derive "amount_number=to_number(amount_text)"
+statconvert transform input.csv output.csv --derive "age=to_integer(age_text)"
+statconvert transform input.csv output.csv --derive "opened_date=parse_date(opened, '%Y-%m-%d')"
+statconvert transform input.csv output.csv --derive "due_date=add_days(opened_date, 30)"
+statconvert transform input.csv output.csv --derive "opened_label=format_date(opened_date, '%d/%m/%Y')"
 statconvert transform input.csv output.csv --filter-expression "age >= 18 and country == 'NL'"
+statconvert transform input.csv output.csv --filter-expression "regex_match(code, '^[A-Z]{2}[0-9]{4}$')"
+statconvert transform input.csv output.csv --filter-expression "to_boolean(active_text)"
+statconvert transform input.csv output.csv --filter-expression "year(opened_date) == 2026 and weekday(opened_date) <= 5"
+statconvert transform input.csv output.csv --derive "email_valid=is_email(email)"
+statconvert transform input.csv output.csv --filter-expression "is_number(score) and between(to_number(score), 0, 100)"
+statconvert transform input.csv output.csv --filter-expression "is_in(status, 'A', 'B') and not_in(status, 'deleted')"
+statconvert transform input.csv output.csv --filter-expression "is_date(raw_date, '%Y-%m-%d')"
 statconvert transform input.xlsx output.csv --csv-delimiter ";"
 ```
 
@@ -845,15 +861,53 @@ non-empty value. `null_if` replaces literal equality matches with missing, and
 `default_if_missing` supplies an aligned fallback. These helpers preserve existing
 missing values unless their documented purpose is to null or fill them.
 
+`replace` performs literal global replacement, while `regex_replace` performs global
+regular-expression replacement. Regex patterns must be scalar and are limited to 256
+characters; each input value is limited to 10,000 characters. `length` counts characters,
+and `substring(value, start, end)` uses zero-based, end-exclusive, non-negative indexes.
+`concat` accepts one or more values and contributes empty text for missing values.
+`remove_accents` removes Unicode accent marks without broad transliteration. Supported
+non-text scalar values use deterministic text conversion where the individual helper
+allows it.
+
+Conversion helpers return missing for invalid row data. `to_string` uses the same
+deterministic text mapping as the text helpers. `to_number` produces integers from
+integer-form text and floats from decimal or exponent text; `to_float` always produces a
+finite float. `to_integer` accepts exact integral inputs such as `"12.0"` but does not
+truncate `"12.5"` and rejects signed-64-bit overflow. Numeric parsing is
+locale-independent and does not accept thousands separators. `to_boolean` accepts
+booleans, numeric `1`/`0`, and the trimmed case-insensitive tokens `true`/`false`,
+`yes`/`no`, `y`/`n`, `t`/`f`, and `1`/`0`; all other values become missing.
+
+`parse_date`, `format_date`, `year`, `month`, `day`, `weekday`, `date_diff`, and
+`add_days` provide date-level behavior. Formats allow only `%Y`, `%m`, `%d`, escaped
+`%%`, and literal separators; parsing requires all three fields with exact numeric
+widths. Invalid row data returns missing, while invalid format controls produce a
+structured error. Weekdays use Monday `1` through Sunday `7`, and
+`date_diff(start, end)` returns `end - start` in calendar days. `add_days` accepts
+positive, zero, and negative exact integer offsets and rejects fractional values.
+Strings must be parsed explicitly; timezone and natural-language parsing are unavailable,
+and `to_date` is not a supported helper.
+
+Validation/list helpers return booleans. `between` is inclusive and accepts one
+compatible finite-number, date-like, or string family; missing operands return false and
+mixed non-missing families are an expression error. `is_in` and `not_in` take one or
+more row-local options. Missing options never match, a missing value is false for
+`is_in`, and `not_in` is the exact inverse. `is_number` follows `to_number` syntax, while
+`is_date` follows `parse_date` format and parsing rules. `is_email` uses a pragmatic,
+non-RFC-complete check after deterministic text conversion: exactly one `@`, non-empty
+parts, no whitespace or edge dots, a dotted domain without empty labels, and a
+254-character maximum.
+
 Recode runs last, after derived columns and filters. It can therefore target a derived
 column, such as normalized status codes, and sees only retained rows. Unmapped values are
 preserved unless `--recode-default` is supplied; existing missing values remain missing.
 
 Use `transform --dry-run` to inspect the planned pipeline without writing. The complete
 syntax for filters, recoding, type errors, validation, and object selection is in the
-[CLI Reference](cli.md#transform), including supported functions and operators,
-bracketed references for awkward column names, ordered recipe semantics, and the closed
-evaluator's security boundary.
+[CLI Reference](cli.md#transform). The [CLI Reference](cli.md#transform)
+defines every supported function and operator, bracketed references for awkward column
+names, ordered recipe semantics, and the closed evaluator's security boundary.
 
 For many inputs, `batch --transform` continues to support the established select, drop,
 rename, type, structured filter, and recode options. The new derive and expression-filter
@@ -967,5 +1021,6 @@ run the single-dataset files without `--object`.
 - [Examples and Recipes](examples.md) for copyable task-oriented workflows
 - [CLI Reference](cli.md) for every command option and exit policy
 - [Format Guide](formats.md) for the capability matrix and format caveats
+- [CLI Reference](cli.md#transform) for safe expressions and ordered recipes
 - [Administrator Guide](admin-guide.md) for installation, updates, and deployment
 - [License](license.md) for the GNU AGPLv3-or-later terms

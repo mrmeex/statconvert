@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.12.0 - Transform helper expansion
+
+### Added
+
+- Added 26 safe row-local transform expression helper functions.
+- Added text helpers for replacement, regex matching and replacement, length, substring,
+  concatenation, and accent removal.
+- Added deterministic type conversion helpers for strings, numbers, integers, floats,
+  and booleans.
+- Added date/time helpers for parsing, formatting, date parts, weekdays, day differences,
+  and day offsets.
+- Added validation/list helpers for inclusive ranges, variadic membership, numeric and
+  date checks, and pragmatic email checks.
+- Expanded expression helper metadata for future GUI function-picker support.
+- Added variadic function arity support for `concat`, `is_in`, and `not_in`.
+
+### Notes
+
+- Existing transform behavior remains compatible.
+- `to_date` remains unsupported; use `parse_date(value, format)` instead.
+- No GUI implementation, streaming transform execution, supported-format change, or
+  runtime dependency change is included.
+
 ## 0.11.0 - 2026-07-29
 
 ### Added

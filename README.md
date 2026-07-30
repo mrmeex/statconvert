@@ -5,11 +5,11 @@ inspecting, validating, batch-processing, comparing, reporting, and logging stat
 datasets. It uses a backend registry and a common `Dataset` model so format-specific code
 stays out of conversion and analysis workflows.
 
-Version 0.10.0 adds safe derived columns and expression filters, canonical ordered
-`[[steps]]` transform recipes, deterministic config import/export, and a bounded internal
-preview foundation for future UI work. Existing transform/config behavior remains
-compatible, and the closed expression engine does not permit arbitrary Python. No new
-dependencies are introduced.
+Version 0.12.0 expands the closed transform language with 26 safe row-local text,
+conversion, date/time, and validation/list helpers. It also adds richer helper metadata
+for a future GUI function picker and generic variadic arity for `concat`, `is_in`, and
+`not_in`. Existing transform/config behavior remains compatible, the evaluator does not
+permit arbitrary Python, and no runtime dependencies are introduced.
 
 ## Implemented features
 
@@ -22,7 +22,7 @@ dependencies are introduced.
 - Canonical ordered `[[steps]]` TOML recipes with deterministic export, schema-aware
   validation, exact-order execution, and legacy transform-config compatibility
 - Closed row-local expression functions for text, numeric, missing-value, conditional,
-  and normalization workflows
+  normalization, conversion, date/time, validation, and list-membership workflows
 - Dataset summary, descriptive profiles, frequencies, and missing-value analysis
 - Dataset-quality and target-format validation, versioned schema contracts, and named
   allowed-value, range, regex, uniqueness, row-count, not-null, and length rules
@@ -99,7 +99,8 @@ statconvert compare before.sav after.parquet
 statconvert compare before.csv after.csv --ignore-columns exported_at --numeric-tolerance 0.001
 statconvert compare before.csv after.csv --key id --max-differences 10
 statconvert transform input.csv output.csv --derive "email_clean=lower(strip(email))"
-statconvert transform input.csv output.csv --filter-expression "age >= 18"
+statconvert transform input.csv output.csv --derive "joined=concat(code, '-', year(parse_date(date_text, '%Y-%m-%d')))"
+statconvert transform input.csv output.csv --filter-expression "is_email(email) and between(age, 18, 65)"
 statconvert report input.sav --output report.html
 statconvert batch input-folder output-folder --to parquet
 statconvert batch incoming-csv output-jsonl --to jsonl --stream --chunk-size 50000

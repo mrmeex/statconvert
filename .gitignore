@@ -17,6 +17,11 @@ htmlcov/
 build/
 dist/
 site/
+.mkdocs-validation-output/
+ui-frontend/node_modules/
+ui-frontend/.vite/
+ui-frontend/dist/
+.pnpm-store/
 
 # Local environments
 .venv/

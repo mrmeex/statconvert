@@ -4045,6 +4045,48 @@ def _log_validation_block(
 
 
 @app.command()
+def ui(
+    host: str = typer.Option(
+        "127.0.0.1",
+        "--host",
+        help="Loopback host for the local browser UI.",
+    ),
+    port: int = typer.Option(
+        8765,
+        "--port",
+        min=1,
+        max=65535,
+        help="Local TCP port for the browser UI.",
+    ),
+    no_browser: bool = typer.Option(
+        False,
+        "--no-browser",
+        help="Start the local UI without opening a browser.",
+    ),
+):
+    """Launch the optional local StatConvert browser interface."""
+
+    try:
+        from statconvert.webui.launcher import launch_ui
+
+        launch_ui(
+            host=host,
+            port=port,
+            open_browser=not no_browser,
+            on_start=lambda open_url, bound_address: console.print(
+                "[bold blue]StatConvert UI[/bold blue]\n"
+                f"Open URL: {open_url}\n"
+                f"Bound address: {bound_address}"
+            ),
+        )
+    except KeyboardInterrupt:
+        return
+    except Exception as exc:
+        handle_exception(exc)
+        raise typer.Exit(1)
+
+
+@app.command()
 def peek(
     input_file: str,
     object_selector: ObjectSelectorOption = None,

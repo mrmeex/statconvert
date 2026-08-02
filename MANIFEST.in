@@ -36,3 +36,5 @@ global-exclude .coverage.*
 global-exclude coverage.xml
 global-exclude .DS_Store
 global-exclude Thumbs.db
+
+recursive-include statconvert/webui/static *

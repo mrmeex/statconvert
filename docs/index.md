@@ -8,9 +8,9 @@ hide:
   <p class="statconvert-eyebrow">Statistical data, made portable</p>
   <h1>StatConvert</h1>
   <p class="statconvert-lede">
-    StatConvert is a command-line tool for inspecting, validating, transforming, and
-    converting statistical datasets between formats such as SPSS, Stata, SAS, R,
-    Excel, CSV, Parquet, and more.
+    StatConvert is a command-line tool and optional local browser interface for
+    inspecting, validating, transforming, and converting statistical datasets between
+    formats such as SPSS, Stata, SAS, R, Excel, CSV, Parquet, and more.
   </p>
   <div class="statconvert-actions">
     <a class="md-button md-button--primary" href="https://github.com/mrmeex/statconvert/releases/latest">Download latest release</a>
@@ -33,6 +33,7 @@ statconvert validate records.csv --schema-contract schema.toml --stream
 statconvert transform input.csv output.csv --derive "email_clean=lower(strip(email))"
 statconvert transform input.csv output.csv --derive "joined=concat(code, '-', year(parse_date(date_text, '%Y-%m-%d')))"
 statconvert transform input.csv output.csv --filter-expression "is_email(email) and between(age, 18, 65)"
+statconvert ui
 ```
 </section>
 
@@ -61,12 +62,16 @@ statconvert transform input.csv output.csv --filter-expression "is_email(email) 
     <h2>Build safe transform recipes</h2>
     <p>Derive, filter, normalize, and recode data with ordered TOML steps and a closed expression language.</p>
   </article>
+  <article>
+    <h2>Work in a local browser</h2>
+    <p>Install the optional UI extra and use the same workflows locally with no accounts, cloud processing, or telemetry.</p>
+  </article>
 </section>
 
 <p>
-  StatConvert 0.12.0 adds 26 safe row-local text, conversion, date/time, and
-  validation/list helpers, plus richer metadata for future GUI support. It adds no
-  runtime dependency and does not implement a GUI or streaming transform execution.
+  StatConvert 1.0.0 adds the complete local browser UI launched by
+  <code>statconvert ui</code>. Install it with <code>statconvert[ui]</code>; the CLI and
+  its base dependency set remain unchanged.
 </p>
 
 <footer class="statconvert-home-footer">
@@ -74,6 +79,7 @@ statconvert transform input.csv output.csv --filter-expression "is_email(email) 
   <a href="examples/">Examples</a>
   <a href="cli/">CLI reference</a>
   <a href="formats/">Formats</a>
+  <a href="ui/">Browser UI</a>
   <a href="license/">License</a>
   <a href="https://github.com/mrmeex/statconvert/releases/latest">Latest release</a>
   <a href="https://github.com/mrmeex/statconvert">Source on GitHub</a>

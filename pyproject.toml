@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "statconvert"
-version = "0.12.0"
+version = "1.0.0"
 description = "CLI toolkit for converting, inspecting, validating, comparing and reporting statistical datasets."
 authors = [
     { name = "Gijs Meex" },
@@ -27,6 +27,12 @@ dependencies = [
     "odfpy>=1.4",
 ]
 
+[project.optional-dependencies]
+ui = [
+    "fastapi>=0.141,<1",
+    "uvicorn>=0.52,<1",
+]
+
 [dependency-groups]
 dev = [
     "build>=1.2",
@@ -44,6 +50,12 @@ statconvert = "statconvert.cli:app"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["statconvert*"]
+
+[tool.setuptools.package-data]
+"statconvert.webui" = [
+    "static/*",
+    "static/assets/*",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -1,0 +1,60 @@
+import { createTheme, type CSSVariablesResolver } from "@mantine/core";
+
+export const theme = createTheme({
+  primaryColor: "statconvert",
+  colors: {
+    statconvert: [
+      "#edf5ff", "#d8e8ff", "#afcfff", "#83b4ff", "#609dff",
+      "#498eff", "#3b86ff", "#2d72e4", "#2366cc", "#1558b5",
+    ],
+  },
+  defaultRadius: "md",
+  fontFamily: "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif",
+  headings: {
+    fontFamily: "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif",
+  },
+});
+
+export const cssVariablesResolver: CSSVariablesResolver = () => ({
+  variables: {
+    "--sc-text": "#182438",
+    "--sc-heading": "#17253a",
+    "--sc-navy": "#10233f",
+    "--sc-background": "#f4f7fb",
+    "--sc-surface": "#ffffff",
+    "--sc-border": "#dce7f7",
+    "--sc-border-soft": "#dfe6f0",
+    "--sc-primary": "#3b86ff",
+    "--sc-primary-dark": "#246edb",
+    "--sc-primary-soft": "#eaf3ff",
+    "--sc-sidebar-text": "#d8e5f6",
+    "--sc-sidebar-icon": "#b9d5ff",
+    "--sc-muted-blue": "#385475",
+    "--sc-success": "#58d39a",
+    "--sc-command-border": "#1f3d65",
+    "--sc-command-text": "#edf6ff",
+    "--sc-stat-bg": "#f4f8fd",
+    "--sc-stat-border": "#e0e9f5",
+    "--sc-white-08": "rgba(255, 255, 255, 0.08)",
+    "--sc-white-09": "rgba(255, 255, 255, 0.09)",
+    "--sc-white-10": "rgba(255, 255, 255, 0.1)",
+    "--sc-white-25": "rgba(255, 255, 255, 0.25)",
+    "--sc-white-80": "rgba(255, 255, 255, 0.8)",
+    "--sc-white-92": "rgba(255, 255, 255, 0.92)",
+    "--sc-white-94": "rgba(255, 255, 255, 0.94)",
+    "--sc-white-98": "rgba(255, 255, 255, 0.98)",
+    "--sc-blue-10": "rgba(59, 134, 255, 0.1)",
+    "--sc-blue-12": "rgba(47, 112, 209, 0.12)",
+    "--sc-blue-24": "rgba(59, 134, 255, 0.24)",
+    "--sc-dark-34": "rgba(3, 15, 32, 0.34)",
+    "--sc-dark-52": "rgba(3, 15, 32, 0.52)",
+    "--sc-shadow-blue": "rgba(24, 65, 123, 0.1)",
+    "--sc-shadow-mark": "rgba(30, 99, 210, 0.35)",
+    "--sc-shadow-card": "rgba(27, 73, 137, 0.1)",
+    "--sc-success-ring": "rgba(88, 211, 154, 0.12)",
+    "--sc-hero-tint": "rgba(239, 246, 255, 0.94)",
+    "--sc-placeholder-tint": "rgba(245, 249, 255, 0.94)",
+  },
+  light: {},
+  dark: {},
+});

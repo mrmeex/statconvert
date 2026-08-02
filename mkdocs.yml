@@ -1,5 +1,5 @@
 site_name: StatConvert
-site_description: Convert, inspect, validate, transform, and compare statistical datasets from the command line.
+site_description: Convert, inspect, validate, transform, and compare statistical datasets from the command line or local browser UI.
 site_url: https://mrmeex.github.io/statconvert/
 repo_name: mrmeex/statconvert
 repo_url: https://github.com/mrmeex/statconvert
@@ -44,6 +44,7 @@ nav:
   - Home: index.md
   - Guides:
       - User Guide: user-guide.md
+      - Browser UI Guide: ui.md
       - Examples and Recipes: examples.md
       - Administrator Guide: admin-guide.md
   - Reference:

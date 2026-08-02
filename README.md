@@ -1,15 +1,14 @@
 # StatConvert
 
-StatConvert is a Python 3.11 command-line toolkit for converting, transforming,
+StatConvert is a Python 3.11 command-line toolkit and optional local browser interface for converting, transforming,
 inspecting, validating, batch-processing, comparing, reporting, and logging statistical
 datasets. It uses a backend registry and a common `Dataset` model so format-specific code
 stays out of conversion and analysis workflows.
 
-Version 0.12.0 expands the closed transform language with 26 safe row-local text,
-conversion, date/time, and validation/list helpers. It also adds richer helper metadata
-for a future GUI function picker and generic variadic arity for `concat`, `is_in`, and
-`not_in`. Existing transform/config behavior remains compatible, the evaluator does not
-permit arbitrary Python, and no runtime dependencies are introduced.
+Version 1.0.0 adds the complete local browser UI launched by `statconvert ui`. The UI
+uses the existing conversion and analysis services, remains bound to the local machine,
+and is installed through the optional `statconvert[ui]` extra. The CLI and its 11 base
+runtime dependencies remain unchanged.
 
 ## Implemented features
 
@@ -42,6 +41,8 @@ permit arbitrary Python, and no runtime dependencies are introduced.
 - TOML starter generation and validation for repeatable single-command workflows
 - Opt-in streaming conversion and batch conversion for all nine ordered pairs among CSV,
   JSONL, and NDJSON, plus contract-only streaming validation for those inputs
+- Optional local browser UI for Inspect, Convert, Batch Convert, Validate, Transform,
+  Configs, Compare, Report, Collect, Reference, Settings, and About
 
 Dataset comparison is provided by `statconvert compare`. There is currently no separate
 `statconvert diff` alias.
@@ -71,6 +72,17 @@ plus each important runtime dependency. Missing dependencies are shown as
 `not installed`. The equivalent `statconvert --version` form works when the console
 command is on `PATH`.
 
+Install the optional local browser interface after downloading the wheel:
+
+```powershell
+python -m pip install ".\statconvert-<version>-py3-none-any.whl[ui]"
+statconvert ui
+```
+
+The browser opens at `http://statconvert.localhost:<port>` when available while the
+server remains bound to `127.0.0.1`. The UI has no accounts, cloud processing,
+telemetry, or remote-server mode.
+
 ## Quick start
 
 ```bash
@@ -91,6 +103,7 @@ statconvert convert workbook.xlsx output.csv --object Data
 statconvert convert workbook.xlsx combined.ods --all-objects
 statconvert collect objects.csv combined.xlsx --base-dir incoming
 statconvert validate input.sav --to parquet
+statconvert ui
 statconvert schema input.sav --export-contract schema.toml
 statconvert validate input.sav --schema-contract schema.toml
 statconvert validate input.csv --schema-contract schema.toml --stream
@@ -99,8 +112,7 @@ statconvert compare before.sav after.parquet
 statconvert compare before.csv after.csv --ignore-columns exported_at --numeric-tolerance 0.001
 statconvert compare before.csv after.csv --key id --max-differences 10
 statconvert transform input.csv output.csv --derive "email_clean=lower(strip(email))"
-statconvert transform input.csv output.csv --derive "joined=concat(code, '-', year(parse_date(date_text, '%Y-%m-%d')))"
-statconvert transform input.csv output.csv --filter-expression "is_email(email) and between(age, 18, 65)"
+statconvert transform input.csv output.csv --filter-expression "age >= 18"
 statconvert report input.sav --output report.html
 statconvert batch input-folder output-folder --to parquet
 statconvert batch incoming-csv output-jsonl --to jsonl --stream --chunk-size 50000
@@ -168,12 +180,13 @@ restrictions include:
 
 See [Examples and Recipes](docs/examples.md) for copyable workflows, the
 [Format Guide](docs/formats.md) for the complete extension matrix, and the
-[CLI Reference](docs/cli.md) for command options, safe transform expressions,
-ordered recipes, and exit behavior.
+[CLI Reference](docs/cli.md) for command options, ordered recipes, safe expressions,
+and exit behavior.
 
 ## Documentation
 
 - [User Guide](docs/user-guide.md) - practical end-user manual for everyday workflows
+- [Browser UI Guide](docs/ui.md) - local UI installation, workflows, settings, and troubleshooting
 - [Administrator Guide](docs/admin-guide.md) - installation, managed deployment, and support
 - [Examples and Recipes](docs/examples.md) - copyable workflows for common tasks
 - [CLI Reference](docs/cli.md) - commands, options, output, and exit behavior

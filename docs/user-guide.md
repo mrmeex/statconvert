@@ -6,6 +6,7 @@ This guide is for people who use StatConvert to convert, inspect, validate, repo
 compare, transform, or batch-convert datasets. It focuses on practical, everyday use.
 Exact options and exit codes remain in the [CLI Reference](cli.md), while copyable
 workflows and task-oriented recipes remain in [Examples and Recipes](examples.md).
+For the optional local browser interface, see the [Browser UI Guide](ui.md).
 
 ## What StatConvert does
 
@@ -905,9 +906,9 @@ preserved unless `--recode-default` is supplied; existing missing values remain 
 
 Use `transform --dry-run` to inspect the planned pipeline without writing. The complete
 syntax for filters, recoding, type errors, validation, and object selection is in the
-[CLI Reference](cli.md#transform). The [CLI Reference](cli.md#transform)
-defines every supported function and operator, bracketed references for awkward column
-names, ordered recipe semantics, and the closed evaluator's security boundary.
+[CLI Reference](cli.md#transform), including supported functions and operators,
+bracketed references for awkward column names, ordered recipe semantics, and the closed
+evaluator's security boundary.
 
 For many inputs, `batch --transform` continues to support the established select, drop,
 rename, type, structured filter, and recode options. The new derive and expression-filter
@@ -1023,4 +1024,4 @@ run the single-dataset files without `--object`.
 - [Format Guide](formats.md) for the capability matrix and format caveats
 - [CLI Reference](cli.md#transform) for safe expressions and ordered recipes
 - [Administrator Guide](admin-guide.md) for installation, updates, and deployment
-- [License](license.md) for the GNU AGPLv3-or-later terms
+- [License](../LICENSE) for the GNU AGPLv3-or-later terms

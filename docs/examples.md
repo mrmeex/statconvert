@@ -820,7 +820,7 @@ statconvert transform .\input\data.csv .\output\adults-nl.csv --filter-expressio
 Comparisons, `and`, `or`, `not`, parentheses, and defined numeric arithmetic are
 supported. Python `eval`, imports, arbitrary calls, timezone or natural-language date
 helpers, and aggregate, window, group, or join functions are not available. See the
-[CLI Reference](cli.md#transform) for the exact grammar and evaluation rules.
+[CLI Reference](cli.md#transform) for the supported grammar and functions.
 
 The legacy structured filter remains supported. Keep rows where `age` is at least 18:
 
@@ -903,7 +903,8 @@ statconvert transform .\input\data.csv .\output\data-clean.csv --derive "country
 Legacy top-level transform fields remain compatible and retain their fixed order.
 Mixing legacy operation fields with `[[steps]]` is rejected because their combined order
 would be ambiguous. The bounded preview foundation is internal only; there is no preview
-CLI or GUI command. A full GUI through future `statconvert ui` remains planned for 1.0.0.
+CLI or browser-UI command. The local browser interface is documented in the
+[Browser UI Guide](ui.md).
 
 ## Choose separate outputs for large object sets
 
@@ -1005,6 +1006,5 @@ format, metadata, or value differences rather than a command crash.
 | I need automation output | [Use JSON output in scripts](#use-json-output-in-scripts) and [Write logs for troubleshooting](#write-logs-for-troubleshooting) |
 
 For deeper behavior, return to the [User Guide](user-guide.md),
-[CLI Reference](cli.md), [Format Guide](formats.md), or
-[CLI Reference](cli.md#transform). StatConvert is licensed under the
-[GNU Affero General Public License v3.0 or later](license.md).
+[CLI Reference](cli.md) or [Format Guide](formats.md). StatConvert is licensed under the
+[GNU Affero General Public License v3.0 or later](../LICENSE).

@@ -1,27 +1,151 @@
 # Changelog
 
-## 0.12.0 - Transform helper expansion
+## 1.0.0 - Local browser UI
 
 ### Added
 
-- Added 26 safe row-local transform expression helper functions.
-- Added text helpers for replacement, regex matching and replacement, length, substring,
-  concatenation, and accent removal.
-- Added deterministic type conversion helpers for strings, numbers, integers, floats,
-  and booleans.
-- Added date/time helpers for parsing, formatting, date parts, weekdays, day differences,
-  and day offsets.
-- Added validation/list helpers for inclusive ranges, variadic membership, numeric and
-  date checks, and pragmatic email checks.
-- Expanded expression helper metadata for future GUI function-picker support.
-- Added variadic function arity support for `concat`, `is_in`, and `not_in`.
+- Added the lazy `statconvert ui` command with loopback-only host validation, browser
+  launch control, clear missing-extra guidance, and a FastAPI/Uvicorn `ui` optional
+  extra that leaves base runtime dependencies unchanged.
+- Added the `statconvert.webui` application factory, packaged static serving, and
+  health, version, and environment endpoints.
+- Added a responsive React/Vite/TypeScript/Mantine shell with navigation placeholders
+  for every planned UI area, a deterministic pnpm lockfile, and production assets built
+  directly into the Python package.
+- Added functional Inspect tabs for overview, preview, schema, labels, metadata,
+  summary, describe, frequencies, missing values, and object discovery, with bounded
+  JSON-safe responses and equivalent CLI command previews.
+- Added non-writing planners and functional Convert, Batch Convert, and Validate
+  screens that call existing Python business layers directly and preserve overwrite,
+  directory, streaming, target-capability, and schema-contract safeguards.
+- Added a bounded process-local background job registry with status, server-sent
+  progress events, structured failures, and best-effort cancellation for write and
+  potentially long-running validation workflows.
+- Added explicit batch container-object choices, recursive `.xls`/`.xlsx` all-object
+  planning, plan warnings, advanced-option tiers, and live per-file status tables.
+- Added a loopback-only, user-rooted local path browser, automatic cached Inspect tabs,
+  dedicated label and frequency tables, centralized theme colors, and Tabler icons.
+- Added functional Configs, Compare, Report, Collect, and Reference screens backed by
+  existing config execution, comparison, reporting, collection, and registry services.
+- Added typed config init/load/validate/export/run APIs, planned and background
+  compare/report/collect APIs, truthful command previews, and live format/backend/
+  capability reference tables.
+- Added platform-native local UI preference storage, functional Settings and About
+  screens, malformed-settings recovery, remembered path-picker directories, and runtime,
+  dependency, license, network, and privacy diagnostics.
+- Added existing `--log` and `--log-level` preference propagation for executable browser
+  jobs with per-job log filenames, plus the loopback-only `statconvert.localhost` default
+  browser URL and graceful `127.0.0.1` fallback.
+- Added Inspect > Metadata helper-script export through the existing R (`.R`), SPSS
+  (`.sps`), and Stata (`.do`) exporter with explicit local output paths and truthful
+  `metadata --export-script` command previews.
+- Added active Batch job lookup and an atomic one-active-UI-batch guard, while keeping
+  CLI Batch concurrency unchanged.
+- Added structured browser comparison results, current-schema Collect manifest help and
+  safe starter generation, and a public-safe browser UI guide for every workflow.
+
+### Improved
+
+- Corrected the default browser-visible URL to prefer `statconvert.localhost` after IPv4
+  readiness, with `127.0.0.1` fallback when browser opening fails.
+- Made the shared command-preview preference hide panels completely, added quiet
+  30-second local health polling with reconnecting/disconnected states, simplified homepage copy,
+  and cleared and ignored remembered folders when remembering is disabled.
+- Improved Inspect with file/folder discovery controls, Overview columns, a metadata
+  summary, human-readable memory, CLI-style Describe sections, per-variable frequency
+  tables, and reordered missing-value fields; validation job results now render their
+  structured issues or an explicit no-issues state.
+- Reduced repeated workflow chrome and compacted inspection controls while retaining
+  manual refresh and existing bounded API behavior.
+- Defaulted Convert, Batch Convert, and Transform browser targets to Parquet; added
+  shared extensionless-output handling for Convert and Transform; exposed optional
+  positive Batch workers; replaced running Batch plans with progress; restored active
+  Batch progress after navigation; and cleared stale Convert/Transform results on run.
+- Added the functional Transform page with all seven canonical ordered step types,
+  projected column state, per-step planning errors, bounded before/after preview, direct
+  background execution, and canonical `[[steps]]` TOML.
+- Added registry-driven discovery for all 43 active expression helpers, debounced pure
+  expression validation with half-open source spans, contextual column insertion, and
+  function call insertion without adding expression semantics.
+- Kept comparison details and report tables bounded, preserved Report and Collect output
+  collision rules, and retained the established rejection of mixed legacy transform
+  fields with ordered `[[steps]]`.
+- Replaced accepted Compare, Report, and Collect plans with live jobs, cleared competing
+  Config validation/run results, and made raw comparison JSON secondary to Summary,
+  Inputs, Shape, Columns, Schema, Metadata, and Values sections.
+- Standardized collapsed **Raw details** below user-facing plan and result summaries,
+  added workflow-specific Convert, Transform, Report, Collect, and Config result fields,
+  replaced accepted Convert and Validate plans with live progress, and renamed the
+  connection indicator to **StatConvert backend**.
+
+### Design
+
+- Defined the 1.0.0 local browser UI architecture using FastAPI, Uvicorn, React, Vite,
+  TypeScript, and Mantine, with built frontend assets bundled into the future wheel.
+- Assigned every existing command to the 1.0.0b-f implementation slices and specified
+  the local launcher, loopback security boundary, API routes, page map, command/config
+  previews, background jobs, progress, and packaging strategy.
+- Designed the ordered transform recipe builder and function picker around existing
+  recipe planning, bounded preview, safe expression evaluation, and all 43 active
+  function metadata specifications.
+- Kept `statconvert/ui` as the Rich terminal layer and reserved the separate
+  `statconvert/webui` package for browser-server code.
+- Finalized the 1.0.0 package metadata, bundled frontend assets, public-safe browser
+  documentation, wheel-only packaging, and release verification.
+
+## 0.12.0 - Transform helper expansion
+
+### Design
+
+- Audited the closed transform-expression parser, evaluator, registry, metadata,
+  planner, recipe/config integration, preview/JSON paths, tests, and private
+  documentation for the 0.12.0 expansion.
+- Approved exact semantics, null/error behavior, UI function-picker metadata, safety
+  boundaries, and implementation gates for 26 row-local text, type-conversion,
+  date/time, and validation/list helpers.
+- Split implementation into focused 0.12.0b text, 0.12.0c conversion, 0.12.0d
+  date/time, 0.12.0e validation/list, and 0.12.0f release slices.
+
+### Added
+
+- Added the closed expression helpers `replace`, `regex_match`, `regex_replace`,
+  `length`, `substring`, `concat`, and `remove_accents` for derive and expression-filter
+  workflows.
+- Added structured function signatures, argument metadata, examples, return types, null
+  and error behavior, filter suitability, and unbounded maximum arity serialization for
+  UI and preview consumers.
+- Added bounded regular-expression handling with scalar patterns, a 256-character pattern
+  limit, a 10,000-character per-value input limit, and structured errors for invalid
+  patterns and replacements.
+- Added parser, evaluator, metadata, planner, preview, direct CLI, and ordered-config
+  coverage for the new helpers.
+- Added the closed expression helpers `to_string`, `to_number`, `to_integer`, `to_float`,
+  and `to_boolean` with deterministic, locale-independent, missing-on-invalid behavior.
+- Added exact conversion-helper function-picker metadata and shared evaluator, planner,
+  preview/JSON, direct CLI, and ordered-config coverage.
+- Removed the unapproved deferred `to_date` reservation; it now reports an unknown
+  function and remains unimplemented.
+- Added `parse_date`, `format_date`, `year`, `month`, `day`, `weekday`, `date_diff`, and
+  `add_days` as closed date-level expression helpers.
+- Added portable `%Y`/`%m`/`%d`/`%%` format validation, structured control errors,
+  missing-on-invalid row behavior, ISO weekday numbering, calendar-day differences,
+  exact signed day offsets, and JSON-safe preview coverage.
+- Added date/time function-picker metadata and evaluator, planner, preview, direct CLI,
+  and ordered-config integration coverage.
+- Added inclusive `between`, variadic `is_in` and `not_in`, `is_number`, `is_date`, and
+  pragmatic `is_email` as the final approved 0.12.0 expression helpers.
+- Added compatible-family range validation, exact inverse membership semantics,
+  numeric/date parser reuse, deterministic email checks, complete helper metadata, and
+  shared evaluator, planner, preview/JSON, direct CLI, and ordered-config coverage.
 
 ### Notes
 
-- Existing transform behavior remains compatible.
-- `to_date` remains unsupported; use `parse_date(value, format)` instead.
-- No GUI implementation, streaming transform execution, supported-format change, or
-  runtime dependency change is included.
+- All 26 approved expansion helpers are implemented, with no extra helper added; no
+  conversion backend or runtime dependency behavior changed.
+- Existing transform behavior remains compatible, no runtime dependencies were added,
+  and no supported format behavior changed.
+- No GUI implementation is included. The GUI remains future 1.0.0 work via
+  `statconvert ui`.
 
 ## 0.11.0 - 2026-07-29
 
@@ -67,11 +191,13 @@
   contracts, safe derived/filter expressions, canonical ordered recipes, metadata
   precedence, and current fixed transform order.
 - Improved links among the README, User Guide, examples, transform-language reference,
-  and AGPL license.
+  and AGPL license so public-facing material can be curated without private maintainer
+  documentation.
 
 ### Notes
 
-- This patch contains no runtime, command, or supported-format behavior changes.
+- The package version remains `0.10.0` during the 0.10.1 documentation and licensing
+  implementation slices.
 
 ## 0.10.0 - 2026-07-29
 
@@ -151,28 +277,48 @@
 
 ### Added
 
+- Added the 0.9.0a private streaming feasibility audit with backend/format and workflow
+  matrices, architecture invariants, failure-cleanup policy, and an exact 0.9.0b gate.
+- Added immutable internal format feasibility records for all registered extensions,
+  JSON-safe capability serialization, positive chunk-size option validation, and a pure
+  source/target planning gate.
+- Added focused tests that keep feasibility declarations synchronized with the registry
+  and prevent planned dependency support from being reported as implemented streaming.
 - Added backend-owned CSV and JSONL/NDJSON chunk readers, transactional chunk writers,
-  stable ordered-schema validation, and deterministic chunk/row metrics.
-- Added opt-in `convert --stream` and `--chunk-size ROWS` for all nine ordered
-  CSV/JSONL/NDJSON pairs.
-- Added opt-in `batch --stream` with shared chunk-size handling, deterministic item
-  ordering, worker/fail-fast behavior, per-item sidecars, and JSON/report metrics.
-- Added opt-in, contract-only `validate --stream` for CSV, JSONL, and NDJSON with bounded
-  schema and named-rule aggregation.
-- Added exact retained-key state for single and composite uniqueness across chunks while
-  preserving issue codes, severities, source rules, affected rows, and bounded samples.
+  stable ordered-schema validation, backend-neutral chunk/progress/result models, and an
+  internal executor for all nine approved source/target pairs.
+- Added one-time source-sidecar loading, final-sidecar commit after data commit,
+  overwrite/create-directory enforcement, malformed-input and schema-drift cleanup, and
+  deterministic empty/header-only behavior.
+- Added opt-in `convert --stream` and `--chunk-size ROWS` for all nine CSV/JSONL/NDJSON
+  pairs, with a 100,000-row default, CSV option mapping, compact completion summaries, and
+  friendly unsupported-pair and option-conflict errors.
+- Added opt-in `batch --stream` and shared `--chunk-size ROWS` handling for the same nine
+  pairs, preserving deterministic ordering, workers, continue/fail-fast semantics, output
+  safety, and per-item sidecars.
+- Added batch streaming state and row/chunk metrics to human summaries, machine JSON, and
+  CSV/JSON reports, including aggregate streamed totals.
+- Added opt-in, contract-only `validate --stream` and shared `--chunk-size ROWS` support
+  for CSV, JSONL, and NDJSON, with deterministic chunk/row/rule/column totals.
+- Added bounded aggregation for schema and chunk-local contract findings plus exact
+  retained-key state for single/composite uniqueness, preserving existing issue codes,
+  severities, source rules, samples, JSON contract structure, and exit policy.
+- Verified semantic equivalence for every ordered CSV/JSONL/NDJSON conversion pair,
+  deterministic streaming validation parity, multi-chunk large-file workflows, and
+  transactional cleanup before release.
 
 ### Notes
 
-- Streaming remains opt-in. Normal in-memory behavior remains the default.
-- JSON arrays and formats outside CSV, JSONL, and NDJSON are not streamable.
-- Streaming conversion and batch write a final metadata sidecar only after the data file
-  commits successfully.
-- Streaming validation requires `--schema-contract`, writes no datasets or sidecars, and
-  may use memory proportional to the number of distinct uniqueness keys.
-- Transforms, reports, compare, collect, object modes, and workflow config serialization
-  are not streamed.
-- No new dependencies were added.
+- Streaming remains opt-in on convert, plain batch conversion, and contract validation.
+  Normal paths stay in-memory, and JSON arrays plus every non-CSV/JSONL/NDJSON format
+  remain non-streaming.
+- Batch streaming does not yet support transforms, validation, object modes, or workflow
+  config serialization; existing batch configs remain unchanged.
+- Streaming validation requires `--schema-contract`; no-contract validation,
+  destination-readiness checks, object selection, reports, and config serialization
+  remain non-streaming. Exact uniqueness memory grows with distinct complete keys.
+- Existing `Dataset`, backend, registry, converter, metadata, configuration, and
+  non-streaming behavior remains unchanged outside the explicit streaming options.
 
 ## 0.8.0 - 2026-07-27
 
@@ -323,21 +469,31 @@ Performance and large-file hardening release.
 
 ### Added
 
+- Added reproducible benchmark tooling under `tools/performance/` with deterministic tiny,
+  small, medium, and explicitly enabled large synthetic-data profiles.
+- Added subprocess benchmark runs and Markdown/CSV summaries covering elapsed time, output
+  size, success/skip state, environment details, and optional `psutil` peak RSS.
 - Added batch workload summaries with planned item/file counts, input sizes, worker count,
   target/structure settings, transform and validation state, and object mode.
-- Added multi-worker memory guidance for CSV-to-Parquet and CSV-to-JSON workloads.
+- Added multi-worker memory guidance and worker-count benchmark comparisons for CSV to
+  Parquet and JSON workloads.
 
 ### Changed
 
 - JSON, JSONL, and NDJSON record writes now serialize bounded row chunks while preserving
   their existing output structures.
+- The measured medium CSV-to-JSON benchmark used about 51% less peak RSS in the 0.4.0b
+  before/after run; timings and memory remain machine- and workload-dependent.
 - Compare paths avoid unnecessary full Python mask materialization and repeated JSON
   dataclass serialization without changing comparison semantics.
 - Feather writing avoids an unnecessary index copy for the default `RangeIndex` path.
+- Missing benchmark-profile errors now report required, detected, and missing profiles
+  plus an exact data-generation command.
 - Documentation now includes safer large-file, dry-run, and batch-worker guidance.
 
 ### Notes
 
+- `psutil` remains optional and is used only by benchmark tooling for peak-RSS sampling.
 - StatConvert remains DataFrame-based for most operations; JSON can still be memory-heavy,
   and Excel/ODS remain poor choices for very large datasets.
 - Prefer Parquet or Feather for large tabular workflows where practical.

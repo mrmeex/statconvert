@@ -493,3 +493,5 @@ StatConvert does not currently provide:
 - fuzzy or many-to-many compare matching, duplicate-key reconciliation, per-column or
   relative tolerances, or chunked comparison; or
 - human-readable descriptions of raw display-format codes.
+
+These limitations are intentionally outside the current supported capability set.

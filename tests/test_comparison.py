@@ -1,5 +1,7 @@
+from datetime import date, datetime, timezone
 import math
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -192,6 +194,148 @@ def test_compare_values_treats_missing_values_correctly():
 
     assert compare_values_summary(left, same).same_values
     assert compare_values_summary(left, changed).differing_cells == 1
+
+
+def _date_dataset(value, *, display_format: str | None = "date") -> Dataset:
+    variables = (
+        [VariableMetadata(name="observed", display_format=display_format)]
+        if display_format is not None
+        else None
+    )
+    return make_dataset({"observed": [value]}, variables)
+
+
+def test_compare_date_object_equals_iso_string_for_date_only_column():
+    result = compare_values_summary(
+        _date_dataset(date(2024, 2, 29)),
+        _date_dataset("2024-02-29", display_format=None),
+    )
+
+    assert result.same_values
+
+
+def test_compare_date_object_does_not_equal_iso_string_for_non_date_column():
+    result = compare_values_summary(
+        _date_dataset(date(2024, 2, 29), display_format="general"),
+        _date_dataset("2024-02-29", display_format="general"),
+    )
+
+    assert result.differing_cells == 1
+
+
+def test_compare_date_object_equals_naive_midnight_datetime():
+    result = compare_values_summary(
+        _date_dataset(date(2024, 2, 29)),
+        _date_dataset(datetime(2024, 2, 29)),
+    )
+
+    assert result.same_values
+
+
+def test_compare_date_object_equals_naive_midnight_timestamp():
+    result = compare_values_summary(
+        _date_dataset(date(2024, 2, 29)),
+        _date_dataset(pd.Timestamp("2024-02-29")),
+    )
+
+    assert result.same_values
+
+
+def test_compare_date_object_equals_numpy_date_scalar():
+    result = compare_values_summary(
+        _date_dataset(date(2024, 2, 29)),
+        _date_dataset(np.datetime64("2024-02-29T00:00:00.000000000")),
+    )
+
+    assert result.same_values
+
+
+def test_compare_date_object_does_not_equal_non_midnight_datetime():
+    result = compare_values_summary(
+        _date_dataset(date(2024, 2, 29)),
+        _date_dataset(datetime(2024, 2, 29, 0, 0, 1)),
+    )
+
+    assert result.differing_cells == 1
+
+
+def test_compare_date_object_does_not_equal_timezone_aware_datetime():
+    result = compare_values_summary(
+        _date_dataset(date(2024, 2, 29)),
+        _date_dataset(datetime(2024, 2, 29, tzinfo=timezone.utc)),
+    )
+
+    assert result.differing_cells == 1
+
+
+def test_compare_date_object_does_not_equal_invalid_date_string():
+    result = compare_values_summary(
+        _date_dataset(date(2024, 2, 29)),
+        _date_dataset("2024-02-30"),
+    )
+
+    assert result.differing_cells == 1
+
+
+def test_compare_logical_date_missing_values_keep_existing_semantics():
+    assert compare_values_summary(
+        _date_dataset(None),
+        _date_dataset(pd.NaT),
+    ).same_values
+    assert compare_values_summary(
+        _date_dataset(None),
+        _date_dataset("2024-02-29"),
+    ).differing_cells == 1
+
+
+def test_compare_does_not_parse_date_string_without_date_metadata():
+    result = compare_values_summary(
+        _date_dataset(date(2024, 2, 29), display_format=None),
+        _date_dataset("2024-02-29", display_format=None),
+    )
+
+    assert result.differing_cells == 1
+
+
+def test_compare_logical_date_equality_keeps_schema_warnings():
+    left = make_dataset(
+        {"observed": [date(2024, 2, 29)]},
+        [
+            VariableMetadata(
+                name="observed",
+                storage_type="object",
+                display_format="date",
+            )
+        ],
+    )
+    right = make_dataset(
+        {"observed": ["2024-02-29"]},
+        [
+            VariableMetadata(
+                name="observed",
+                storage_type="string",
+                display_format="date",
+            )
+        ],
+    )
+
+    result = compare_datasets(left, right)
+
+    assert result.values is not None and result.values.same_values
+    assert result.schema.storage_type_changes == {
+        "observed": ("object", "string")
+    }
+    assert issue_codes(result) == {"storage_types_changed"}
+    assert result.is_compatible
+
+
+def test_compare_logical_date_does_not_normalize_epoch_integer():
+    result = compare_values_summary(
+        _date_dataset(date(2024, 2, 29)),
+        _date_dataset(1_709_164_800_000),
+    )
+
+    assert result.differing_cells == 1
 
 
 def test_compare_options_reject_negative_numeric_tolerance():

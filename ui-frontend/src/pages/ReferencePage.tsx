@@ -43,7 +43,7 @@ export function ReferencePage() {
   const rows = useMemo(() => (current?.rows ?? []).filter((row) => JSON.stringify(row).toLowerCase().includes(search.toLowerCase())), [current, search]);
   return (
     <Box className="page-content">
-      <WorkflowHeader title="Reference" description="Browse the live format, backend, and capability registries used by StatConvert." badge="1.0.0e" />
+      <WorkflowHeader title="Reference" description="Browse the live format, backend, and capability registries used by StatConvert." />
       <Stack gap="lg">
         <ErrorAlert error={error} />
         <Paper withBorder radius="lg" p="lg">

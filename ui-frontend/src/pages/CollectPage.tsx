@@ -62,7 +62,7 @@ export function CollectPage() {
   };
   return (
     <Box className="page-content">
-      <WorkflowHeader title="Collect" description="Plan and write one manifest-selected, multi-object XLSX or ODS container through the existing collection service." badge="1.0.0e" />
+      <WorkflowHeader title="Collect" description="Plan and write one manifest-selected, multi-object XLSX or ODS container through the existing collection service." />
       <Stack gap="lg">
         <Alert color="blue" icon={<IconHelpCircle size={18} />} title="What is a collection manifest?">
           <Text size="sm">Collect uses a CSV manifest to list input files, optional workbook/object selections, and the output worksheet/object name for each item. Create or edit the manifest first, select it below, then use Plan collection to validate the manifest, inputs, object choices, and output safety.</Text>

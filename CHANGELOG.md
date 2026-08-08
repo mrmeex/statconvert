@@ -1,5 +1,42 @@
 # Changelog
 
+## 1.0.1 - UI polish and Compare correctness
+
+### Improved
+
+- Retained the compact confirmed-starting-folder path picker and its existing local-only
+  containment behavior. A drive/common-location starting view remains deferred.
+- Centralized friendly, alphabetically sorted browser format labels while retaining the
+  existing extension values in plans, commands, and API payloads.
+- Standardized job badges so queued and unknown states are neutral, running is blue,
+  successful states are green, failures are red, and cancellation states are orange.
+- Increased table header, striped-row, hover, and border contrast through shared light
+  and dark theme variables.
+- Removed development-slice and build labels from the application header, Home, and
+  workflow pages. Runtime version information remains available in About, the version
+  API, and `statconvert --version`.
+- Defaulted the browser Report workflow to HTML and applied `.html`, `.json`, or `.csv`
+  to extensionless report paths while preserving explicit mismatched extensions with a
+  visible warning.
+- Simplified Configs by removing prominent implementation-status wording and keeping
+  its CLI command in the Settings-controlled command panel instead of duplicating it in
+  the result summary. The original payload remains available under collapsed Raw details.
+
+### Investigated
+
+- Reproduced SAV-to-RDS and SAV-to-RData comparison failures for logical date columns.
+  The current R writer serializes Python `date` values as ISO strings, while sidecar
+  metadata restores the logical `date` declaration without coercing those strings on
+  read. No comparison, conversion, or backend behavior changed in this investigation.
+
+### Fixed
+
+- Compare now treats semantically date-only values as equal when the same calendar date
+  is represented by a Python date, a naive midnight datetime/Timestamp, supported NumPy
+  date-like scalar, or canonical `YYYY-MM-DD` string. Detection requires date metadata
+  on at least one side; arbitrary strings and epoch integers are not normalized. Backend
+  conversion behavior is unchanged, and schema/metadata warnings remain independent.
+
 ## 1.0.0 - Local browser UI
 
 ### Added

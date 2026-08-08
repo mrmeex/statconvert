@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date, datetime, time
+import re
 from typing import Any
 
 import pandas as pd
@@ -18,6 +20,9 @@ from statconvert.compare.models import (
     ValueComparison,
 )
 from statconvert.dataset import Dataset
+
+
+_ISO_DATE_PATTERN = re.compile(r"\d{4}-\d{2}-\d{2}\Z")
 
 
 @dataclass(frozen=True)
@@ -189,6 +194,7 @@ def compare_values_summary(
         row_matching_mode="key" if options.key_columns else "positional",
         key_columns=options.key_columns,
         detail_limit=0,
+        date_only_columns=_date_only_columns(left, right, selected),
     )
     return values
 
@@ -203,6 +209,7 @@ def _compare_aligned_values(
     row_matching_mode: str,
     key_columns: tuple[str, ...],
     detail_limit: int,
+    date_only_columns: set[str],
 ) -> tuple[ValueComparison, list[DifferenceDetail]]:
     differences: dict[str, int] = {}
     details: list[DifferenceDetail] = []
@@ -215,6 +222,7 @@ def _compare_aligned_values(
             right_values,
             numeric_tolerance=numeric_tolerance,
             position_limit=max(detail_limit - len(details), 0),
+            date_only=column in date_only_columns,
         )
         differences[column] = difference_count
         for position in positions:
@@ -312,6 +320,11 @@ def compare_datasets(
             row_matching_mode=row_matching_mode,
             key_columns=resolved_options.key_columns,
             detail_limit=max(resolved_options.max_differences - len(details), 0),
+            date_only_columns=_date_only_columns(
+                left,
+                right,
+                compared_columns,
+            ),
         )
         details.extend(value_details)
         detailed_total += values.differing_cells
@@ -614,7 +627,19 @@ def _difference_summary(
     *,
     numeric_tolerance: float,
     position_limit: int,
+    date_only: bool = False,
 ) -> tuple[int, list[int]]:
+    if date_only:
+        count = 0
+        positions: list[int] = []
+        for position, (left_value, right_value) in enumerate(zip(left, right)):
+            if _date_only_values_equal(left_value, right_value):
+                continue
+            count += 1
+            if len(positions) < position_limit:
+                positions.append(position)
+        return count, positions
+
     if numeric_tolerance > 0 and _uses_numeric_tolerance(left, right):
         count = 0
         positions: list[int] = []
@@ -741,6 +766,107 @@ def _values_equal(left: Any, right: Any) -> bool:
         return bool(result) if pd.api.types.is_scalar(result) else False
     except (TypeError, ValueError):
         return False
+
+
+def _date_only_columns(
+    left: Dataset,
+    right: Dataset,
+    columns: list[str],
+) -> set[str]:
+    """Return columns with reliable date-only semantic evidence."""
+
+    return {
+        column
+        for column in columns
+        if _has_date_only_semantics(left, column)
+        or _has_date_only_semantics(right, column)
+    }
+
+
+def _has_date_only_semantics(dataset: Dataset, column: str) -> bool:
+    """Return whether metadata identifies a date-only column."""
+
+    metadata = dataset.column_metadata.get(column)
+    if metadata is not None and str(metadata.logical_type or "").lower() == "date":
+        return True
+
+    variable = dataset.variable_metadata(column)
+    formats = (
+        getattr(metadata, "display_format", None),
+        getattr(metadata, "original_format", None),
+        getattr(variable, "display_format", None),
+    )
+    return any(_is_date_only_format(value) for value in formats)
+
+
+def _is_date_only_format(value: Any) -> bool:
+    """Return whether one known format token declares calendar-date semantics."""
+
+    normalized = str(value or "").strip().lower()
+    return normalized in {"date", "%td"} or bool(
+        re.fullmatch(r"(?:a|e|j|s)?date\d*", normalized)
+    )
+
+
+def _date_only_values_equal(left: Any, right: Any) -> bool:
+    """Compare values after strict, date-only scalar normalization."""
+
+    left_missing = _is_scalar_missing(left)
+    right_missing = _is_scalar_missing(right)
+    if left_missing or right_missing:
+        return left_missing and right_missing
+
+    left_date = _normalize_date_only_value(left)
+    right_date = _normalize_date_only_value(right)
+    if left_date is None or right_date is None:
+        return _values_equal(left, right)
+    return left_date == right_date
+
+
+def _normalize_date_only_value(value: Any) -> date | None:
+    """Return one safe calendar date, or ``None`` for unsupported values."""
+
+    if isinstance(value, pd.Timestamp):
+        if _is_timezone_aware(value) or value.time() != time.min:
+            return None
+        return value.date()
+
+    if isinstance(value, datetime):
+        if _is_timezone_aware(value) or value.time() != time.min:
+            return None
+        return value.date()
+
+    if type(value) is date:
+        return value
+
+    if isinstance(value, str) and _ISO_DATE_PATTERN.fullmatch(value):
+        try:
+            return date.fromisoformat(value)
+        except ValueError:
+            return None
+
+    if pd.api.types.is_datetime64_dtype(value):
+        try:
+            return _normalize_date_only_value(pd.Timestamp(value))
+        except (OverflowError, TypeError, ValueError):
+            return None
+
+    try:
+        scalar = value.item()
+    except (AttributeError, ValueError):
+        return None
+    if scalar is value:
+        return None
+    return _normalize_date_only_value(scalar)
+
+
+def _is_timezone_aware(value: datetime) -> bool:
+    """Return whether a datetime-like scalar has an effective timezone."""
+
+    try:
+        return value.tzinfo is not None and value.utcoffset() is not None
+    except (OverflowError, ValueError):
+        return True
 
 
 def _is_scalar_missing(value: Any) -> bool:

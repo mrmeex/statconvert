@@ -55,6 +55,18 @@ export const cssVariablesResolver: CSSVariablesResolver = () => ({
     "--sc-hero-tint": "rgba(239, 246, 255, 0.94)",
     "--sc-placeholder-tint": "rgba(245, 249, 255, 0.94)",
   },
-  light: {},
-  dark: {},
+  light: {
+    "--sc-table-header": "#dfe9f5",
+    "--sc-table-header-text": "#17253a",
+    "--sc-table-stripe": "#f0f5fb",
+    "--sc-table-hover": "#e5effb",
+    "--sc-table-border": "#cbd9ea",
+  },
+  dark: {
+    "--sc-table-header": "#27364b",
+    "--sc-table-header-text": "#f2f6fc",
+    "--sc-table-stripe": "rgba(89, 116, 151, 0.16)",
+    "--sc-table-hover": "rgba(71, 133, 214, 0.22)",
+    "--sc-table-border": "#40516a",
+  },
 });

@@ -1,10 +1,13 @@
+from datetime import date
+
 import pandas as pd
 import pytest
 from pandas.testing import assert_frame_equal
 
 from statconvert.backends.r_backend import RBackend
+from statconvert.compare import compare_datasets
 from statconvert.converter import transform
-from statconvert.dataset import Dataset
+from statconvert.dataset import ColumnMetadata, Dataset
 from statconvert.exceptions import ObjectNotFoundError
 from statconvert.registry import get_backend_for_file
 
@@ -39,6 +42,31 @@ def test_rds_roundtrip(tmp_path):
     assert result.metadata["backend"] == "r"
     assert result.metadata["file_type"] == ".rds"
     assert result.metadata["object_count"] == 1
+
+
+@pytest.mark.parametrize("extension", ["rds", "rdata"])
+def test_compare_logical_date_after_r_roundtrip(tmp_path, extension):
+    backend = RBackend()
+    output_file = tmp_path / f"dates.{extension}"
+    source = Dataset(
+        dataframe=pd.DataFrame({"observed": [date(2024, 2, 29)]}),
+        column_metadata={
+            "observed": ColumnMetadata(
+                name="observed",
+                physical_type="object",
+                logical_type="date",
+                display_format="date",
+            )
+        },
+    )
+
+    backend.write(source, output_file)
+    restored = backend.read(output_file)
+    comparison = compare_datasets(source, restored)
+
+    assert restored.dataframe["observed"].tolist() == ["2024-02-29"]
+    assert comparison.values is not None and comparison.values.same_values
+    assert comparison.is_identical
 
 
 def test_rdata_roundtrip(tmp_path):

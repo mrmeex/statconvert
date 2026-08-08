@@ -65,7 +65,7 @@ export function ComparePage() {
 
   return (
     <Box className="page-content">
-      <WorkflowHeader title="Compare" description="Compare structure, metadata, and bounded value differences through StatConvert’s existing comparison engine." badge="1.0.0e" />
+      <WorkflowHeader title="Compare" description="Compare structure, metadata, and bounded value differences through StatConvert’s existing comparison engine." />
       <Stack gap="lg">
         <Paper withBorder radius="lg" p="lg"><Stack gap="md">
           <Group grow align="start">

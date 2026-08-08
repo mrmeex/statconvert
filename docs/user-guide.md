@@ -1024,4 +1024,4 @@ run the single-dataset files without `--object`.
 - [Format Guide](formats.md) for the capability matrix and format caveats
 - [CLI Reference](cli.md#transform) for safe expressions and ordered recipes
 - [Administrator Guide](admin-guide.md) for installation, updates, and deployment
-- [License](../LICENSE) for the GNU AGPLv3-or-later terms
+- [License](license.md) for the GNU AGPLv3-or-later terms

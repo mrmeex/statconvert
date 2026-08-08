@@ -1,6 +1,6 @@
 import { useState } from "react";
 import {
-  Box, Button, Checkbox, Group, Paper, Select, Stack, Text, Textarea,
+  Box, Button, Checkbox, Group, Paper, Select, Stack, Textarea,
 } from "@mantine/core";
 import {
   IconDeviceFloppy, IconFilePlus, IconFolderOpen, IconPlayerPlay, IconShieldCheck,
@@ -78,10 +78,13 @@ export function ConfigsPage() {
 
   const command = result?.cli_command as string | undefined
     ?? `statconvert config ${result?.valid ? "validate" : "run"} ${configPath || "<saved-workflow.toml>"}`;
+  const resultSummary = result
+    ? Object.fromEntries(Object.entries(result).filter(([key]) => key !== "cli_command"))
+    : null;
 
   return (
     <Box className="page-content">
-      <WorkflowHeader title="Configs" description="Create, load, edit, validate, save, and run existing StatConvert TOML workflows." badge="1.0.0e" />
+      <WorkflowHeader title="Configs" description="Create, load, edit, validate, save, and run existing StatConvert TOML workflows." />
       <Stack gap="lg">
         <Paper withBorder radius="lg" p="lg">
           <Stack gap="md">
@@ -95,20 +98,17 @@ export function ConfigsPage() {
               <Checkbox label="Overwrite existing config" checked={overwrite} onChange={(event) => setOverwrite(event.currentTarget.checked)} />
               <Checkbox label="Create missing directories" checked={createDirs} onChange={(event) => setCreateDirs(event.currentTarget.checked)} />
             </Group>
-            <Group justify="space-between">
-              <Text size="sm" c="dimmed">Visual round-trip import into Transform remains deferred; canonical Transform TOML validates and runs here.</Text>
-              <Group>
-                <Button variant="default" leftSection={<IconFolderOpen size={17} />} onClick={() => void load()} disabled={!configPath} loading={loading}>Load</Button>
-                <Button variant="light" leftSection={<IconShieldCheck size={17} />} onClick={() => void validate()} disabled={!toml} loading={loading}>Validate</Button>
-                <Button variant="light" leftSection={<IconDeviceFloppy size={17} />} onClick={() => void save()} disabled={!toml || !configPath} loading={loading}>Save</Button>
-                <Button leftSection={<IconPlayerPlay size={17} />} onClick={() => void run()} disabled={!toml} loading={loading}>Run config</Button>
-              </Group>
+            <Group justify="flex-end">
+              <Button variant="default" leftSection={<IconFolderOpen size={17} />} onClick={() => void load()} disabled={!configPath} loading={loading}>Load</Button>
+              <Button variant="light" leftSection={<IconShieldCheck size={17} />} onClick={() => void validate()} disabled={!toml} loading={loading}>Validate</Button>
+              <Button variant="light" leftSection={<IconDeviceFloppy size={17} />} onClick={() => void save()} disabled={!toml || !configPath} loading={loading}>Save</Button>
+              <Button leftSection={<IconPlayerPlay size={17} />} onClick={() => void run()} disabled={!toml} loading={loading}>Run config</Button>
             </Group>
           </Stack>
         </Paper>
         <ErrorAlert error={error} />
         <CommandPreview command={command} />
-        {result && <ResultView data={result} title="Config result" />}
+        {result && <ResultView data={resultSummary} rawData={result} title="Config result" />}
         <JobProgress jobId={jobId} />
       </Stack>
     </Box>

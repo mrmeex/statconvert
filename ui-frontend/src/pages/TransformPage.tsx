@@ -17,13 +17,14 @@ import { TomlPreview } from "../components/TomlPreview";
 import { TransformStepEditor } from "../components/TransformStepEditor";
 import { WorkflowHeader } from "../components/WorkflowHeader";
 import { executeWorkflow, postJson } from "../lib/api";
+import { formatOptions } from "../lib/formats";
 import { ensureOutputExtension, outputExtensionWarning, updateGeneratedExtension } from "../lib/outputPath";
 import type {
   TransformPlanResponse, TransformPreviewResponse, TransformStep,
   TransformStepType,
 } from "../lib/types";
 
-const formats = ["csv", "json", "jsonl", "parquet", "feather", "xlsx", "ods", "sav", "dta", "rds"];
+const formats = formatOptions(["csv", "json", "jsonl", "parquet", "feather", "xlsx", "ods", "sav", "dta", "rds"]);
 const stepTypes: Array<{ value: TransformStepType; label: string }> = [
   { value: "select", label: "Select columns" }, { value: "drop", label: "Drop columns" },
   { value: "rename", label: "Rename columns" }, { value: "convert_type", label: "Convert type" },
@@ -96,7 +97,7 @@ export function TransformPage() {
   const extensionWarning = outputExtensionWarning(outputPath, targetFormat);
 
   return <Box className="page-content">
-    <WorkflowHeader title="Transform" description="Build, validate, preview, and run an exact ordered transform recipe using StatConvert’s existing safe transformation engine." badge="1.0.0d" />
+    <WorkflowHeader title="Transform" description="Build, validate, preview, and run an exact ordered transform recipe using StatConvert’s existing safe transformation engine." />
     <Stack gap="lg">
       <Paper withBorder radius="lg" p="lg"><Stack gap="md">
         <Group grow align="start"><PathPickerField label="Input dataset" value={inputPath} onChange={setInputPath} required /><PathPickerField label="Output dataset" value={outputPath} onChange={(value) => { setOutputPath(value); setOutputAutoExtended(false); }} onCommit={commitOutputPath} selection="save_file" extensions={targetFormat ? [`.${targetFormat}`] : []} required /></Group>

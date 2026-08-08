@@ -84,7 +84,6 @@ export function WorkflowResultView({ workflow, data }: WorkflowResultViewProps) 
       status: data.status ?? "Completed",
       config_path: data.config_path,
       workflow: data.command,
-      cli_command: data.cli_command,
     });
   }
 

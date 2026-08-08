@@ -1007,4 +1007,4 @@ format, metadata, or value differences rather than a command crash.
 
 For deeper behavior, return to the [User Guide](user-guide.md),
 [CLI Reference](cli.md) or [Format Guide](formats.md). StatConvert is licensed under the
-[GNU Affero General Public License v3.0 or later](../LICENSE).
+[GNU Affero General Public License v3.0 or later](license.md).

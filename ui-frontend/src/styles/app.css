@@ -232,6 +232,25 @@ a {
   font-size: 0.82rem;
 }
 
+.result-table thead th {
+  color: var(--sc-table-header-text);
+  font-weight: 750;
+  background: var(--sc-table-header);
+  border-bottom: 1px solid var(--sc-table-border);
+}
+
+.result-table tbody tr:nth-of-type(even) td {
+  background: var(--sc-table-stripe) !important;
+}
+
+.result-table tbody tr:hover td {
+  background: var(--sc-table-hover) !important;
+}
+
+.result-table td {
+  border-bottom-color: var(--sc-table-border);
+}
+
 .result-table td {
   max-width: 28rem;
   overflow: hidden;

@@ -1,6 +1,7 @@
 import { Badge, Group, ScrollArea, Table, Text } from "@mantine/core";
 
 import type { JobEvent } from "../lib/types";
+import { jobStatusColor } from "../lib/status";
 
 interface BatchRow { item_index: number; input_path: string; output_path?: string | null; status: string; message?: string | null }
 
@@ -44,7 +45,7 @@ export function BatchProgressTable({ events }: { events: JobEvent[] }) {
             <Table.Tr key={row.item_index}>
               <Table.Td title={row.input_path}>{row.input_path}</Table.Td>
               <Table.Td title={row.output_path ?? ""}>{row.output_path ?? "—"}</Table.Td>
-              <Table.Td><Badge variant="light" color={row.status === "failed" ? "red" : row.status === "done" ? "green" : row.status === "running" ? "blue" : "gray"}>{row.status}</Badge></Table.Td>
+              <Table.Td><Badge variant="light" color={jobStatusColor(row.status)}>{row.status}</Badge></Table.Td>
               <Table.Td title={row.message ?? ""}>{row.message ?? "—"}</Table.Td>
             </Table.Tr>
           ))}</Table.Tbody>

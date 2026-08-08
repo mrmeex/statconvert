@@ -42,10 +42,14 @@ Inspect when you do not yet know a dataset's columns, objects, or metadata.
 
 ## Path browser basics
 
-Path fields accept a full local path. The folder button opens a constrained browser after
-you confirm a starting folder. Navigation stays inside that folder and its descendants.
-Settings can remember the most recently selected input and output folders, or disable
-that behavior completely.
+Path fields accept a full local path. The folder button opens a compact constrained
+browser after you confirm a starting folder. Navigation stays inside that folder and its
+descendants. Settings can remember the most recently selected input and output folders,
+or disable that behavior completely. A drive/common-location starting view is deferred.
+
+Format fields use friendly names such as **CSV (*.csv)**, **Excel (*.xlsx)**, and
+**Stata (*.dta)**. They are sorted by the displayed name; generated commands and API
+requests continue to use the established extension values.
 
 ## Results and raw details
 
@@ -53,6 +57,9 @@ Plans and completed jobs put useful paths, counts, formats, and status fields fi
 Machine-oriented response data remains available at the bottom under **Raw details**,
 collapsed by default. Starting Convert, Validate, Report, Compare, or Collect replaces
 its accepted plan with live progress so the two states do not compete.
+
+Job badges use a consistent state palette: running is blue, successful completion is
+green, failure is red, cancellation is orange, and queued or unknown states are neutral.
 
 ## Inspect
 
@@ -152,7 +159,9 @@ Configs creates starter TOML for supported workflows, loads a local TOML file, v
 editor text with the existing config schema, saves validated TOML, and runs it as a
 background job. Transform TOML from the visual builder uses the same ordered `[[steps]]`
 structure. Loading Transform TOML does not reconstruct the visual step editor; edit and
-run it in Configs instead.
+run it in Configs instead. Config results show workflow fields without repeating the CLI
+command; the equivalent command remains in its Settings-controlled panel, and the full
+payload remains under collapsed **Raw details**.
 
 ## Compare
 
@@ -161,14 +170,20 @@ columns, ignore columns, match rows by keys, use numeric tolerance, bound detail
 differences, and optionally write a CSV, JSON, or HTML report. Completed results are
 organized into Comparison Summary, Inputs, Shape, Columns, Schema, Metadata, and Values.
 The Values section contains only the bounded differences returned by the comparison
-engine.
+engine. For columns identified by metadata as date-only, equivalent Python dates, naive
+midnight date-times, and canonical `YYYY-MM-DD` strings compare by calendar date. This
+does not change conversion output or hide separate schema and metadata warnings; numeric
+date epochs such as JSON epoch milliseconds remain strict values.
 
 ## Report
 
-Report writes a static HTML, JSON, or CSV dataset report. Presets select established
-section groups, while profile columns, frequency tables, schema contracts, and table-row
-limits refine the output. Planning checks the dataset and output path without writing;
-generation replaces the plan with progress and keeps the final output path visible.
+Report writes a static HTML, JSON, or CSV dataset report and defaults to HTML in the
+browser. An extensionless output path receives `.html`, `.json`, or `.csv` for the
+selected format. An explicit different extension is preserved and reported as a warning.
+Presets select established section groups, while profile columns, frequency tables,
+schema contracts, and table-row limits refine the output. Planning checks the dataset
+and effective output path without writing; generation replaces the plan with progress
+and keeps the final output path visible.
 
 ## Collect
 
@@ -254,4 +269,4 @@ starting the job.
 
 For detailed command options, see the [CLI Reference](cli.md). For general workflows, see
 the [User Guide](user-guide.md) and [Examples and Recipes](examples.md). StatConvert is
-licensed under the [GNU Affero General Public License v3.0 or later](../LICENSE).
+licensed under the [GNU Affero General Public License v3.0 or later](license.md).

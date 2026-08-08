@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react";
 import {
   AppShell,
-  Badge,
   Box,
   Burger,
   Group,
@@ -101,9 +100,6 @@ function App() {
             />
             <Title order={2} className="page-title">{currentPage.label}</Title>
           </Group>
-          <Badge variant="light" color="statconvert" size="lg">
-            1.0.0g5
-          </Badge>
         </Group>
       </AppShell.Header>
 

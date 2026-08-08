@@ -11,6 +11,7 @@ import {
 import { IconBan } from "@tabler/icons-react";
 
 import { cancelJob, getJob } from "../lib/api";
+import { jobStatusColor } from "../lib/status";
 import type { JobSnapshot } from "../lib/types";
 import { ErrorAlert } from "./ErrorAlert";
 import { BatchProgressTable } from "./BatchProgressTable";
@@ -68,7 +69,7 @@ export function JobProgress({ jobId, onComplete, onUpdate }: JobProgressProps) {
       <Paper withBorder radius="lg" p="lg">
         <Group justify="space-between" mb="sm">
           <Text fw={700}>{job?.workflow === "batch" ? "Batch progress" : "Background job"}</Text>
-          <Badge color={job?.status === "failed" ? "red" : "blue"}>
+          <Badge color={jobStatusColor(job?.status ?? "connecting")} variant="light">
             {job?.status ?? "connecting"}
           </Badge>
         </Group>

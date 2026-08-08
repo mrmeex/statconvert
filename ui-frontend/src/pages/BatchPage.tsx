@@ -12,9 +12,10 @@ import { PathPickerField } from "../components/PathPickerField";
 import { ResultView } from "../components/ResultView";
 import { WorkflowHeader } from "../components/WorkflowHeader";
 import { executeWorkflow, getActiveJob, planWorkflow } from "../lib/api";
+import { formatOptions } from "../lib/formats";
 import type { JobSnapshot, PlanResponse } from "../lib/types";
 
-const formats = ["csv", "json", "jsonl", "parquet", "feather", "xlsx", "ods", "sav", "dta", "rds"];
+const formats = formatOptions(["csv", "json", "jsonl", "parquet", "feather", "xlsx", "ods", "sav", "dta", "rds"]);
 const splitPatterns = (value: string) => value.split(/[\n,]+/).map((item) => item.trim()).filter(Boolean);
 const terminalStatuses = new Set(["succeeded", "failed", "cancelled"]);
 let batchSessionJobId: string | null = null;

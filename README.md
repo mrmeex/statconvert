@@ -5,10 +5,9 @@ inspecting, validating, batch-processing, comparing, reporting, and logging stat
 datasets. It uses a backend registry and a common `Dataset` model so format-specific code
 stays out of conversion and analysis workflows.
 
-Version 1.0.0 adds the complete local browser UI launched by `statconvert ui`. The UI
-uses the existing conversion and analysis services, remains bound to the local machine,
-and is installed through the optional `statconvert[ui]` extra. The CLI and its 11 base
-runtime dependencies remain unchanged.
+Version 1.0.1 is a focused patch release for browser-UI polish and Compare correctness.
+The local UI remains bound to the local machine and is installed through the optional
+`statconvert[ui]` extra. The CLI and its 11 base runtime dependencies remain unchanged.
 
 ## Implemented features
 

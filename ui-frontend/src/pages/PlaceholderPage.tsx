@@ -1,5 +1,4 @@
 import {
-  Badge,
   Box,
   Paper,
   Stack,
@@ -23,9 +22,6 @@ export function PlaceholderPage({ page }: PlaceholderPageProps) {
           <ThemeIcon size={56} radius="lg" variant="light">
             <Icon size={28} stroke={1.8} />
           </ThemeIcon>
-          <Badge variant="light">
-            {page.slice}
-          </Badge>
           <Title order={1}>{page.label}</Title>
           <Text size="lg" c="dimmed" maw={680}>
             {page.description}

@@ -69,8 +69,8 @@ statconvert ui
 </section>
 
 <p>
-  StatConvert 1.0.0 adds the complete local browser UI launched by
-  <code>statconvert ui</code>. Install it with <code>statconvert[ui]</code>; the CLI and
+  StatConvert 1.0.1 is a focused patch release for browser-UI polish and Compare
+  correctness. Install the local interface with <code>statconvert[ui]</code>; the CLI and
   its base dependency set remain unchanged.
 </p>
 

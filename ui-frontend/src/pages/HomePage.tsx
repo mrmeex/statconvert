@@ -1,5 +1,4 @@
 import {
-  Badge,
   Box,
   Button,
   Group,
@@ -52,11 +51,8 @@ export function HomePage({ onNavigate }: HomePageProps) {
         </Stack>
       </Paper>
 
-      <Group justify="space-between" mt={40} mb="lg">
+      <Group mt={40} mb="lg">
         <Title order={2}>Choose a workflow</Title>
-        <Badge variant="outline" color="gray">
-          1.0.0g5
-        </Badge>
       </Group>
 
       <SimpleGrid cols={{ base: 1, sm: 2, xl: 3 }} spacing="lg">
@@ -74,7 +70,6 @@ export function HomePage({ onNavigate }: HomePageProps) {
               <span className="workflow-icon" aria-hidden="true">
                 <Icon size={23} stroke={1.8} />
               </span>
-              <Badge variant="light">{page.slice}</Badge>
             </Group>
             <Title order={3} mt="lg">
               {page.label}

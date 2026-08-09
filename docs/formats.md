@@ -22,12 +22,24 @@ statconvert capabilities xlsx
 statconvert capabilities rdata
 ```
 
-In the matrix below, **Sidecar** means the primary file does not natively carry
-StatConvert's normalized statistical metadata. StatConvert writes a sibling
-`<output>.statconvert-metadata.json` file so a later StatConvert read can restore that
-metadata. Sidecar-aware backends load it automatically through normal registry
-reads, so inspection, conversion, transformation, and batch commands need no separate
-option. Other applications usually ignore this sidecar.
+At a glance:
+
+- **Normally writable:** 15 extensions. **Read-only:** ZSAV, POR, and SAS7BDAT.
+- **Streaming:** CSV, JSONL, and NDJSON, through explicit streaming workflows only.
+- **Selectable containers:** XLSX, XLS, and ODS sheets plus RData/RDA named objects.
+- **Multi-sheet destinations:** XLSX and ODS through `convert --all-objects` or `collect`.
+
+### Metadata modes
+
+| Mode | What to expect |
+|---|---|
+| Native, limited | The file can carry some statistical metadata itself. Reads and writes are bounded by the target format and backend; a perfect round trip is not implied. |
+| Native on read | StatConvert reads metadata exposed by the source library, but the extension is read-only and is not offered as a destination. |
+| Sidecar | StatConvert writes normalized metadata to `<output>.statconvert-metadata.json`. Keep it beside the data file for later StatConvert reads; most other applications ignore it. |
+| Embedded + sidecar | Parquet and Feather receive a namespaced embedded copy and the sibling sidecar. The sidecar is authoritative when both are present; the embedded copy is the fallback. |
+
+Sidecar-aware backends load the sibling file automatically through normal registry reads,
+so inspection, conversion, transformation, and batch commands need no separate option.
 
 ## Capability matrix
 
@@ -38,10 +50,10 @@ option. Other applications usually ignore this sidecar.
 | `.xls` | Excel 97-2003 workbook | Yes | Yes | Sidecar | Sheet | Genuine legacy BIFF; limited to 65,535 data rows plus a header and 256 columns. |
 | `.ods` | OpenDocument Spreadsheet | Yes | Yes | Sidecar | Sheet | Supports multi-sheet `convert --all-objects`. |
 | `.sav` | SPSS system file | Yes | Yes | Native, limited | None | Reads and writes supported pyreadstat metadata. |
-| `.zsav` | Compressed SPSS system file | Yes | No | Native on read | None | Read-only; StatConvert does not create ZSAV files. |
-| `.por` | SPSS portable file | Yes | No | Native on read | None | Read-only. |
+| `.zsav` | Compressed SPSS system file | Yes | No | Native on read | None | Read-only; write `.sav` instead. |
+| `.por` | SPSS portable file | Yes | No | Native on read | None | Read-only; write `.sav` instead. |
 | `.dta` | Stata data file | Yes | Yes | Native, limited | None | Reads and writes supported labels, missing values, and formats. |
-| `.sas7bdat` | SAS data set | Yes | No | Native on read | None | Read-only. |
+| `.sas7bdat` | SAS data set | Yes | No | Native on read | None | Read-only; write `.xpt` for SAS interchange. |
 | `.xpt` | SAS XPORT | Yes | Yes | Native, limited | None | Stricter interchange format; only supported XPORT metadata is written. |
 | `.json` | JSON records | Yes | Yes | Sidecar | None | Written as one JSON array of record objects. |
 | `.jsonl` | JSON Lines | Yes | Yes | Sidecar | None | One record object per line. |
@@ -257,6 +269,15 @@ SPSS feature. Use target validation to flag incompatible names and likely metada
 statconvert validate input.csv --to sav
 ```
 
+ZSAV and POR are sources only. SAV is the suggested writable SPSS alternative when it
+fits the receiving workflow; StatConvert does not silently substitute it or claim the
+formats are equivalent:
+
+```powershell
+statconvert convert compressed.zsav compressed.sav
+statconvert convert legacy.por legacy.sav
+```
+
 ## Stata DTA
 
 DTA is readable and writable. Variable labels, value labels, user-missing values, and
@@ -283,9 +304,14 @@ supported by the pyreadstat XPORT writer; value labels are not written to XPT.
 
 ```powershell
 statconvert convert data.sas7bdat data.csv
+statconvert convert data.sas7bdat data.xpt
 statconvert convert data.xpt data.parquet
 statconvert validate data.csv --to xpt
 ```
+
+XPT is a suggested writable SAS interchange destination, not an automatic or lossless
+replacement for SAS7BDAT. Choose CSV or Parquet instead when XPT compatibility is not
+required and their data model better fits the destination workflow.
 
 Target validation confirms that XPT is writable and reports general metadata concerns,
 but it does not prove compliance with every XPORT consumer restriction. StatConvert does
@@ -302,6 +328,7 @@ normal in-memory path.
 ```powershell
 statconvert convert input.csv output.json
 statconvert convert input.csv output.jsonl
+statconvert convert input.csv output.ndjson --stream --chunk-size 50000
 statconvert convert input.jsonl output.parquet
 ```
 

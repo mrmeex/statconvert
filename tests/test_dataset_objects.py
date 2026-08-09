@@ -130,7 +130,7 @@ def test_list_dataset_objects_rejects_single_dataset_format(tmp_path: Path) -> N
 
     with pytest.raises(
         ObjectSelectionNotSupportedError,
-        match="does not expose multiple dataset objects",
+        match=r"\.csv files contain one dataset and do not expose selectable objects",
     ):
         list_dataset_objects(input_file)
 
@@ -149,7 +149,10 @@ def test_objects_command_on_csv_exits_cleanly(tmp_path: Path) -> None:
     result = runner.invoke(app, ["objects", str(input_file)])
 
     assert result.exit_code == 0
-    assert "This format does not expose multiple dataset objects." in result.output
+    assert (
+        ".csv files contain one dataset and do not expose selectable objects."
+        in result.output
+    )
 
 
 def test_objects_command_json_on_csv_is_plain_json(tmp_path: Path) -> None:

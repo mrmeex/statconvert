@@ -164,12 +164,15 @@ read-only, and container formats can expose sheets or named objects that must be
 The [Format Guide](formats.md) contains the complete matrix, metadata behavior, and
 format-specific caveats. In the browser UI, **Reference** reads the same live registry.
 
-The registered read-only extensions are `.zsav`, `.por`, and `.sas7bdat`. JSON (`.json`)
-uses one records array, while JSON Lines (`.jsonl`) and newline-delimited JSON (`.ndjson`)
-store one record per line. Only CSV, JSONL, and NDJSON report streaming support, and that
-path is always opt-in. Candidate formats such as ORC, Avro, HDF5, MATLAB MAT, XML tables,
-HTML dataset tables, and DDI/codebooks are not currently supported; database files are
-also outside the supported format set.
+The registered read-only extensions are `.zsav`, `.por`, and `.sas7bdat`. Use `.sav` as
+the writable SPSS alternative to ZSAV or POR, and `.xpt` as the supported SAS interchange
+alternative to SAS7BDAT when those target models are appropriate. StatConvert never makes
+these substitutions automatically, and they are not promises of lossless equivalence.
+JSON (`.json`) uses one records array, while JSON Lines (`.jsonl`) and newline-delimited
+JSON (`.ndjson`) store one record per line. Only CSV, JSONL, and NDJSON report streaming
+support, and that path is always opt-in. Candidate formats such as ORC, Avro, HDF5, MATLAB
+MAT, XML tables, HTML dataset tables, and DDI/codebooks are not currently supported;
+database files are also outside the supported format set.
 
 ## Previewing a dataset
 

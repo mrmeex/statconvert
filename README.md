@@ -5,12 +5,12 @@ inspecting, validating, batch-processing, comparing, reporting, and logging stat
 datasets. It uses a backend registry and a common `Dataset` model so format-specific code
 stays out of conversion and analysis workflows.
 
-Version 1.1.0 improves consistency across existing format support. It hardens JSONL and
-NDJSON parity, reports truthful extension-level streaming capabilities, reconciles the
-browser Reference and format selectors with backend capabilities, and clarifies supported
-format documentation without adding a format family or runtime dependency. The local UI
-remains bound to the local machine and is installed through the optional `statconvert[ui]`
-extra. The CLI and its 11 base runtime dependencies remain unchanged.
+Version 1.1.1 deepens existing-format guidance and diagnostics. It adds actionable SAV
+and XPT alternatives to read-only format errors, makes single-dataset object messages
+identify the input extension, and expands the format, metadata-mode, sidecar, container,
+and JSON Lines guidance without adding a format family or runtime dependency. The local
+UI remains bound to the local machine and is installed through the optional
+`statconvert[ui]` extra. The CLI and its 11 base runtime dependencies remain unchanged.
 
 ## Implemented features
 
@@ -100,6 +100,9 @@ statconvert metadata input.sav --export-dictionary dictionary.xlsx
 statconvert metadata input.sav --export-script labels.R
 statconvert convert input.sav output.xlsx
 statconvert convert input.csv output.jsonl --stream --chunk-size 50000
+statconvert convert input.csv output.ndjson --stream --chunk-size 50000
+statconvert convert compressed.zsav writable.sav
+statconvert convert source.sas7bdat interchange.xpt
 statconvert convert input.sav new-output/output.xlsx --create-dirs
 statconvert convert workbook.xlsx output.csv --object Data
 statconvert convert workbook.xlsx combined.ods --all-objects

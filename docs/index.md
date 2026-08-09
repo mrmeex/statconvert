@@ -69,10 +69,11 @@ statconvert ui
 </section>
 
 <p>
-  StatConvert 1.1.0 improves consistency across existing format support, including
-  JSONL/NDJSON parity, truthful streaming capabilities, and richer browser Reference
-  details. It adds no new format family, database support, or runtime dependency. Install
-  the local interface with <code>statconvert[ui]</code>; the base CLI remains unchanged.
+  StatConvert 1.1.1 adds clearer existing-format guidance and diagnostics, including
+  writable alternatives for read-only inputs, extension-specific object messages,
+  metadata-mode explanations, and richer browser Reference caveats. It adds no new format
+  family, database support, or runtime dependency. Install the local interface with
+  <code>statconvert[ui]</code>; the base CLI remains unchanged.
 </p>
 
 <footer class="statconvert-home-footer">

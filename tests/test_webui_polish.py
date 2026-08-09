@@ -131,6 +131,16 @@ def test_reference_formats_are_friendly_sorted_and_describe_metadata() -> None:
     assert by_extension[".parquet"]["metadata_mode"] == "embedded + sidecar"
     assert by_extension[".sav"]["metadata_mode"] == "native, limited"
     assert by_extension[".csv"]["metadata_mode"] == "sidecar"
+    assert by_extension[".zsav"]["caveat"].endswith("write .sav instead.")
+    assert by_extension[".por"]["caveat"].endswith("write .sav instead.")
+    assert by_extension[".sas7bdat"]["caveat"].endswith(
+        "write .xpt for SAS interchange."
+    )
+    assert "formulas and styling are not preserved" in by_extension[".xlsx"][
+        "caveat"
+    ]
+    assert "nested flattening is unsupported" in by_extension[".json"]["caveat"]
+    assert "sidecar overrides embedded" in by_extension[".parquet"]["caveat"]
 
 
 def test_implementation_build_labels_are_removed_but_about_keeps_version() -> None:
@@ -155,7 +165,7 @@ def test_implementation_build_labels_are_removed_but_about_keeps_version() -> No
 
     version = _request(create_app(), "GET", "/api/version")
     assert version.status_code == 200
-    assert version.json()["version"] == "1.1.0"
+    assert version.json()["version"] == "1.1.1"
 
 
 def test_report_and_configs_page_polish_contracts() -> None:

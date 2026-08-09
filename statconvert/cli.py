@@ -1878,7 +1878,7 @@ def objects(
                     if json_output:
                         emit_json(dataset_objects)
                     else:
-                        show_objects_not_supported()
+                        show_objects_not_supported(path.suffix.lower())
                     return
 
                 logger.info("Object listing completed: objects=%s", len(dataset_objects))

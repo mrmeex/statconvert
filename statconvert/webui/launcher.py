@@ -35,7 +35,7 @@ def validate_host(host: str) -> str:
     normalized = host.strip().casefold()
     if normalized not in LOOPBACK_HOSTS:
         raise WebUiLaunchError(
-            f"StatConvert 1.1.0 is local-only and cannot bind to host '{host}'.",
+            f"StatConvert 1.1.1 is local-only and cannot bind to host '{host}'.",
             suggestion="Use --host 127.0.0.1 or --host localhost.",
         )
     return normalized

@@ -11,7 +11,7 @@ import typer
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_LOGGING_DIR = PROJECT_ROOT / "statconvert" / "logging"
 LICENSE_EXPRESSION = "AGPL-3.0-or-later"
-CURRENT_RELEASED_VERSION = "1.1.0"
+CURRENT_RELEASED_VERSION = "1.1.1"
 BASE_RUNTIME_DEPENDENCY_COUNT = 11
 REQUIRED_DOCS_DEPENDENCIES = {
     "mkdocs>=1.6,<2",

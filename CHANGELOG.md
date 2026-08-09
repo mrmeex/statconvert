@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.1.1 - 2026-08-09
+
+### Improved
+
+- Audited the complete 18-extension format surface across registry capabilities,
+  read/write paths, objects, metadata, sidecars, shared workflows, documentation, and
+  browser Reference data.
+- Added actionable writable alternatives to read-only format errors and caveats: SAV for
+  ZSAV/POR input and XPT for SAS7BDAT input.
+- Made object listing for single-dataset files identify the extension and explain that
+  there are no selectable objects, with focused API, CLI, registry, and Reference tests.
+- Added a compact supported-format and metadata-mode guide, practical read-only,
+  object-container, JSON Lines, and sidecar examples, and clearer warnings that suggested
+  writable alternatives are explicit conversions rather than automatic or lossless
+  replacements.
+- Refined registry-driven Reference caveats for spreadsheet presentation loss, partial
+  statistical metadata writes, JSON flattening limits, and Arrow sidecar precedence.
+- Added no new format family, database support, or runtime dependency.
+
 ## 1.1.0 - 2026-08-09
 
 ### Improved

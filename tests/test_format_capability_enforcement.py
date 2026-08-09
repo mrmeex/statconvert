@@ -13,6 +13,7 @@ from statconvert.inspection.validation import validate_target_compatibility
 from statconvert.registry import (
     can_read_format,
     can_write_format,
+    format_write_error,
     get_format_capabilities,
     list_formats,
 )
@@ -21,6 +22,11 @@ from statconvert.registry import (
 runner = CliRunner()
 XLRD_AVAILABLE = find_spec("xlrd") is not None
 XLWT_AVAILABLE = find_spec("xlwt") is not None
+READ_ONLY_ALTERNATIVES = {
+    ".por": ".sav",
+    ".sas7bdat": ".xpt",
+    ".zsav": ".sav",
+}
 
 
 @pytest.mark.parametrize(
@@ -50,6 +56,23 @@ def test_extension_capabilities_are_normalized_and_truthful(
 def test_unknown_extension_capability_checks_return_false() -> None:
     assert can_read_format("unknown") is False
     assert can_write_format("unknown") is False
+
+
+@pytest.mark.parametrize(
+    ("extension", "alternative"), READ_ONLY_ALTERNATIVES.items()
+)
+def test_read_only_formats_report_actionable_write_alternatives(
+    extension: str,
+    alternative: str,
+) -> None:
+    record = list_formats()[extension]
+
+    assert record["write_alternative"] == alternative
+    assert "Read-only" in record["caveat"]
+    assert alternative in record["caveat"]
+    assert format_write_error(extension) == (
+        f"Writing {extension} is not supported. Use {alternative} instead."
+    )
 
 
 @pytest.mark.parametrize("extension", ["zsav", "por", "sas7bdat"])

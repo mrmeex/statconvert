@@ -223,6 +223,13 @@ The detailed capability table shows the extension-refined object, streaming, and
 embedded metadata flags. Use Reference as the browser source of truth for the current
 installation; unsupported future candidates and database formats do not appear.
 
+Metadata modes are deliberately compact: **native, limited** means the format carries a
+supported subset itself; **native on read** identifies a read-only source; **sidecar**
+means normalized metadata is kept in the sibling StatConvert JSON file; and
+**embedded + sidecar** means Parquet/Feather also carry a fallback embedded copy, with the
+sibling sidecar taking precedence. Caveats call out read-only alternatives and the most
+important fidelity or object limitation; they are guidance, not automatic substitutions.
+
 ## Settings
 
 Settings controls the default working/path-browser folders, remembered paths, table page

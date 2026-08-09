@@ -82,7 +82,10 @@ FORMAT_INFO = {
         "supports_multiple_sheets": True,
         "supports_multiple_tables": False,
         "metadata_mode": "sidecar",
-        "caveat": "Named sheets; multi-sheet output is supported.",
+        "caveat": (
+            "Named sheets and multi-sheet output; formulas and styling are not "
+            "preserved."
+        ),
     },
 
     ".xls": {
@@ -98,59 +101,65 @@ FORMAT_INFO = {
         "supports_multiple_sheets": True,
         "supports_multiple_tables": False,
         "metadata_mode": "sidecar",
-        "caveat": "Legacy BIFF limits and single-sheet output.",
+        "caveat": (
+            "Legacy BIFF limits; single-sheet output; formulas and styling are not "
+            "preserved."
+        ),
     },
 
     ".sav": {
         "name": "SPSS SAV",
         "backend": "pyreadstat",
         "metadata_mode": "native, limited",
-        "caveat": "Native statistical metadata writeback is partial.",
+        "caveat": "Native labels and formats are written where supported; fidelity is partial.",
     },
 
     ".zsav": {
         "name": "SPSS Compressed (ZSAV)",
         "backend": "pyreadstat",
         "can_write": False,
+        "write_alternative": ".sav",
         "metadata_mode": "native on read",
-        "caveat": "Read-only.",
+        "caveat": "Read-only compressed SPSS input; write .sav instead.",
     },
 
     ".por": {
         "name": "SPSS Portable",
         "backend": "pyreadstat",
         "can_write": False,
+        "write_alternative": ".sav",
         "metadata_mode": "native on read",
-        "caveat": "Read-only.",
+        "caveat": "Read-only SPSS Portable input; write .sav instead.",
     },
 
     ".dta": {
         "name": "Stata",
         "backend": "pyreadstat",
         "metadata_mode": "native, limited",
-        "caveat": "Native statistical metadata writeback is partial.",
+        "caveat": "Native labels and formats are written where supported; fidelity is partial.",
     },
 
     ".sas7bdat": {
         "name": "SAS Dataset",
         "backend": "pyreadstat",
         "can_write": False,
+        "write_alternative": ".xpt",
         "metadata_mode": "native on read",
-        "caveat": "Read-only.",
+        "caveat": "Read-only SAS dataset input; write .xpt for SAS interchange.",
     },
 
     ".xpt": {
         "name": "SAS XPORT",
         "backend": "pyreadstat",
         "metadata_mode": "native, limited",
-        "caveat": "Only supported XPORT metadata is written.",
+        "caveat": "Writes supported XPORT column labels and formats, but not value labels.",
     },
 
     ".json": {
         "name": "JSON",
         "backend": "json",
         "metadata_mode": "sidecar",
-        "caveat": "One records array; not a streaming format.",
+        "caveat": "One records array; non-streaming; arbitrary nested flattening is unsupported.",
     },
 
     ".ndjson": {
@@ -173,14 +182,14 @@ FORMAT_INFO = {
         "name": "Apache Parquet",
         "backend": "arrow",
         "metadata_mode": "embedded + sidecar",
-        "caveat": "Typed columnar data; Snappy compression is the default.",
+        "caveat": "Typed data; a sibling sidecar overrides embedded StatConvert metadata.",
     },
 
     ".feather": {
         "name": "Apache Feather",
         "backend": "arrow",
         "metadata_mode": "embedded + sidecar",
-        "caveat": "Typed columnar data; the pandas index is reset on write.",
+        "caveat": "Typed data with a reset index; a sibling sidecar overrides embedded metadata.",
     },
 
     ".rds": {
@@ -230,7 +239,10 @@ FORMAT_INFO = {
         "supports_multiple_sheets": True,
         "supports_multiple_tables": False,
         "metadata_mode": "sidecar",
-        "caveat": "Named sheets; multi-sheet output is supported.",
+        "caveat": (
+            "Named sheets and multi-sheet output; formulas and styling are not "
+            "preserved."
+        ),
     },
 }
 
@@ -499,7 +511,8 @@ def list_dataset_objects(path: str | Path) -> list[DatasetObjectInfo]:
         raise ValueError(f"Input file does not exist: {filename}")
     if not format_supports_objects(extension):
         raise ObjectSelectionNotSupportedError(
-            "This format does not expose multiple dataset objects."
+            f"{extension} files contain one dataset and do not expose selectable "
+            "objects."
         )
 
     reader = get_reader_for_file(filename)

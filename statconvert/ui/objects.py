@@ -36,10 +36,12 @@ def show_dataset_objects(objects: Sequence[DatasetObjectInfo]) -> None:
     console.print(table)
 
 
-def show_objects_not_supported() -> None:
+def show_objects_not_supported(extension: str) -> None:
     """Explain that a single-dataset format has no object listing."""
 
-    console.print("This format does not expose multiple dataset objects.")
+    console.print(
+        f"{extension} files contain one dataset and do not expose selectable objects."
+    )
 
 
 def show_object_discovery_report(report: ObjectDiscoveryReport) -> None:

@@ -248,6 +248,14 @@ direct equivalent for every SPSS metadata feature. Keep the generated
 `.statconvert-metadata.json` sidecar beside the XLSX file when later StatConvert reads
 should restore normalized metadata.
 
+ZSAV and POR are read-only inputs. Convert to SAV only when SAV is appropriate for the
+receiving SPSS workflow; the alternative is explicit rather than automatic:
+
+```powershell
+statconvert convert .\input\compressed.zsav .\output\compressed.sav
+statconvert convert .\input\legacy.por .\output\legacy.sav
+```
+
 ## Convert Stata to Parquet
 
 Parquet is useful for typed analytics and data-engineering pipelines:
@@ -269,28 +277,21 @@ analytics-oriented Parquet file:
 
 ```powershell
 statconvert convert .\input\data.xpt .\output\data.csv
-statconvert convert .\input\data.sav .\output\data.xlsx --input-encoding cp1252
-statconvert convert .\input\data.csv .\output\data.xlsx --input-encoding latin1 --csv-delimiter ";"
-statconvert convert .\input\data.xlsx .\output\data.csv --output-encoding utf-8-sig --csv-delimiter ";"
-statconvert convert .\input\legacy.csv .\output\clean.csv --input-encoding latin1 --output-encoding utf-8-sig --csv-delimiter ";"
-statconvert convert .\input\data.xlsx .\output\data.csv --csv-delimiter ";" --csv-decimal ","
 statconvert convert .\input\data.xpt .\output\data.parquet
 ```
 
-SAS7BDAT is read-only, so it can be a source but not a destination:
+SAS7BDAT is read-only, so it can be a source but not a destination. XPT is the suggested
+writable SAS interchange alternative when its stricter data and metadata model is
+appropriate; this conversion is not automatic or guaranteed to be lossless:
 
 ```powershell
 statconvert convert .\input\data.sas7bdat .\output\data.parquet
+statconvert convert .\input\source.sas7bdat .\output\source.xpt
 ```
 
 Metadata fidelity depends on the destination. See the
 [SAS and XPT format guidance](formats.md#sas-sas7bdat-and-xpt) before relying on a
 cross-format round trip.
-
-Encoding and CSV controls are available only on `convert`, `collect`, `transform`, and `batch`.
-Input and output encodings are independent; unsupported backends warn and ignore the
-relevant directional option. These controls are not added to `peek`, `info`, `compare`,
-or other read-only commands.
 
 ## Convert CSV to Excel XLSX
 
@@ -311,6 +312,7 @@ NDJSON:
 
 ```powershell
 python -m statconvert convert input.csv output.jsonl --stream --chunk-size 100000 --overwrite
+statconvert convert .\input\data.csv .\output\data.ndjson --stream --chunk-size 50000
 python -m statconvert batch input-folder output-folder --to jsonl --stream --chunk-size 100000 --overwrite
 statconvert convert .\input\data.jsonl .\output\data.csv --stream --chunk-size 50000
 ```

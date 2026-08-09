@@ -56,6 +56,17 @@ option. Other applications usually ignore this sidecar.
 format. An incomplete environment can make legacy XLS unavailable; the CLI reports a
 specific `xlrd` read or `xlwt` write dependency error in that case.
 
+This 18-extension table is the supported dataset boundary. The browser UI's **Reference**
+page reads the live registry and is the quickest visual check of the capabilities in the
+current installation. It also shows the registry's concise metadata mode and important
+caveat for each extension.
+
+StatConvert does not currently support database files, ORC, Avro, HDF5/HDFStore, MATLAB
+MAT, general XML tables, HTML tables as dataset files, or DDI/codebook import or export.
+Those names are not valid conversion targets. Static HTML remains available for dataset
+and comparison reports; that report output is not an HTML data backend. Future-format
+research is not a support commitment.
+
 ## Choosing an output format
 
 - Use `.xlsx` for general delivery to Excel users and for data beyond legacy XLS limits.
@@ -295,7 +306,9 @@ statconvert convert input.jsonl output.parquet
 ```
 
 Arbitrary nested-document flattening is not implemented. Input must be compatible with
-pandas' tabular JSON reader, and statistical metadata is stored only in a sidecar.
+pandas' tabular JSON reader. Statistical metadata uses the standard sibling sidecar for
+normal JSON-family conversion and for successful streamed JSONL/NDJSON output; streaming
+is always opt-in.
 
 ## Parquet and Feather
 
@@ -494,4 +507,5 @@ StatConvert does not currently provide:
   relative tolerances, or chunked comparison; or
 - human-readable descriptions of raw display-format codes.
 
-These limitations are intentionally outside the current supported capability set.
+These boundaries are intentional. Use `statconvert formats` and
+`statconvert capabilities FORMAT` for the current runtime capability source of truth.

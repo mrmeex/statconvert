@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+import re
 
 import httpx
 import pytest
@@ -44,9 +45,12 @@ def test_frontend_polish_contracts_are_centralized() -> None:
     assert "Locations" not in picker
     assert "<Table.Thead>" not in picker
     assert 'csv: "CSV (*.csv)"' in formats
-    assert 'xlsx: "Excel (*.xlsx)"' in formats
-    assert 'sav: "SPSS (*.sav)"' in formats
+    assert 'xlsx: "Excel Workbook (*.xlsx)"' in formats
+    assert 'sav: "SPSS SAV (*.sav)"' in formats
     assert 'dta: "Stata (*.dta)"' in formats
+    assert 'xpt: "SAS XPORT (*.xpt)"' in formats
+    assert 'jsonl: "JSON Lines (*.jsonl)"' in formats
+    assert 'ndjson: "Newline-delimited JSON (*.ndjson)"' in formats
     assert ".sort((left, right) => left.label.localeCompare(right.label))" in formats
     for status, color in (
         ('case "running"', 'return "blue"'),
@@ -64,6 +68,28 @@ def test_frontend_polish_contracts_are_centralized() -> None:
 
 
 def test_format_selectors_keep_payload_values_and_use_friendly_options() -> None:
+    root = Path(__file__).resolve().parents[1]
+    format_source = (root / "ui-frontend" / "src" / "lib" / "formats.ts").read_text(
+        encoding="utf-8"
+    )
+    match = re.search(
+        r"export const writableFormatValues = (\[.*?\]) as const;",
+        format_source,
+        re.DOTALL,
+    )
+    assert match is not None
+    selector_values = set(re.findall(r'"([a-z0-9]+)"', match.group(1)))
+
+    from statconvert.registry import list_formats
+
+    writable_registry_values = {
+        extension.lstrip(".")
+        for extension, info in list_formats().items()
+        if info["can_write"]
+    }
+    assert selector_values == writable_registry_values
+    assert {"por", "sas7bdat", "zsav"}.isdisjoint(selector_values)
+
     pages = Path(__file__).resolve().parents[1] / "ui-frontend" / "src" / "pages"
     for page_name in (
         "ConvertPage.tsx",
@@ -72,9 +98,39 @@ def test_format_selectors_keep_payload_values_and_use_friendly_options() -> None
         "TransformPage.tsx",
     ):
         page = (pages / page_name).read_text(encoding="utf-8")
-        assert 'import { formatOptions } from "../lib/formats"' in page
+        assert 'import { writableFormatOptions } from "../lib/formats"' in page
         assert "data={formats}" in page
         assert "target_format: targetFormat" in page
+        assert "const formats = writableFormatOptions" in page
+
+
+def test_json_family_reference_streaming_capabilities_are_truthful() -> None:
+    response = _request(create_app(), "GET", "/api/reference/capabilities")
+    rows = {
+        row["extension"]: row
+        for row in response.json()["data"]["rows"]
+    }
+
+    assert response.status_code == 200
+    assert rows[".json"]["supports_streaming"] is False
+    assert rows[".jsonl"]["supports_streaming"] is True
+    assert rows[".ndjson"]["supports_streaming"] is True
+
+
+def test_reference_formats_are_friendly_sorted_and_describe_metadata() -> None:
+    response = _request(create_app(), "GET", "/api/reference/formats")
+    rows = response.json()["data"]["rows"]
+
+    assert response.status_code == 200
+    assert [(row["name"].casefold(), row["extension"]) for row in rows] == sorted(
+        (row["name"].casefold(), row["extension"]) for row in rows
+    )
+    assert all(row["metadata_mode"] for row in rows)
+    assert all(row["caveat"] for row in rows)
+    by_extension = {row["extension"]: row for row in rows}
+    assert by_extension[".parquet"]["metadata_mode"] == "embedded + sidecar"
+    assert by_extension[".sav"]["metadata_mode"] == "native, limited"
+    assert by_extension[".csv"]["metadata_mode"] == "sidecar"
 
 
 def test_implementation_build_labels_are_removed_but_about_keeps_version() -> None:
@@ -99,7 +155,7 @@ def test_implementation_build_labels_are_removed_but_about_keeps_version() -> No
 
     version = _request(create_app(), "GET", "/api/version")
     assert version.status_code == 200
-    assert version.json()["version"] == "1.0.1"
+    assert version.json()["version"] == "1.1.0"
 
 
 def test_report_and_configs_page_polish_contracts() -> None:

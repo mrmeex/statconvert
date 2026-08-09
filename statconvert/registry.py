@@ -66,6 +66,9 @@ FORMAT_INFO = {
     ".csv": {
         "name": "CSV",
         "backend": "csv",
+        "supports_streaming": True,
+        "metadata_mode": "sidecar",
+        "caveat": "Single-table text with no native statistical metadata.",
     },
 
     ".xlsx": {
@@ -78,6 +81,8 @@ FORMAT_INFO = {
         "output_object_kind": "sheet",
         "supports_multiple_sheets": True,
         "supports_multiple_tables": False,
+        "metadata_mode": "sidecar",
+        "caveat": "Named sheets; multi-sheet output is supported.",
     },
 
     ".xls": {
@@ -92,64 +97,90 @@ FORMAT_INFO = {
         "output_object_kind": None,
         "supports_multiple_sheets": True,
         "supports_multiple_tables": False,
+        "metadata_mode": "sidecar",
+        "caveat": "Legacy BIFF limits and single-sheet output.",
     },
 
     ".sav": {
         "name": "SPSS SAV",
         "backend": "pyreadstat",
+        "metadata_mode": "native, limited",
+        "caveat": "Native statistical metadata writeback is partial.",
     },
 
     ".zsav": {
         "name": "SPSS Compressed (ZSAV)",
         "backend": "pyreadstat",
         "can_write": False,
+        "metadata_mode": "native on read",
+        "caveat": "Read-only.",
     },
 
     ".por": {
         "name": "SPSS Portable",
         "backend": "pyreadstat",
         "can_write": False,
+        "metadata_mode": "native on read",
+        "caveat": "Read-only.",
     },
 
     ".dta": {
         "name": "Stata",
         "backend": "pyreadstat",
+        "metadata_mode": "native, limited",
+        "caveat": "Native statistical metadata writeback is partial.",
     },
 
     ".sas7bdat": {
         "name": "SAS Dataset",
         "backend": "pyreadstat",
         "can_write": False,
+        "metadata_mode": "native on read",
+        "caveat": "Read-only.",
     },
 
     ".xpt": {
         "name": "SAS XPORT",
         "backend": "pyreadstat",
+        "metadata_mode": "native, limited",
+        "caveat": "Only supported XPORT metadata is written.",
     },
 
     ".json": {
         "name": "JSON",
         "backend": "json",
+        "metadata_mode": "sidecar",
+        "caveat": "One records array; not a streaming format.",
     },
 
     ".ndjson": {
-        "name": "Newline Delimited JSON",
+        "name": "Newline-delimited JSON",
         "backend": "json",
+        "supports_streaming": True,
+        "metadata_mode": "sidecar",
+        "caveat": "One record per line; streaming is opt-in.",
     },
 
     ".jsonl": {
         "name": "JSON Lines",
         "backend": "json",
+        "supports_streaming": True,
+        "metadata_mode": "sidecar",
+        "caveat": "One record per line; streaming is opt-in.",
     },
 
     ".parquet": {
         "name": "Apache Parquet",
         "backend": "arrow",
+        "metadata_mode": "embedded + sidecar",
+        "caveat": "Typed columnar data; Snappy compression is the default.",
     },
 
     ".feather": {
         "name": "Apache Feather",
         "backend": "arrow",
+        "metadata_mode": "embedded + sidecar",
+        "caveat": "Typed columnar data; the pandas index is reset on write.",
     },
 
     ".rds": {
@@ -160,6 +191,8 @@ FORMAT_INFO = {
         "object_kind": None,
         "supports_multiple_sheets": False,
         "supports_multiple_tables": False,
+        "metadata_mode": "sidecar",
+        "caveat": "One tabular object; object selection is not supported.",
     },
 
     ".rdata": {
@@ -170,6 +203,8 @@ FORMAT_INFO = {
         "object_kind": "r_object",
         "supports_multiple_sheets": False,
         "supports_multiple_tables": True,
+        "metadata_mode": "sidecar",
+        "caveat": "Named tabular objects require selection when ambiguous.",
     },
 
     ".rda": {
@@ -180,6 +215,8 @@ FORMAT_INFO = {
         "object_kind": "r_object",
         "supports_multiple_sheets": False,
         "supports_multiple_tables": True,
+        "metadata_mode": "sidecar",
+        "caveat": "Named tabular objects require selection when ambiguous.",
     },
 
     ".ods": {
@@ -192,6 +229,8 @@ FORMAT_INFO = {
         "output_object_kind": "sheet",
         "supports_multiple_sheets": True,
         "supports_multiple_tables": False,
+        "metadata_mode": "sidecar",
+        "caveat": "Named sheets; multi-sheet output is supported.",
     },
 }
 
@@ -680,6 +719,9 @@ def get_format_capabilities(target: str) -> BackendCapabilities:
                 backend_capabilities.supports_multiple_tables,
             )
         ),
+        supports_streaming=bool(
+            info.get("supports_streaming", backend_capabilities.supports_streaming)
+        ),
     )
 
 
@@ -772,6 +814,7 @@ def _format_info_with_capabilities(extension: str) -> dict[str, Any]:
     info["output_object_kind"] = capabilities.output_object_kind
     info["supports_multiple_sheets"] = capabilities.supports_multiple_sheets
     info["supports_multiple_tables"] = capabilities.supports_multiple_tables
+    info["supports_streaming"] = capabilities.supports_streaming
     return info
 
 

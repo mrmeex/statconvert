@@ -11,9 +11,9 @@ import type { DataResponse, ReferenceData } from "../lib/types";
 type ReferenceKind = "formats" | "backends" | "capabilities";
 
 const columns: Record<ReferenceKind, string[]> = {
-  formats: ["extension", "name", "backend", "can_read", "can_write", "object_selection", "multi_object_write"],
+  formats: ["extension", "name", "backend", "can_read", "can_write", "supports_streaming", "metadata_mode", "object_kind", "multi_object_write", "caveat"],
   backends: ["backend", "implementation", "can_read", "can_write", "supports_streaming", "supports_custom_metadata", "object_selection"],
-  capabilities: ["extension", "format", "backend", "can_read", "can_write", "object_selection", "multi_object_write", "supports_streaming", "supports_variable_labels", "supports_value_labels"],
+  capabilities: ["extension", "format", "backend", "can_read", "can_write", "is_container", "object_selection", "object_kind", "multi_object_write", "supports_streaming", "supports_variable_labels", "supports_value_labels", "supports_custom_metadata"],
 };
 
 function cell(value: unknown) {

@@ -35,6 +35,21 @@ statconvert --version
 Use `python -m statconvert --version` when the console command is not on `PATH`. Missing
 dependencies appear as `not installed`.
 
+Check the authoritative installed extension matrix before choosing unfamiliar inputs or
+outputs:
+
+```powershell
+statconvert formats
+statconvert capabilities .json
+statconvert capabilities jsonl
+statconvert capabilities ndjson
+```
+
+The matrix distinguishes the read-only `.zsav`, `.por`, and `.sas7bdat` extensions from
+writable targets. It also shows that normal JSON arrays are not streamed, while JSONL and
+NDJSON support the explicit streaming path. The browser UI presents the same live records
+under **Reference**.
+
 ## Basic conversion
 
 Convert a CSV file to Parquet and intentionally replace an existing destination:
@@ -820,7 +835,7 @@ statconvert transform .\input\data.csv .\output\adults-nl.csv --filter-expressio
 Comparisons, `and`, `or`, `not`, parentheses, and defined numeric arithmetic are
 supported. Python `eval`, imports, arbitrary calls, timezone or natural-language date
 helpers, and aggregate, window, group, or join functions are not available. See the
-[CLI Reference](cli.md#transform) for the supported grammar and functions.
+[CLI Reference](cli.md#transform) for the exact grammar and evaluation rules.
 
 The legacy structured filter remains supported. Keep rows where `age` is at least 18:
 
@@ -1006,5 +1021,5 @@ format, metadata, or value differences rather than a command crash.
 | I need automation output | [Use JSON output in scripts](#use-json-output-in-scripts) and [Write logs for troubleshooting](#write-logs-for-troubleshooting) |
 
 For deeper behavior, return to the [User Guide](user-guide.md),
-[CLI Reference](cli.md) or [Format Guide](formats.md). StatConvert is licensed under the
-[GNU Affero General Public License v3.0 or later](license.md).
+[CLI Reference](cli.md), or [Format Guide](formats.md). StatConvert is licensed under the
+[GNU Affero General Public License v3.0 or later](../LICENSE).

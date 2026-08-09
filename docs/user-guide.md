@@ -162,7 +162,14 @@ statconvert capabilities rdata
 Read support, write support, and metadata support vary by format. Some formats are
 read-only, and container formats can expose sheets or named objects that must be selected.
 The [Format Guide](formats.md) contains the complete matrix, metadata behavior, and
-format-specific caveats.
+format-specific caveats. In the browser UI, **Reference** reads the same live registry.
+
+The registered read-only extensions are `.zsav`, `.por`, and `.sas7bdat`. JSON (`.json`)
+uses one records array, while JSON Lines (`.jsonl`) and newline-delimited JSON (`.ndjson`)
+store one record per line. Only CSV, JSONL, and NDJSON report streaming support, and that
+path is always opt-in. Candidate formats such as ORC, Avro, HDF5, MATLAB MAT, XML tables,
+HTML dataset tables, and DDI/codebooks are not currently supported; database files are
+also outside the supported format set.
 
 ## Previewing a dataset
 
@@ -906,7 +913,7 @@ preserved unless `--recode-default` is supplied; existing missing values remain 
 
 Use `transform --dry-run` to inspect the planned pipeline without writing. The complete
 syntax for filters, recoding, type errors, validation, and object selection is in the
-[CLI Reference](cli.md#transform), including supported functions and operators,
+[CLI Reference](cli.md#transform), including every supported function and operator,
 bracketed references for awkward column names, ordered recipe semantics, and the closed
 evaluator's security boundary.
 
@@ -1022,6 +1029,5 @@ run the single-dataset files without `--object`.
 - [Examples and Recipes](examples.md) for copyable task-oriented workflows
 - [CLI Reference](cli.md) for every command option and exit policy
 - [Format Guide](formats.md) for the capability matrix and format caveats
-- [CLI Reference](cli.md#transform) for safe expressions and ordered recipes
 - [Administrator Guide](admin-guide.md) for installation, updates, and deployment
-- [License](license.md) for the GNU AGPLv3-or-later terms
+- [License](../LICENSE) for the GNU AGPLv3-or-later terms

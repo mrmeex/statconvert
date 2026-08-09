@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.1.0 - 2026-08-09
+
+### Improved
+
+- Made extension-level capabilities report streaming support for CSV, JSONL, and NDJSON
+  while continuing to report normal JSON arrays as non-streaming.
+- Added NDJSON beside JSONL in browser Convert, Batch Convert, Validate, and Transform
+  target selectors; both retain friendly labels and alphabetical display sorting.
+- Made normal and streaming malformed-input errors distinguish JSON Lines from NDJSON.
+- Added parity coverage for normal JSONL/NDJSON sidecars, line-oriented writes, batch and
+  config conversion, shared inspection/compare/validate/report workflows, CLI/reference
+  capabilities, and browser selector presence.
+- Reconciled the 18-extension registry, CLI format table, browser Reference, centralized
+  target selectors, and public format guidance. Reference now exposes friendly-sorted
+  metadata modes and caveats; target selectors include every normally writable extension
+  and no longer offer read-only SAS7BDAT.
+- Added no new format family, database support, or runtime dependency.
+
 ## 1.0.1 - UI polish and Compare correctness
 
 ### Improved

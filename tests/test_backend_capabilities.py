@@ -133,14 +133,15 @@ def test_registry_get_backend_capabilities_for_sav_file():
     assert capabilities.supports_variable_labels is True
 
 
-def test_registry_get_backend_capabilities_for_csv_file():
+def test_registry_refines_csv_backend_capabilities_for_streaming():
 
     capabilities = get_backend_capabilities_for_file(
         "example.csv"
     )
 
-    assert capabilities == CSVBackend.capabilities
     assert capabilities.supports_any_metadata() is False
+    assert capabilities.supports_streaming is True
+    assert CSVBackend.capabilities.supports_streaming is False
 
 
 def test_list_backend_capabilities_returns_registered_backends():

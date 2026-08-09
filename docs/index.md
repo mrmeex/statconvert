@@ -69,9 +69,10 @@ statconvert ui
 </section>
 
 <p>
-  StatConvert 1.0.1 is a focused patch release for browser-UI polish and Compare
-  correctness. Install the local interface with <code>statconvert[ui]</code>; the CLI and
-  its base dependency set remain unchanged.
+  StatConvert 1.1.0 improves consistency across existing format support, including
+  JSONL/NDJSON parity, truthful streaming capabilities, and richer browser Reference
+  details. It adds no new format family, database support, or runtime dependency. Install
+  the local interface with <code>statconvert[ui]</code>; the base CLI remains unchanged.
 </p>
 
 <footer class="statconvert-home-footer">

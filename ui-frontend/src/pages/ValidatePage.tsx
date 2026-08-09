@@ -19,10 +19,10 @@ import { PathPickerField } from "../components/PathPickerField";
 import { ResultView } from "../components/ResultView";
 import { WorkflowHeader } from "../components/WorkflowHeader";
 import { executeWorkflow, planWorkflow } from "../lib/api";
-import { formatOptions } from "../lib/formats";
+import { writableFormatOptions } from "../lib/formats";
 import type { PlanResponse } from "../lib/types";
 
-const formats = formatOptions(["csv", "json", "jsonl", "parquet", "feather", "xlsx", "ods", "sav", "dta", "rds"]);
+const formats = writableFormatOptions;
 
 export function ValidatePage() {
   const [inputPath, setInputPath] = useState("");

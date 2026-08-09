@@ -47,9 +47,11 @@ browser after you confirm a starting folder. Navigation stays inside that folder
 descendants. Settings can remember the most recently selected input and output folders,
 or disable that behavior completely. A drive/common-location starting view is deferred.
 
-Format fields use friendly names such as **CSV (*.csv)**, **Excel (*.xlsx)**, and
-**Stata (*.dta)**. They are sorted by the displayed name; generated commands and API
-requests continue to use the established extension values.
+Format fields use registry-aligned friendly names such as **CSV (*.csv)**,
+**Excel Workbook (*.xlsx)**, and **Stata (*.dta)**. They are sorted by the displayed
+name; generated commands and API requests continue to use the established extension
+values. Dataset target selectors share one list of the 15 normally writable extensions,
+so read-only ZSAV, POR, and SAS7BDAT are not offered as destinations.
 
 ## Results and raw details
 
@@ -87,6 +89,10 @@ the default browser target. If an output path has no extension, the UI appends t
 selected target extension. An explicit different extension is preserved and reported so
 you can resolve the mismatch yourself.
 
+JSON is the normal records-array format. JSON Lines (`.jsonl`) and newline-delimited JSON
+(`.ndjson`) are separate friendly target choices and write one record object per line.
+Target choices are sorted by their displayed labels.
+
 Enable **Overwrite existing output** only when replacing a file is intentional. Enable
 **Create missing directories** when the output's parent folder does not exist. Streaming
 controls appear for eligible line-oriented text workflows.
@@ -95,7 +101,8 @@ controls appear for eligible line-oriented text workflows.
 
 Batch Convert discovers supported files in an input folder and plans their output paths.
 Use **Include subfolders** for recursive discovery and preserve the folder structure when
-needed. Parquet is the default browser target.
+needed. Parquet is the default browser target. JSONL and NDJSON are both available as
+line-delimited targets.
 
 Workbook and other container formats require an explicit object policy: convert every
 supported object, or apply one object name/index to every input. Automatic mode pauses
@@ -210,8 +217,11 @@ output collision policy before collection runs.
 ## Reference
 
 Reference reads the active registries to show formats, backends, and format-refined
-capabilities. Use it to check read/write, object-selection, streaming, and metadata
-support in the current installation.
+capabilities. Format rows are sorted by friendly name and show read/write, streaming,
+metadata mode, object kind, multi-sheet output capability, and the most important caveat.
+The detailed capability table shows the extension-refined object, streaming, and native or
+embedded metadata flags. Use Reference as the browser source of truth for the current
+installation; unsupported future candidates and database formats do not appear.
 
 ## Settings
 
@@ -269,4 +279,4 @@ starting the job.
 
 For detailed command options, see the [CLI Reference](cli.md). For general workflows, see
 the [User Guide](user-guide.md) and [Examples and Recipes](examples.md). StatConvert is
-licensed under the [GNU Affero General Public License v3.0 or later](license.md).
+licensed under the [GNU Affero General Public License v3.0 or later](../LICENSE).

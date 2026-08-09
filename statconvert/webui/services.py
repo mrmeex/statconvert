@@ -1295,6 +1295,7 @@ def reference_formats() -> dict[str, Any]:
         {"extension": extension, **make_json_safe(info)}
         for extension, info in list_formats().items()
     ]
+    rows.sort(key=lambda row: (str(row["name"]).casefold(), row["extension"]))
     return {"rows": rows, "count": len(rows), "command": "statconvert formats"}
 
 
@@ -1327,6 +1328,7 @@ def reference_capabilities() -> dict[str, Any]:
                     "can_read", "can_write", "is_container", "object_selection",
                     "object_kind", "multi_object_write", "output_object_kind",
                     "supports_multiple_sheets", "supports_multiple_tables",
+                    "supports_streaming",
                 )
             }
         )
@@ -1338,6 +1340,7 @@ def reference_capabilities() -> dict[str, Any]:
                 **make_json_safe(capability),
             }
         )
+    rows.sort(key=lambda row: (str(row["format"]).casefold(), row["extension"]))
     return {"rows": rows, "count": len(rows), "command": "statconvert capabilities"}
 
 

@@ -79,7 +79,7 @@ class JsonBackend(Backend):
             raise
         except Exception as exc:
             raise ConversionError(
-                f"Failed reading chunked JSON Lines file: {exc}"
+                f"Failed reading chunked {_json_format_name(extension)} file: {exc}"
             ) from exc
 
         if not yielded:
@@ -130,8 +130,8 @@ class JsonBackend(Backend):
         Read a JSON file into a Dataset.
         """
 
+        extension = Path(filename).suffix.lower()
         try:
-            extension = Path(filename).suffix.lower()
             lines_mode = extension in {".ndjson", ".jsonl"}
 
             read_options = {
@@ -144,10 +144,10 @@ class JsonBackend(Backend):
                 **read_options
             )
 
-        except Exception as e:
+        except Exception as exc:
             raise ConversionError(
-                f"Failed reading JSON file: {e}"
-            )
+                f"Failed reading {_json_format_name(extension)} file: {exc}"
+            ) from exc
 
 
         metadata = {
@@ -189,8 +189,8 @@ class JsonBackend(Backend):
         Write Dataset to JSON.
         """
 
+        extension = Path(filename).suffix.lower()
         try:
-            extension = Path(filename).suffix.lower()
             lines_mode = extension in {".ndjson", ".jsonl"}
 
             write_options = {
@@ -220,10 +220,10 @@ class JsonBackend(Backend):
                 filename
             )
 
-        except Exception as e:
+        except Exception as exc:
             raise ConversionError(
-                f"Failed writing JSON file: {e}"
-            )
+                f"Failed writing {_json_format_name(extension)} file: {exc}"
+            ) from exc
 
     @staticmethod
     def _can_use_chunked_records(write_options: dict[str, object]) -> bool:
@@ -320,6 +320,7 @@ class _JsonLinesChunkWriter(TransactionalChunkWriter):
         create_dirs: bool,
         write_kwargs: dict[str, Any],
     ) -> None:
+        self.format_name = _json_format_name(Path(target_path).suffix.lower())
         self.write_kwargs = {
             **write_kwargs,
             "orient": "records",
@@ -353,5 +354,15 @@ class _JsonLinesChunkWriter(TransactionalChunkWriter):
                     output.write("\n")
         except Exception as exc:
             raise ConversionError(
-                f"Failed writing chunked JSON Lines file: {exc}"
+                f"Failed writing chunked {self.format_name} file: {exc}"
             ) from exc
+
+
+def _json_format_name(extension: str) -> str:
+    """Return the user-facing JSON family name for backend errors."""
+
+    if extension == ".jsonl":
+        return "JSON Lines"
+    if extension == ".ndjson":
+        return "NDJSON"
+    return "JSON"

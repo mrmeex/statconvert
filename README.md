@@ -5,9 +5,12 @@ inspecting, validating, batch-processing, comparing, reporting, and logging stat
 datasets. It uses a backend registry and a common `Dataset` model so format-specific code
 stays out of conversion and analysis workflows.
 
-Version 1.0.1 is a focused patch release for browser-UI polish and Compare correctness.
-The local UI remains bound to the local machine and is installed through the optional
-`statconvert[ui]` extra. The CLI and its 11 base runtime dependencies remain unchanged.
+Version 1.1.0 improves consistency across existing format support. It hardens JSONL and
+NDJSON parity, reports truthful extension-level streaming capabilities, reconciles the
+browser Reference and format selectors with backend capabilities, and clarifies supported
+format documentation without adding a format family or runtime dependency. The local UI
+remains bound to the local machine and is installed through the optional `statconvert[ui]`
+extra. The CLI and its 11 base runtime dependencies remain unchanged.
 
 ## Implemented features
 
@@ -176,6 +179,12 @@ restrictions include:
 - `.zsav`, `.por`, and `.sas7bdat` are readable but not writable.
 - Statistical metadata preservation depends on the destination. Metadata-poor formats use
   a `*.statconvert-metadata.json` sidecar when written by StatConvert.
+
+The runtime registry contains 18 extensions across CSV, spreadsheet, statistical,
+JSON-record, Arrow-columnar, and R format families. The local browser **Reference** page
+reads that same registry and shows read/write, streaming, metadata mode, object support,
+and important caveats. StatConvert does not currently support database files, ORC, Avro,
+HDF5, MATLAB MAT, XML tables, HTML tables as datasets, or DDI/codebook import/export.
 
 See [Examples and Recipes](docs/examples.md) for copyable workflows, the
 [Format Guide](docs/formats.md) for the complete extension matrix, and the

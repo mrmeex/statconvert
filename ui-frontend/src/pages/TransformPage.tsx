@@ -17,14 +17,14 @@ import { TomlPreview } from "../components/TomlPreview";
 import { TransformStepEditor } from "../components/TransformStepEditor";
 import { WorkflowHeader } from "../components/WorkflowHeader";
 import { executeWorkflow, postJson } from "../lib/api";
-import { formatOptions } from "../lib/formats";
+import { writableFormatOptions } from "../lib/formats";
 import { ensureOutputExtension, outputExtensionWarning, updateGeneratedExtension } from "../lib/outputPath";
 import type {
   TransformPlanResponse, TransformPreviewResponse, TransformStep,
   TransformStepType,
 } from "../lib/types";
 
-const formats = formatOptions(["csv", "json", "jsonl", "parquet", "feather", "xlsx", "ods", "sav", "dta", "rds"]);
+const formats = writableFormatOptions;
 const stepTypes: Array<{ value: TransformStepType; label: string }> = [
   { value: "select", label: "Select columns" }, { value: "drop", label: "Drop columns" },
   { value: "rename", label: "Rename columns" }, { value: "convert_type", label: "Convert type" },

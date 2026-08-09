@@ -90,9 +90,6 @@ The browser opens at `http://statconvert.localhost:<port>` when available while 
 server remains bound to `127.0.0.1`. The UI has no accounts, cloud processing,
 telemetry, or remote-server mode.
 
-Public users should follow the wheel installation instructions above. Contributors and
-maintainers should use the [Developer Guide](docs/developer-guide.md).
-
 ## Quick start
 
 Start with `statconvert formats` before choosing a destination. ZSAV, POR, and SAS7BDAT

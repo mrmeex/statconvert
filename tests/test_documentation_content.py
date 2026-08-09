@@ -11,6 +11,12 @@ DOCUMENTATION_FILES = (
     PROJECT_ROOT / "pyproject.toml",
     *(PROJECT_ROOT / "docs").rglob("*.md"),
 )
+MARKDOWN_DOCUMENTATION_FILES = (
+    PROJECT_ROOT / "README.md",
+    PROJECT_ROOT / "CHANGELOG.md",
+    *(PROJECT_ROOT / "docs").rglob("*.md"),
+)
+MARKDOWN_LINK_PATTERN = re.compile(r"(?<!!)\[[^\]]*\]\(([^)]+)\)")
 
 PROHIBITED_PATTERNS = {
     "removed report format": re.compile(r"\bpd" + r"f\b", re.IGNORECASE),
@@ -53,6 +59,30 @@ def test_public_documentation_excludes_removed_topics() -> None:
                     f"{relative_path}: removed R workspace output roadmap topic"
                 )
                 break
+
+    assert not failures, "\n".join(failures)
+
+
+def test_public_markdown_links_resolve() -> None:
+    failures: list[str] = []
+
+    for path in MARKDOWN_DOCUMENTATION_FILES:
+        text = path.read_text(encoding="utf-8")
+        relative_path = path.relative_to(PROJECT_ROOT)
+
+        for match in MARKDOWN_LINK_PATTERN.finditer(text):
+            target = match.group(1).strip().split("#", 1)[0]
+            if not target or target.startswith(("http://", "https://", "mailto:")):
+                continue
+
+            target = target.split(" ", 1)[0].strip("<>")
+            resolved_target = (path.parent / target).resolve()
+            if (
+                not resolved_target.is_relative_to(PROJECT_ROOT)
+                or not resolved_target.exists()
+            ):
+                line = text.count("\n", 0, match.start()) + 1
+                failures.append(f"{relative_path}:{line}: {target}")
 
     assert not failures, "\n".join(failures)
 

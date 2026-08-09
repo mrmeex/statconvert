@@ -392,6 +392,17 @@ is stored in a sidecar.
 
 ## Metadata preservation
 
+Use `statconvert metadata FILE --diagnose` to inspect normalized metadata coverage, source
+precedence, sidecar state, and format caveats. `--validate-sidecar` parses and checks a
+candidate or standardized sibling sidecar without applying or writing it. Use
+`statconvert metadata-diff LEFT RIGHT` to compare metadata only; data values are not
+compared. Metadata editing is sidecar-first and never modifies source/native metadata.
+
+Supported patches may edit dataset label, notes, variable labels, typed value labels, and
+normalized measurement levels. Missing values and ranges, display formats and widths,
+storage/logical/original types, raw metadata, and provenance remain read-only. Container
+editing is deferred until sidecars can identify one object deterministically.
+
 StatConvert normalizes available variable labels, value labels, missing values and
 ranges, storage types, display formats, and measurement levels. Inspect the source before
 choosing a destination:
@@ -534,5 +545,5 @@ StatConvert does not currently provide:
   relative tolerances, or chunked comparison; or
 - human-readable descriptions of raw display-format codes.
 
-These boundaries are intentional. Use `statconvert formats` and
-`statconvert capabilities FORMAT` for the current runtime capability source of truth.
+See the [CLI Reference](cli.md) for command-specific boundaries and the
+[User Guide](user-guide.md) for supported workflow guidance.

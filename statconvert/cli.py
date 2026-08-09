@@ -99,6 +99,15 @@ from statconvert.metadata.sidecar import (
     export_sidecar as export_metadata_sidecar,
     without_automatic_sidecar,
 )
+from statconvert.metadata.comparison import compare_metadata
+from statconvert.metadata.diagnostics import build_metadata_diagnostics
+from statconvert.metadata.reporting import write_metadata_diff_report
+from statconvert.metadata.editing import (
+    parse_metadata_patch,
+    preview_metadata_patch,
+    preview_sidecar_apply,
+    save_metadata_sidecar,
+)
 from statconvert.metadata.dictionary import export_data_dictionary
 from statconvert.metadata.scripts import export_metadata_script
 from statconvert.transformer import transform_file
@@ -141,6 +150,9 @@ from statconvert.ui import (
     show_formats_table,
     show_labels,
     show_metadata_summary,
+    show_metadata_diagnostics,
+    show_metadata_diff,
+    show_metadata_patch_preview,
     show_preview,
     show_objects_not_supported,
     show_schema,
@@ -2076,6 +2088,24 @@ def metadata(
     overwrite_dictionary: OverwriteDictionaryOption = False,
     export_script: ExportScriptOption = None,
     overwrite_script: OverwriteScriptOption = False,
+    patch_file: Annotated[
+        str | None, typer.Option("--patch", help="Apply a closed TOML metadata patch.")
+    ] = None,
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Preview sidecar changes without writing.")
+    ] = False,
+    diagnose: Annotated[
+        bool, typer.Option("--diagnose", help="Run read-only metadata diagnostics.")
+    ] = False,
+    validate_sidecar: Annotated[
+        bool, typer.Option("--validate-sidecar", help="Validate a sidecar without applying it.")
+    ] = False,
+    json_output: Annotated[
+        bool, typer.Option("--json", help="Emit diagnostics as JSON.")
+    ] = False,
+    strict: Annotated[
+        bool, typer.Option("--strict", help="Treat diagnostic warnings as failures.")
+    ] = False,
     log_file: LogFileOption = None,
     log_level: LogLevelOption = "info",
     log_append: LogAppendOption = False,
@@ -2100,25 +2130,75 @@ def metadata(
                 "overwrite_dictionary": overwrite_dictionary,
                 "export_script": export_script,
                 "overwrite_script": overwrite_script,
+                "patch": patch_file,
+                "dry_run": dry_run,
+                "diagnose": diagnose,
+                "validate_sidecar": validate_sidecar,
+                "json": json_output,
+                "strict": strict,
             },
             log_file=log_file,
             log_level=log_level,
             log_append=log_append,
             developer_log=developer_log,
         ):
+            diagnostic_mode = diagnose or validate_sidecar
+            patch_mode = patch_file is not None
+            apply_save_mode = bool(
+                apply_sidecar and sidecar_input is not None
+                and (sidecar_output is not None or dry_run)
+            )
+            if diagnose and validate_sidecar:
+                raise MetadataSidecarError(
+                    "Use either --diagnose or --validate-sidecar, not both."
+                )
+            if (json_output or strict) and not (
+                diagnostic_mode or patch_mode or apply_save_mode
+            ):
+                raise MetadataSidecarError(
+                    "--json and --strict require --diagnose or --validate-sidecar."
+                )
+            if diagnostic_mode and any((
+                export_sidecar,
+                apply_sidecar,
+                patch_mode,
+                export_dictionary is not None,
+                export_script is not None,
+            )):
+                raise MetadataSidecarError(
+                    "Metadata diagnostics cannot be combined with export or apply options."
+                )
+            if patch_mode and any((export_sidecar, apply_sidecar)):
+                raise MetadataSidecarError(
+                    "--patch cannot be combined with --export-sidecar or --apply-sidecar."
+                )
+            if patch_mode and sidecar_output is None:
+                raise MetadataSidecarError("--patch requires --sidecar-output.")
+            if apply_save_mode and sidecar_output is None:
+                raise MetadataSidecarError(
+                    "Sidecar apply preview/save requires --sidecar-output."
+                )
+            if dry_run and not (patch_mode or apply_save_mode):
+                raise MetadataSidecarError(
+                    "--dry-run requires --patch or an apply-sidecar save workflow."
+                )
             if export_sidecar and apply_sidecar:
                 raise MetadataSidecarError(
                     "Use either --export-sidecar or --apply-sidecar, not both."
                 )
-            if sidecar_output is not None and not export_sidecar:
+            if sidecar_output is not None and not (
+                export_sidecar or patch_mode or apply_save_mode
+            ):
                 raise MetadataSidecarError(
-                    "--sidecar-output requires --export-sidecar."
+                    "--sidecar-output requires --export-sidecar, --patch, or apply-sidecar save."
                 )
-            if sidecar_input is not None and not apply_sidecar:
+            if sidecar_input is not None and not (apply_sidecar or validate_sidecar):
                 raise MetadataSidecarError(
-                    "--sidecar-input requires --apply-sidecar."
+                    "--sidecar-input requires --apply-sidecar or --validate-sidecar."
                 )
-            if overwrite_sidecar and not (export_sidecar or apply_sidecar):
+            if overwrite_sidecar and not (
+                export_sidecar or apply_sidecar or patch_mode
+            ):
                 raise MetadataSidecarError(
                     "--overwrite-sidecar requires --export-sidecar or "
                     "--apply-sidecar."
@@ -2131,7 +2211,10 @@ def metadata(
                 raise MetadataScriptError(
                     "--overwrite-script requires --export-script."
                 )
-            if apply_sidecar and get_backend_name(input_file) == "pyreadstat":
+            if (
+                apply_sidecar and not apply_save_mode
+                and get_backend_name(input_file) == "pyreadstat"
+            ):
                 raise MetadataSidecarError(
                     "Explicit sidecar apply is not supported for native "
                     "statistical formats handled by pyreadstat.",
@@ -2140,6 +2223,89 @@ def metadata(
                         "metadata. Native-file metadata is not modified."
                     ),
                 )
+            if diagnostic_mode:
+                if validate_sidecar:
+                    with without_automatic_sidecar():
+                        dataset = _read_dataset(
+                            input_file,
+                            object_selector=object_selector,
+                        )
+                else:
+                    try:
+                        dataset = _read_dataset(
+                            input_file,
+                            object_selector=object_selector,
+                        )
+                    except MetadataSidecarError:
+                        with without_automatic_sidecar():
+                            dataset = _read_dataset(
+                                input_file,
+                                object_selector=object_selector,
+                            )
+                diagnostics = build_metadata_diagnostics(
+                    dataset,
+                    input_file,
+                    sidecar_input=sidecar_input,
+                    require_sidecar=validate_sidecar,
+                    object_name=object_selector,
+                )
+                if json_output:
+                    emit_json(asdict(diagnostics))
+                else:
+                    _show_dataset_header(input_file, dataset)
+                    show_metadata_diagnostics(diagnostics)
+                if diagnostics.has_errors or (strict and diagnostics.has_warnings):
+                    raise typer.Exit(1)
+                return
+            if patch_mode or apply_save_mode:
+                if apply_save_mode:
+                    with without_automatic_sidecar():
+                        dataset = _read_dataset(
+                            input_file,
+                            object_selector=object_selector,
+                        )
+                    preview, edited = preview_sidecar_apply(
+                        dataset,
+                        input_file,
+                        sidecar_input,
+                        sidecar_output,
+                        overwrite=overwrite_sidecar,
+                        object_name=object_selector,
+                        dry_run=dry_run,
+                    )
+                else:
+                    dataset = _read_dataset(
+                        input_file,
+                        object_selector=object_selector,
+                    )
+                    metadata_patch = parse_metadata_patch(patch_file)
+                    preview, edited = preview_metadata_patch(
+                        dataset,
+                        input_file,
+                        metadata_patch,
+                        sidecar_output,
+                        overwrite=overwrite_sidecar,
+                        object_name=object_selector,
+                        dry_run=dry_run,
+                    )
+                strict_warning = strict and any(
+                    issue.severity == "warning"
+                    for issue in (*preview.conflicts, *preview.issues)
+                )
+                result = preview
+                if not dry_run and preview.valid and not strict_warning:
+                    result = save_metadata_sidecar(
+                        preview,
+                        edited,
+                        overwrite=overwrite_sidecar,
+                    )
+                if json_output:
+                    emit_json(asdict(result))
+                else:
+                    show_metadata_patch_preview(result)
+                if not preview.valid or strict_warning:
+                    raise typer.Exit(1)
+                return
             if apply_sidecar and sidecar_input is not None:
                 with without_automatic_sidecar():
                     dataset = _read_dataset(
@@ -2216,10 +2382,108 @@ def metadata(
             if script_path is not None:
                 show_success(f"Metadata helper script written: {script_path}")
 
+    except typer.Exit:
+        raise
+
     except Exception as exc:
+        if json_output:
+            emit_json({
+                "valid": False,
+                "writes": False,
+                "target": sidecar_output,
+                "source_data_modified": False,
+                "sidecar_target_modified": False,
+                "overwrite_required": False,
+                "changes": [],
+                "total_changes": 0,
+                "shown_changes": 0,
+                "truncated": False,
+                "conflicts": [{
+                    "severity": "error",
+                    "code": "metadata_edit_error",
+                    "message": str(exc),
+                    "column": None,
+                    "field": None,
+                    "suggestion": getattr(exc, "suggestion", None),
+                    "details": {},
+                }],
+                "issues": [],
+                "coverage": None,
+                "object_kind": None,
+                "object_name": object_selector,
+                "dry_run": dry_run,
+            })
+        else:
+            handle_exception(exc)
 
+        raise typer.Exit(1)
+
+
+@app.command("metadata-diff")
+def metadata_diff(
+    left_file: str,
+    right_file: str,
+    left_object: LeftObjectSelectorOption = None,
+    right_object: RightObjectSelectorOption = None,
+    columns: Annotated[
+        list[str] | None,
+        typer.Option("--column", "--columns", help="Compare metadata for this column; repeat as needed."),
+    ] = None,
+    json_output: Annotated[bool, typer.Option("--json", help="Emit JSON output.")] = False,
+    report: Annotated[
+        str | None, typer.Option("--report", help="Write a .csv, .json or .html report.")
+    ] = None,
+    report_format: Annotated[
+        str | None, typer.Option("--report-format", help="Report format: json, csv or html.")
+    ] = None,
+    strict: Annotated[
+        bool, typer.Option("--strict", help="Exit with failure when metadata differs.")
+    ] = False,
+    log_file: LogFileOption = None,
+    log_level: LogLevelOption = "info",
+    log_append: LogAppendOption = False,
+    developer_log: DeveloperLogOption = False,
+):
+    """Compare normalized metadata without comparing data values."""
+
+    try:
+        with command_log_wrapper(
+            command="metadata-diff",
+            parameters={
+                "left_file": left_file,
+                "right_file": right_file,
+                "left_object": left_object,
+                "right_object": right_object,
+                "columns": columns,
+                "json": json_output,
+                "report": report,
+                "report_format": report_format,
+                "strict": strict,
+            },
+            log_file=log_file,
+            log_level=log_level,
+            log_append=log_append,
+            developer_log=developer_log,
+        ):
+            if report_format is not None and report is None:
+                raise MetadataSidecarError("--report-format requires --report.")
+            left = _read_dataset(left_file, object_selector=left_object)
+            right = _read_dataset(right_file, object_selector=right_object)
+            result = compare_metadata(left, right, columns=columns)
+            if json_output:
+                emit_json(asdict(result))
+            else:
+                show_metadata_diff(result)
+            if report is not None:
+                report_path = write_metadata_diff_report(result, report, report_format)
+                if not json_output:
+                    show_success(f"Metadata diff report written: {report_path}")
+            if strict and not result.same_metadata:
+                raise typer.Exit(1)
+    except typer.Exit:
+        raise
+    except Exception as exc:
         handle_exception(exc)
-
         raise typer.Exit(1)
 
 

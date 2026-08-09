@@ -4,9 +4,15 @@ import pandas as pd
 import pytest
 
 from statconvert.backends.json_backend import JsonBackend
+from statconvert.dataset import Dataset
 from statconvert.exceptions import ConversionError
 from statconvert.metadata.sidecar import sidecar_path
-from statconvert.streaming import ChunkedReadOptions, StreamingNotSupportedError
+from statconvert.streaming import (
+    ChunkedReadOptions,
+    ChunkedWriteOptions,
+    DatasetChunk,
+    StreamingNotSupportedError,
+)
 from statconvert.streaming.execution import execute_streaming_convert
 
 
@@ -50,13 +56,21 @@ def test_empty_json_lines_yields_one_empty_chunk_and_round_trips(
     assert sidecar_path(target).exists()
 
 
-def test_malformed_json_line_fails_clearly(tmp_path: Path) -> None:
-    source = tmp_path / "broken.jsonl"
+@pytest.mark.parametrize(
+    ("extension", "format_name"),
+    [(".jsonl", "JSON Lines"), (".ndjson", "NDJSON")],
+)
+def test_malformed_json_line_fails_clearly(
+    tmp_path: Path,
+    extension: str,
+    format_name: str,
+) -> None:
+    source = tmp_path / f"broken{extension}"
     source.write_text('{"a": 1}\n{"a":\n', encoding="utf-8")
 
     with pytest.raises(
         ConversionError,
-        match="Failed reading chunked JSON Lines file",
+        match=f"Failed reading chunked {format_name} file",
     ):
         list(JsonBackend().iter_chunks(str(source), ChunkedReadOptions(1)))
 
@@ -89,3 +103,39 @@ def test_json_lines_writer_produces_valid_records(
     actual = pd.read_json(target, lines=True)
     pd.testing.assert_frame_equal(actual, expected)
     assert len(target.read_text(encoding="utf-8").splitlines()) == 3
+
+
+@pytest.mark.parametrize(
+    ("extension", "format_name"),
+    [(".jsonl", "JSON Lines"), (".ndjson", "NDJSON")],
+)
+def test_json_lines_streaming_write_error_names_target_format(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    extension: str,
+    format_name: str,
+) -> None:
+    target = tmp_path / f"output{extension}"
+    writer = JsonBackend().open_chunk_writer(
+        str(target),
+        ChunkedWriteOptions(1),
+    )
+    chunk = DatasetChunk(
+        Dataset(pd.DataFrame({"value": [1]})),
+        index=0,
+        start_row=0,
+        rows=1,
+    )
+
+    def fail_write(*args, **kwargs):
+        raise ValueError("serialization failed")
+
+    monkeypatch.setattr(pd.DataFrame, "to_json", fail_write)
+
+    with pytest.raises(
+        ConversionError,
+        match=f"Failed writing chunked {format_name} file",
+    ):
+        writer.write_chunk(chunk)
+
+    assert not target.exists()

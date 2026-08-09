@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from importlib.util import find_spec
 from pathlib import Path
+import re
 
 import pandas as pd
 import pytest
@@ -22,11 +23,37 @@ from statconvert.registry import (
 runner = CliRunner()
 XLRD_AVAILABLE = find_spec("xlrd") is not None
 XLWT_AVAILABLE = find_spec("xlwt") is not None
+EXPECTED_EXTENSIONS = {
+    ".csv", ".dta", ".feather", ".json", ".jsonl", ".ndjson", ".ods",
+    ".parquet", ".por", ".rda", ".rdata", ".rds", ".sas7bdat", ".sav",
+    ".xls", ".xlsx", ".xpt", ".zsav",
+}
+READ_ONLY_EXTENSIONS = {".por", ".sas7bdat", ".zsav"}
 READ_ONLY_ALTERNATIVES = {
     ".por": ".sav",
     ".sas7bdat": ".xpt",
     ".zsav": ".sav",
 }
+
+
+def test_registered_format_matrix_has_the_expected_supported_boundary() -> None:
+    formats = list_formats()
+
+    assert set(formats) == EXPECTED_EXTENSIONS
+    assert {
+        extension for extension, info in formats.items() if not info["can_write"]
+    } == READ_ONLY_EXTENSIONS
+    assert all(info["metadata_mode"] for info in formats.values())
+    assert all(info["caveat"] for info in formats.values())
+
+
+def test_format_guide_extension_matrix_matches_the_registry() -> None:
+    guide = (
+        Path(__file__).resolve().parents[1] / "docs" / "formats.md"
+    ).read_text(encoding="utf-8")
+    documented = set(re.findall(r"^\| `(\.[a-z0-9]+)` \|", guide, re.MULTILINE))
+
+    assert documented == EXPECTED_EXTENSIONS
 
 
 @pytest.mark.parametrize(
@@ -245,6 +272,43 @@ def test_formats_cli_shows_extension_level_read_write_truth() -> None:
     xls_write = "yes" if XLWT_AVAILABLE else "no"
     assert f".xls Excel 97-2003 Workbook excel {xls_read} {xls_write}" in output
     assert ".xlsx Excel Workbook excel yes yes" in output
+
+
+@pytest.mark.parametrize(
+    ("extension", "name", "streaming"),
+    [
+        (".json", "JSON", False),
+        (".jsonl", "JSON Lines", True),
+        (".ndjson", "Newline-delimited JSON", True),
+    ],
+)
+def test_json_family_format_capabilities_are_distinct_and_truthful(
+    extension: str,
+    name: str,
+    streaming: bool,
+) -> None:
+    info = list_formats()[extension]
+    capabilities = get_format_capabilities(extension)
+
+    assert info["name"] == name
+    assert info["can_read"] is True
+    assert info["can_write"] is True
+    assert info["supports_streaming"] is streaming
+    assert capabilities.supports_streaming is streaming
+
+
+@pytest.mark.parametrize(
+    ("target", "expected"),
+    [("json", "no"), ("jsonl", "yes"), ("ndjson", "yes")],
+)
+def test_capabilities_cli_reports_json_family_streaming_truth(
+    target: str,
+    expected: str,
+) -> None:
+    result = runner.invoke(app, ["capabilities", target])
+
+    assert result.exit_code == 0
+    assert f"Streaming {expected}" in _without_table_borders(result.output)
 
 
 @pytest.mark.parametrize(

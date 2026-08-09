@@ -1,12 +1,57 @@
 # Changelog
 
+## 1.2.0 - 2026-08-09
+
+StatConvert 1.2.0 is the metadata release. Metadata editing is preview-first and writes
+only explicit sidecar targets; source datasets and native metadata are never modified.
+
+### Sidecar-first metadata editing (1.2.0c)
+
+- Added a closed, data-only TOML metadata patch schema for dataset labels, notes, variable
+  labels, typed value labels, and normalized measurement levels. Unknown and deferred
+  fields are rejected.
+- Added deterministic preview/conflict results and atomic same-directory sidecar writes.
+  Dry-run creates nothing, overwrite is explicit, temporary files are removed on failure,
+  and source datasets are never write targets.
+- Extended `metadata` with compatible `--patch` and `--dry-run` workflows plus explicit
+  apply-sidecar preview/save to `--sidecar-output`; legacy summary/export/apply behavior is
+  unchanged.
+- Added a compact Inspect Metadata sidecar editor with preview-before-save and explicit
+  target/overwrite handling. Container editing is deferred until sidecars can record
+  deterministic object identity.
+
+### Metadata diagnostics (1.2.0b)
+
+- Added backend-neutral, bounded metadata diagnostics with stable issue codes, source and
+  precedence details, field coverage, provenance summaries, and format caveats.
+- Added read-only `metadata --diagnose` and diagnostic-only `--validate-sidecar` modes,
+  including plain JSON and strict warning handling. Validation never activates or writes a
+  sidecar.
+- Added `metadata-diff` for dataset labels, notes, typed value labels, discrete and ranged
+  missing metadata, storage/logical types, display formats, measurement levels, and
+  provenance, with bounded human/JSON output and optional CSV/JSON/HTML reports.
+- Enhanced dataset reports and the browser Inspect Metadata service with read-only metadata
+  diagnostics and coverage. Metadata editing remains deferred to 1.2.0c.
+
+### Planning
+
+- Audited the normalized metadata model, native adapters/writers, sidecar and Arrow
+  precedence, metadata consumers, browser surfaces, documentation, and tests.
+- Defined an implementation-ready metadata workflow and safety model covering read-only
+  diagnostics, sidecar validation, metadata diff/reporting, sidecar-first editing,
+  conflict handling, atomic output, object awareness, and stable human/JSON results.
+- Folded the former 1.2.1 metadata-editor target into 1.2.0 and retained 1.3.0 for transform
+  power. No editing workflow, command, format, database support, dependency, conversion
+  semantic, or release artifact was added in this design slice.
+
 ## 1.1.1 - 2026-08-09
 
 ### Improved
 
 - Audited the complete 18-extension format surface across registry capabilities,
-  read/write paths, objects, metadata, sidecars, shared workflows, documentation, and
-  browser Reference data.
+  read/write paths, objects, metadata, sidecars, shared workflows, documentation, and the
+  browser Reference data. Recorded confirmed behavior and intentional deferrals in a
+  private format-depth checklist.
 - Added actionable writable alternatives to read-only format errors and caveats: SAV for
   ZSAV/POR input and XPT for SAS7BDAT input.
 - Made object listing for single-dataset files identify the extension and explain that
@@ -17,9 +62,25 @@
   replacements.
 - Refined registry-driven Reference caveats for spreadsheet presentation loss, partial
   statistical metadata writes, JSON flattening limits, and Arrow sidecar precedence.
-- Added no new format family, database support, or runtime dependency.
+  Private planning and audit documents remain denylisted.
 
 ## 1.1.0 - 2026-08-09
+
+### Planning
+
+- Investigated local SQLite and DuckDB support, database-container object semantics,
+  metadata sidecars, and JSONL/NDJSON status during the private 1.1.0a design inventory.
+- Removed database support from the active roadmap after security and complexity review.
+  The database research remains archived and requires renewed maintainer approval before
+  any implementation. No runtime behavior or dependency changed.
+- Redefined 1.1.0 around JSONL/NDJSON parity hardening, non-database format candidate
+  inventory, supported-format documentation/UI/reference polish, and release verification.
+- Completed the private non-database format candidate inventory covering HTML tables, a
+  simple XML profile, Avro, ORC, HDF5/HDFStore, MATLAB MAT, and DDI-Codebook export. The
+  inventory recommends no new 1.1.0 format, historically identified ORC as the strongest
+  follow-up candidate, places DDI export in later metadata/reporting work, and defers
+  scientific containers and broad arbitrary XML flattening. ORC was subsequently dropped
+  from 1.1.1. No runtime behavior or dependency changed.
 
 ### Improved
 
@@ -32,10 +93,10 @@
   config conversion, shared inspection/compare/validate/report workflows, CLI/reference
   capabilities, and browser selector presence.
 - Reconciled the 18-extension registry, CLI format table, browser Reference, centralized
-  target selectors, and public format guidance. Reference now exposes friendly-sorted
-  metadata modes and caveats; target selectors include every normally writable extension
-  and no longer offer read-only SAS7BDAT.
-- Added no new format family, database support, or runtime dependency.
+  target selectors, and public-safe format guidance. Reference now exposes friendly-sorted
+  metadata modes and caveats; browser target selectors include every normally writable
+  extension and no longer offer read-only SAS7BDAT. Added focused guards against registry,
+  documentation, Reference, and selector drift without adding a format or dependency.
 
 ## 1.0.1 - UI polish and Compare correctness
 

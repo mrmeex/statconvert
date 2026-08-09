@@ -165,7 +165,7 @@ def test_implementation_build_labels_are_removed_but_about_keeps_version() -> No
 
     version = _request(create_app(), "GET", "/api/version")
     assert version.status_code == 200
-    assert version.json()["version"] == "1.1.1"
+    assert version.json()["version"] == "1.2.0"
 
 
 def test_report_and_configs_page_polish_contracts() -> None:

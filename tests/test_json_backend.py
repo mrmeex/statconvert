@@ -2,9 +2,11 @@ import json
 
 import pandas as pd
 from pandas.testing import assert_frame_equal
+import pytest
 
 from statconvert.backends.json_backend import JsonBackend
 from statconvert.dataset import Dataset
+from statconvert.exceptions import ConversionError
 from statconvert.registry import get_backend_for_file
 
 
@@ -141,9 +143,13 @@ def test_json_writer_serializes_large_records_in_bounded_chunks(
     assert observed_rows == [backend.write_chunk_rows, 5]
 
 
-def test_json_lines_chunk_writer_preserves_one_record_per_line(tmp_path):
+@pytest.mark.parametrize("extension", [".jsonl", ".ndjson"])
+def test_json_lines_chunk_writer_preserves_one_record_per_line(
+    tmp_path,
+    extension,
+):
     backend = JsonBackend()
-    output_file = tmp_path / "bounded.ndjson"
+    output_file = tmp_path / f"bounded{extension}"
     dataframe = pd.DataFrame({"id": [1, 2], "text": ["é", "中文"]})
 
     backend.write(Dataset(dataframe=dataframe), output_file)
@@ -181,3 +187,38 @@ def test_chunked_json_text_matches_existing_pandas_formatting(tmp_path):
         force_ascii=False,
         lines=True,
     )
+
+
+@pytest.mark.parametrize(
+    ("extension", "format_name"),
+    [(".jsonl", "JSON Lines"), (".ndjson", "NDJSON")],
+)
+def test_malformed_json_lines_normal_read_has_format_specific_error(
+    tmp_path,
+    extension,
+    format_name,
+):
+    source = tmp_path / f"broken{extension}"
+    source.write_text('{"value": 1}\nnot-json\n', encoding="utf-8")
+
+    with pytest.raises(
+        ConversionError,
+        match=f"Failed reading {format_name} file",
+    ):
+        JsonBackend().read(source)
+
+
+@pytest.mark.parametrize("extension", [".jsonl", ".ndjson"])
+def test_json_lines_normal_roundtrip_writes_and_restores_sidecar(
+    tmp_path,
+    extension,
+):
+    backend = JsonBackend()
+    output_file = tmp_path / f"metadata{extension}"
+    dataset = Dataset(pd.DataFrame({"value": [1, 2]}))
+
+    backend.write(dataset, output_file)
+    restored = backend.read(output_file)
+
+    assert Dataset.sidecar_path(output_file).exists()
+    assert restored.metadata_provenance["dataset"] == "automatic_sidecar"

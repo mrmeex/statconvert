@@ -9,6 +9,9 @@ from rich.table import Table
 from statconvert.backends.base import Backend
 from statconvert.backends.capabilities import BackendCapabilities
 from statconvert.dataset import Dataset
+from statconvert.metadata.comparison import MetadataDiffResult
+from statconvert.metadata.diagnostics import MetadataDiagnostics
+from statconvert.metadata.editing import MetadataPatchPreview
 
 from .console import console
 
@@ -456,6 +459,111 @@ def show_metadata_summary(
             expand=False,
         )
     )
+
+
+def show_metadata_diagnostics(result: MetadataDiagnostics) -> None:
+    summary = Table.grid(padding=(0, 2))
+    summary.add_column(style="cyan", justify="right")
+    summary.add_column()
+    summary.add_row("Status", "valid" if result.valid else "errors found")
+    summary.add_row("Format", result.source.format or "")
+    summary.add_row("Backend", result.source.backend or "")
+    summary.add_row("Metadata source", result.source.metadata_source or "")
+    summary.add_row("Sidecar", result.source.sidecar_path)
+    summary.add_row("Sidecar present", _yes_no(result.source.sidecar_present))
+    summary.add_row("Data columns", str(result.coverage.data_columns))
+    summary.add_row("Metadata columns", str(result.coverage.metadata_columns))
+    summary.add_row("Columns with labels", str(result.coverage.columns_with_labels))
+    summary.add_row("Value-label sets", str(result.coverage.columns_with_value_labels))
+    summary.add_row("Missing-range sets", str(result.coverage.columns_with_missing_ranges))
+    console.print(Panel(summary, title="Metadata Diagnostics", expand=False))
+    for severity in ("error", "warning", "info"):
+        matching = [issue for issue in result.issues if issue.severity == severity]
+        if not matching:
+            continue
+        table = Table(title=f"Metadata {severity.title()}s")
+        table.add_column("Severity")
+        table.add_column("Code", style="cyan")
+        table.add_column("Column")
+        table.add_column("Message")
+        for issue in matching:
+            table.add_row(issue.severity, issue.code, issue.column or "", issue.message)
+        console.print(table)
+    for caveat in result.caveats:
+        console.print(f"[yellow]Caveat:[/yellow] {caveat}")
+
+
+def show_metadata_diff(result: MetadataDiffResult) -> None:
+    summary = Table.grid(padding=(0, 2))
+    summary.add_column(style="cyan", justify="right")
+    summary.add_column()
+    summary.add_row("Same metadata", _yes_no(result.same_metadata))
+    summary.add_row("Compared columns", str(result.compared_columns))
+    summary.add_row("Changes", str(result.total_changes))
+    console.print(Panel(summary, title="Metadata Diff", expand=False))
+    if result.changes:
+        table = Table(title="Metadata Changes")
+        table.add_column("Column", style="cyan")
+        table.add_column("Field")
+        table.add_column("Left")
+        table.add_column("Right")
+        for change in result.changes:
+            table.add_row(
+                change.column or "(dataset)", change.field,
+                str(change.left) if change.left is not None else "",
+                str(change.right) if change.right is not None else "",
+            )
+        console.print(table)
+    if result.truncated:
+        console.print(f"[yellow]Showing {result.shown_changes} of {result.total_changes} changes.[/yellow]")
+
+
+def show_metadata_patch_preview(result: MetadataPatchPreview) -> None:
+    summary = Table.grid(padding=(0, 2))
+    summary.add_column(style="cyan", justify="right")
+    summary.add_column()
+    summary.add_row("Valid", _yes_no(result.valid))
+    summary.add_row("Dry run", _yes_no(result.dry_run))
+    summary.add_row("Sidecar written", _yes_no(result.writes))
+    summary.add_row("Target", result.target)
+    summary.add_row("Source data modified", "no")
+    summary.add_row("Changes", str(result.total_changes))
+    summary.add_row("Conflicts", str(len(result.conflicts)))
+    summary.add_row("Issues", str(len(result.issues)))
+    console.print(Panel(summary, title="Metadata Sidecar Preview", expand=False))
+    if result.changes:
+        table = Table(title="Metadata Changes")
+        table.add_column("Action")
+        table.add_column("Field", style="cyan")
+        table.add_column("Column")
+        table.add_column("Key")
+        table.add_column("Before")
+        table.add_column("After")
+        for change in result.changes:
+            table.add_row(
+                change.action,
+                change.field,
+                change.column or "",
+                str(change.key) if change.key is not None else "",
+                str(change.before) if change.before is not None else "",
+                str(change.after) if change.after is not None else "",
+            )
+        console.print(table)
+    if result.truncated:
+        console.print(
+            f"[yellow]Showing {result.shown_changes} of "
+            f"{result.total_changes} changes.[/yellow]"
+        )
+    findings = (*result.conflicts, *result.issues)
+    if findings:
+        table = Table(title="Conflicts and Issues")
+        table.add_column("Severity")
+        table.add_column("Code", style="cyan")
+        table.add_column("Column")
+        table.add_column("Message")
+        for issue in findings:
+            table.add_row(issue.severity, issue.code, issue.column or "", issue.message)
+        console.print(table)
 
 
 def _metadata_summary_label(

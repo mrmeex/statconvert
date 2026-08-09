@@ -41,6 +41,8 @@ from statconvert.webui.services import (
     execute_validate,
     execute_with_ui_logging,
     export_inspect_metadata_script,
+    preview_inspect_metadata_sidecar,
+    save_inspect_metadata_sidecar,
     inspect_describe,
     inspect_frequencies,
     inspect_info,
@@ -86,6 +88,7 @@ from .models import (
     HealthResponse,
     JobCreatedResponse,
     MetadataScriptExportRequest,
+    MetadataSidecarEditRequest,
     ObjectInspectionRequest,
     PathInspectionRequest,
     PathBrowseRequest,
@@ -258,6 +261,18 @@ def create_api_router(
             },
             "command": result["command"],
         }
+
+    @router.post("/inspect/metadata/sidecar/preview")
+    async def metadata_sidecar_preview(
+        request: MetadataSidecarEditRequest,
+    ) -> dict[str, object]:
+        return {"data": preview_inspect_metadata_sidecar(request)}
+
+    @router.post("/inspect/metadata/sidecar/save")
+    async def metadata_sidecar_save(
+        request: MetadataSidecarEditRequest,
+    ) -> dict[str, object]:
+        return {"data": save_inspect_metadata_sidecar(request)}
 
     @router.post("/inspect/summary")
     async def summary(request: DatasetRequest) -> dict[str, object]:

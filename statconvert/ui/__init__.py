@@ -21,6 +21,9 @@ from .metadata import (
     show_formats_table,
     show_labels,
     show_metadata_summary,
+    show_metadata_diagnostics,
+    show_metadata_diff,
+    show_metadata_patch_preview,
     show_schema,
 )
 from .inspection import (
@@ -65,6 +68,9 @@ __all__ = [
     "show_formats_table",
     "show_labels",
     "show_metadata_summary",
+    "show_metadata_diagnostics",
+    "show_metadata_diff",
+    "show_metadata_patch_preview",
     "show_schema",
     "show_transformation_summary",
     "show_warning",

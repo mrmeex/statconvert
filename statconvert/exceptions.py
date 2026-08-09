@@ -32,6 +32,10 @@ class MetadataScriptError(ConversionError):
     """An external-tool metadata helper script could not be produced."""
 
 
+class MetadataDiagnosticsError(ConversionError):
+    """Metadata diagnostics or metadata-only comparison could not be produced."""
+
+
 class OutputPathError(ConversionError):
     """An output path conflicts with the selected write policy."""
 

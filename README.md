@@ -5,12 +5,13 @@ inspecting, validating, batch-processing, comparing, reporting, and logging stat
 datasets. It uses a backend registry and a common `Dataset` model so format-specific code
 stays out of conversion and analysis workflows.
 
-Version 1.1.1 deepens existing-format guidance and diagnostics. It adds actionable SAV
-and XPT alternatives to read-only format errors, makes single-dataset object messages
-identify the input extension, and expands the format, metadata-mode, sidecar, container,
-and JSON Lines guidance without adding a format family or runtime dependency. The local
+Version 1.2.0 is the metadata release. It adds metadata diagnostics, diagnostic-only
+sidecar validation, metadata-only diff and reports, and preview-first sidecar editing for
+dataset labels, notes, variable labels, typed value labels, and measurement levels.
+Editing never mutates source datasets or native-file metadata. The complete local browser
 UI remains bound to the local machine and is installed through the optional
-`statconvert[ui]` extra. The CLI and its 11 base runtime dependencies remain unchanged.
+`statconvert[ui]` extra. No format family or runtime dependency was added; the CLI keeps
+its 11 base runtime dependencies.
 
 ## Implemented features
 
@@ -18,6 +19,10 @@ UI remains bound to the local machine and is installed through the optional
 - Normalized schema, variable-label, value-label, missing-value, and metadata access
 - Versioned metadata sidecars, Arrow-embedded StatConvert metadata, resolved-metadata
   export/apply, human-readable data dictionaries, and external-tool helper scripts
+- Read-only metadata diagnostics, diagnostic sidecar validation, metadata-only diff, and
+  richer metadata coverage in reports
+- Preview-first, sidecar-only metadata editing for dataset labels/notes, variable and typed
+  value labels, and measurement levels
 - Ordered transformations: select, drop, rename, type conversion, derived columns,
   expression and structured filtering, and recoding
 - Canonical ordered `[[steps]]` TOML recipes with deterministic export, schema-aware
@@ -85,7 +90,16 @@ The browser opens at `http://statconvert.localhost:<port>` when available while 
 server remains bound to `127.0.0.1`. The UI has no accounts, cloud processing,
 telemetry, or remote-server mode.
 
+Public users should follow the wheel installation instructions above. Contributors and
+maintainers should use the [Developer Guide](docs/developer-guide.md).
+
 ## Quick start
+
+Start with `statconvert formats` before choosing a destination. ZSAV, POR, and SAS7BDAT
+are read-only inputs; SAV is the suggested writable SPSS alternative and XPT the suggested
+SAS interchange alternative when those target models fit. These are explicit conversions,
+not automatic substitutions. The [Format Guide](docs/formats.md) explains streaming,
+container objects, metadata modes, and fidelity limits.
 
 ```bash
 statconvert formats
@@ -98,11 +112,13 @@ statconvert peek input.sav
 statconvert metadata input.sav --export-sidecar
 statconvert metadata input.sav --export-dictionary dictionary.xlsx
 statconvert metadata input.sav --export-script labels.R
+statconvert metadata input.sav --diagnose
+statconvert metadata input.csv --validate-sidecar --json
+statconvert metadata-diff before.sav after.csv --report metadata-diff.html
+statconvert metadata input.csv --patch metadata.toml --sidecar-output edited.json --dry-run
+statconvert metadata input.csv --patch metadata.toml --sidecar-output edited.json
 statconvert convert input.sav output.xlsx
 statconvert convert input.csv output.jsonl --stream --chunk-size 50000
-statconvert convert input.csv output.ndjson --stream --chunk-size 50000
-statconvert convert compressed.zsav writable.sav
-statconvert convert source.sas7bdat interchange.xpt
 statconvert convert input.sav new-output/output.xlsx --create-dirs
 statconvert convert workbook.xlsx output.csv --object Data
 statconvert convert workbook.xlsx combined.ods --all-objects

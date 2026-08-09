@@ -102,6 +102,15 @@ class MetadataScriptExportRequest(DatasetRequest):
     overwrite: bool = False
 
 
+class MetadataSidecarEditRequest(DatasetRequest):
+    """Closed metadata patch preview/save request for one explicit sidecar target."""
+
+    output_path: str = Field(min_length=1)
+    patch: dict[str, Any]
+    overwrite: bool = False
+    confirmed_preview: bool = False
+
+
 class ConvertRequest(BaseModel):
     """Supported single-file conversion options for the first GUI slice."""
 

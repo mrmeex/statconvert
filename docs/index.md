@@ -69,11 +69,11 @@ statconvert ui
 </section>
 
 <p>
-  StatConvert 1.1.1 adds clearer existing-format guidance and diagnostics, including
-  writable alternatives for read-only inputs, extension-specific object messages,
-  metadata-mode explanations, and richer browser Reference caveats. It adds no new format
-  family, database support, or runtime dependency. Install the local interface with
-  <code>statconvert[ui]</code>; the base CLI remains unchanged.
+  StatConvert 1.2.0 is the metadata release. It adds diagnostics, sidecar validation,
+  metadata-only diff and reports, plus preview-first sidecar editing that never mutates
+  source datasets or native metadata. It adds no format family, database support, ORC,
+  or runtime dependency. Install the local interface with <code>statconvert[ui]</code>;
+  the base CLI remains unchanged.
 </p>
 
 <footer class="statconvert-home-footer">

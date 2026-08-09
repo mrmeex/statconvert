@@ -563,7 +563,8 @@ statconvert metadata INPUT_FILE [--object OBJECT] [--export-sidecar]
     [--sidecar-output PATH] [--apply-sidecar] [--sidecar-input PATH]
     [--overwrite-sidecar] [--export-dictionary PATH]
     [--overwrite-dictionary] [--export-script PATH]
-    [--overwrite-script]
+    [--overwrite-script] [--diagnose | --validate-sidecar]
+    [--patch PATCH.toml] [--dry-run] [--json] [--strict]
 ```
 
 Displays normalized source metadata and metadata counts through `Dataset` accessors.
@@ -591,8 +592,25 @@ columns are allowed and reported.
 For a workbook or workspace, use `--object` so a flat sidecar describes one selected
 sheet/object. An ambiguous multi-object input still fails rather than applying shared
 metadata. Explicit apply activates sidecars for sidecar-aware formats; it does not modify
-native SAV/DTA/XPT metadata. The `metadata` command remains terminal-oriented and has no
-`--json` option. Export and apply cannot be combined in one invocation.
+native SAV/DTA/XPT metadata. Export and apply cannot be combined in one invocation.
+
+`--diagnose` returns bounded, read-only metadata quality, coverage, precedence,
+provenance, and caveat findings. `--validate-sidecar` validates the standardized sibling
+or `--sidecar-input PATH` without activating, copying, or writing it. `--json` emits the
+same model as plain JSON, and `--strict` treats warnings as failures. Diagnostic modes
+cannot be combined with export or apply options.
+
+`--patch PATCH.toml` previews or saves a closed declarative metadata patch to the required
+`--sidecar-output PATH`. Supported fields are dataset label/notes, variable labels, typed
+value labels, and normalized measurement levels. `--dry-run` creates no directory or file;
+without it, a valid preview is serialized deterministically and atomically replaces the
+explicit target only with `--overwrite-sidecar`. The source dataset is never a write target.
+
+`--apply-sidecar --sidecar-input PATH --sidecar-output PATH` uses the same preview/save
+engine to validate candidate metadata against the target dataset and write a new sidecar.
+Add `--dry-run` for preview only. The existing apply behavior without `--sidecar-output`
+remains compatible. New edit/apply-save workflows refuse container formats because v2/v3
+flat sidecars do not carry deterministic object identity.
 
 `--export-dictionary PATH` writes the currently resolved metadata as a human-readable
 `.csv` or `.xlsx` data dictionary. CSV contains one row per physical column. XLSX contains
@@ -619,6 +637,20 @@ exist. Scripts use the same resolved native/embedded/sidecar metadata as the ter
 summary and dictionary export. They are helpers rather than full-fidelity restoration
 artifacts; sidecars remain the reusable machine-readable representation. No script
 options exist on `convert`, `batch`, or `transform`.
+
+### `metadata-diff`
+
+```bash
+statconvert metadata-diff LEFT RIGHT [--left-object NAME] [--right-object NAME]
+    [--column NAME] [--json] [--strict] [--report PATH]
+    [--report-format json|csv|html]
+```
+
+Compares normalized metadata only: dataset labels and notes, variable and typed value
+labels, discrete and ranged missing metadata, storage and logical types, display formats,
+measurement levels, and bounded provenance. It never compares data values. Repeat
+`--column` (or `--columns`) to filter columns. Report details are bounded and support the
+existing CSV, JSON, and HTML formats. `--strict` fails when metadata differs.
 
 ## Statistical inspection and validation
 

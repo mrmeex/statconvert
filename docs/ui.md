@@ -71,8 +71,13 @@ Select one file, then choose an inspection tab:
 - **Preview** returns a bounded sample of rows.
 - **Schema** shows column types and related schema information.
 - **Labels** shows variable and value labels where supported.
-- **Metadata** summarizes metadata and can export helper scripts for R (`.R`), SPSS
-  (`.sps`), or Stata (`.do`).
+- **Metadata** summarizes bounded normalized metadata, includes read-only diagnostic data
+  and coverage from the shared service, and can export helper scripts for R (`.R`), SPSS
+  (`.sps`), or Stata (`.do`). The explicit **Edit sidecar metadata** section supports
+  bounded dataset labels, notes, variable labels, typed value labels, and measurement
+  levels. Validate/Preview is required before Save, the target and overwrite choice are
+  explicit, and raw details stay collapsed and read-only. Source data and native metadata
+  are never edited.
 - **Summary** shows dataset-level statistics and memory size.
 - **Describe** separates column profiles, numeric statistics, and categorical statistics.
 - **Frequencies** shows a separate bounded frequency table for each selected variable.

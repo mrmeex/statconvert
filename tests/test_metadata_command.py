@@ -108,6 +108,10 @@ def test_metadata_help_lists_explicit_sidecar_options():
     assert "--sidecar-output" in result.output
     assert "--sidecar-input" in result.output
     assert "--overwrite-sidecar" in result.output
+    assert "--patch" in result.output
+    assert "--dry-run" in result.output
+    assert "--diagnose" in result.output
+    assert "--validate-sidecar" in result.output
 
 
 def test_metadata_exports_standardized_version_3_sidecar(tmp_path):

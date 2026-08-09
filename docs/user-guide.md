@@ -417,6 +417,75 @@ statconvert labels input.sav
 - `metadata` summarizes the normalized metadata available for the dataset.
 - `labels` displays variable labels and value labels when they exist.
 
+Run bounded, read-only diagnostics or validate a sidecar without activating it:
+
+```powershell
+statconvert metadata input.sav --diagnose
+statconvert metadata input.sav --diagnose --json
+statconvert metadata data.csv --validate-sidecar
+statconvert metadata data.csv --validate-sidecar --sidecar-input .\metadata\data.json --strict
+```
+
+Diagnostics report source precedence, field coverage, stable issues, provenance, and format
+caveats. Validation never copies, applies, overwrites, or writes the sidecar.
+
+Compare metadata without comparing data values:
+
+```powershell
+statconvert metadata-diff before.sav after.csv
+statconvert metadata-diff before.sav after.csv --columns status --json
+statconvert metadata-diff before.sav after.csv --report metadata-diff.html
+```
+
+Metadata editing is preview-first and writes only an explicit sidecar target:
+
+```powershell
+statconvert metadata data.csv --patch metadata.toml --sidecar-output edited.json --dry-run
+statconvert metadata data.csv --patch metadata.toml --sidecar-output edited.json
+statconvert metadata data.csv --patch metadata.toml --sidecar-output edited.json --overwrite-sidecar
+```
+
+A closed patch uses explicit operations, for example:
+
+```toml
+[dataset_label]
+action = "set"
+value = "Survey 2026"
+
+[notes]
+action = "replace"
+values = ["Reviewed", "Sidecar metadata only"]
+
+[[variable_labels]]
+column = "status"
+action = "set"
+value = "Participation status"
+
+[[value_labels]]
+column = "status"
+action = "set"
+value = 1
+label = "Active"
+
+[[measurement_levels]]
+column = "status"
+action = "set"
+value = "nominal"
+```
+
+Use `action = "delete"` for explicit deletion; omission means unchanged. Numeric `1` and
+string `"1"` are distinct typed value-label keys. Missing values/ranges, display formats
+and widths, types, raw metadata, and provenance cannot be patched. Source datasets and
+native metadata are never modified. Container editing is currently refused because legacy
+flat sidecars cannot identify one sheet/R object deterministically.
+
+To validate and save metadata from an existing sidecar to a different explicit sidecar:
+
+```powershell
+statconvert metadata data.csv --apply-sidecar --sidecar-input candidate.json --sidecar-output applied.json --dry-run
+statconvert metadata data.csv --apply-sidecar --sidecar-input candidate.json --sidecar-output applied.json
+```
+
 To create an editable starter schema contract from the same resolved dataset metadata:
 
 ```powershell
@@ -659,6 +728,10 @@ statconvert report input.sav --output quality.html --schema-contract schema.toml
 HTML is convenient for viewing and sharing. JSON is suited to downstream processing, and
 CSV provides table-oriented report output. Report contents and presets are described in
 the [CLI Reference](cli.md#report).
+
+The metadata section includes source precedence, sidecar state, format caveats, diagnostic
+issues, and bounded per-column coverage for labels, value labels, discrete and ranged
+missing metadata, display formats, and measurement levels.
 
 `report --schema-contract` adds the already supported schema and named-rule results as a
 dedicated section in JSON, CSV, or HTML. It includes status and counts plus severity,
@@ -915,10 +988,9 @@ column, such as normalized status codes, and sees only retained rows. Unmapped v
 preserved unless `--recode-default` is supplied; existing missing values remain missing.
 
 Use `transform --dry-run` to inspect the planned pipeline without writing. The complete
-syntax for filters, recoding, type errors, validation, and object selection is in the
-[CLI Reference](cli.md#transform), including every supported function and operator,
-bracketed references for awkward column names, ordered recipe semantics, and the closed
-evaluator's security boundary.
+syntax for filters, recoding, type errors, validation, object selection, supported
+functions and operators, ordered recipes, and the closed evaluator's security boundary
+is in the [CLI Reference](cli.md#transform).
 
 For many inputs, `batch --transform` continues to support the established select, drop,
 rename, type, structured filter, and recode options. The new derive and expression-filter

@@ -55,3 +55,26 @@ def test_public_documentation_excludes_removed_topics() -> None:
                 break
 
     assert not failures, "\n".join(failures)
+
+
+def test_public_docs_describe_metadata_release_boundaries() -> None:
+    public_docs = "\n".join(
+        (PROJECT_ROOT / path).read_text(encoding="utf-8")
+        for path in (
+            "README.md",
+            "docs/formats.md",
+            "docs/user-guide.md",
+            "docs/ui.md",
+            "docs/examples.md",
+        )
+    )
+
+    assert "--diagnose" in public_docs
+    assert "--validate-sidecar" in public_docs
+    assert "metadata-diff" in public_docs
+    assert "--patch" in public_docs
+    assert "--dry-run" in public_docs
+    assert "native metadata are never" in public_docs
+    assert "Missing values/ranges, display formats" in public_docs
+    assert "Container editing is currently refused" in public_docs
+    assert "database files, ORC" in public_docs

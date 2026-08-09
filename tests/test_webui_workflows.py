@@ -116,6 +116,8 @@ def test_path_and_all_inspection_routes_are_bounded(
     metadata = _post(application, "/api/inspect/metadata", dataset_payload)
     assert metadata.json()["data"]["total_variables"] == 3
     assert "summary" in metadata.json()["data"]
+    assert metadata.json()["data"]["diagnostics"]["valid"] is True
+    assert "coverage" in metadata.json()["data"]["diagnostics"]
 
     summary = _post(application, "/api/inspect/summary", dataset_payload)
     assert summary.json()["data"]["row_count"] == 3
@@ -149,6 +151,73 @@ def test_path_and_all_inspection_routes_are_bounded(
         {**dataset_payload, "columns": ["score"]},
     )
     assert missing.json()["data"]["profiles"][0]["missing_count"] == 1
+
+
+def test_metadata_sidecar_editor_preview_and_save_require_confirmation(
+    csv_file: Path,
+    tmp_path: Path,
+) -> None:
+    application = create_app()
+    target = tmp_path / "edited.statconvert-metadata.json"
+    payload = {
+        "path": str(csv_file),
+        "object_selector": None,
+        "output_path": str(target),
+        "overwrite": False,
+        "patch": {
+            "dataset_label": {"action": "set", "value": "Edited"},
+            "variable_labels": [
+                {"column": "group", "action": "set", "value": "Study group"}
+            ],
+            "measurement_levels": [
+                {"column": "group", "action": "set", "value": "nominal"}
+            ],
+        },
+    }
+
+    preview = _post(
+        application,
+        "/api/inspect/metadata/sidecar/preview",
+        payload,
+    )
+    unconfirmed = _post(
+        application,
+        "/api/inspect/metadata/sidecar/save",
+        payload,
+    )
+    saved = _post(
+        application,
+        "/api/inspect/metadata/sidecar/save",
+        {**payload, "confirmed_preview": True},
+    )
+
+    assert preview.status_code == 200
+    assert preview.json()["data"]["valid"] is True
+    assert preview.json()["data"]["writes"] is False
+    assert not target.exists() or saved.status_code == 200
+    assert unconfirmed.status_code == 400
+    assert saved.status_code == 200
+    assert saved.json()["data"]["writes"] is True
+    assert target.exists()
+
+
+def test_metadata_sidecar_editor_rejects_deferred_fields(
+    csv_file: Path,
+    tmp_path: Path,
+) -> None:
+    response = _post(
+        create_app(),
+        "/api/inspect/metadata/sidecar/preview",
+        {
+            "path": str(csv_file),
+            "object_selector": None,
+            "output_path": str(tmp_path / "out.json"),
+            "patch": {"missing_values": {"action": "set"}},
+        },
+    )
+
+    assert response.status_code == 400
+    assert "Unknown or unsupported metadata patch field" in response.text
 
 
 @pytest.mark.parametrize(

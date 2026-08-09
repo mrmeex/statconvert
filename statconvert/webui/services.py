@@ -46,6 +46,12 @@ from statconvert.inspection import (
     validate_dataset,
 )
 from statconvert.metadata.scripts import export_metadata_script
+from statconvert.metadata.diagnostics import build_metadata_diagnostics
+from statconvert.metadata.editing import (
+    parse_metadata_patch_data,
+    preview_metadata_patch,
+    save_metadata_sidecar,
+)
 from statconvert.object_discovery import build_object_discovery_report
 from statconvert.object_manifest import read_object_manifest
 from statconvert.output_paths import validate_output_root_directory
@@ -101,6 +107,7 @@ from .api.models import (
     ConvertRequest,
     ExpressionValidationRequest,
     MetadataScriptExportRequest,
+    MetadataSidecarEditRequest,
     ReportRequest,
     TransformRequest,
     ValidateRequest,
@@ -329,6 +336,12 @@ def inspect_metadata(path: str, object_selector: str | None) -> dict[str, Any]:
                 ],
             }
         )
+    diagnostics = build_metadata_diagnostics(
+        dataset,
+        path,
+        object_name=object_selector,
+        max_columns=MAX_INSPECT_COLUMNS,
+    )
     return {
         "dataset": {
             "source_format": metadata.source_format,
@@ -343,6 +356,7 @@ def inspect_metadata(path: str, object_selector: str | None) -> dict[str, Any]:
         "returned_variables": len(variables),
         "total_variables": len(metadata.variables),
         "truncated": len(metadata.variables) > len(variables),
+        "diagnostics": make_json_safe(asdict(diagnostics)),
     }
 
 
@@ -417,6 +431,52 @@ def export_inspect_metadata_script(
             options=options,
         ),
     }
+
+
+def preview_inspect_metadata_sidecar(
+    request: MetadataSidecarEditRequest,
+) -> dict[str, Any]:
+    """Preview a closed browser patch without creating directories or files."""
+
+    input_path = _existing_file(request.path)
+    dataset = _read(str(input_path), request.object_selector)
+    patch = parse_metadata_patch_data(request.patch)
+    preview, _ = preview_metadata_patch(
+        dataset,
+        input_path,
+        patch,
+        request.output_path,
+        overwrite=request.overwrite,
+        object_name=request.object_selector,
+        dry_run=True,
+    )
+    return make_json_safe(asdict(preview))
+
+
+def save_inspect_metadata_sidecar(
+    request: MetadataSidecarEditRequest,
+) -> dict[str, Any]:
+    """Revalidate and atomically save one explicitly confirmed browser preview."""
+
+    if not request.confirmed_preview:
+        raise WebUiRequestError(
+            "Saving metadata requires a confirmed valid preview.",
+            suggestion="Preview the current patch, then confirm and save it.",
+        )
+    input_path = _existing_file(request.path)
+    dataset = _read(str(input_path), request.object_selector)
+    patch = parse_metadata_patch_data(request.patch)
+    preview, edited = preview_metadata_patch(
+        dataset,
+        input_path,
+        patch,
+        request.output_path,
+        overwrite=request.overwrite,
+        object_name=request.object_selector,
+        dry_run=False,
+    )
+    result = save_metadata_sidecar(preview, edited, overwrite=request.overwrite)
+    return make_json_safe(asdict(result))
 
 
 def inspect_frequencies(

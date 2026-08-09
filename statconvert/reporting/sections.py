@@ -25,6 +25,7 @@ from statconvert.reporting.models import (
     ReportTable,
 )
 from statconvert.reporting.exceptions import ReportError
+from statconvert.metadata.diagnostics import build_metadata_diagnostics
 
 
 def build_summary_section(dataset: Dataset) -> ReportSection:
@@ -137,10 +138,67 @@ def build_metadata_section(dataset: Dataset) -> ReportSection:
         ReportMetric(name=name, value=value, label=name.replace("_", " ").title())
         for name, value in summary.items()
     ]
+    tables: list[ReportTable] = []
+    report_issues: list[ReportIssue] = []
+    if dataset.source_file:
+        diagnostics = build_metadata_diagnostics(dataset, dataset.source_file)
+        metrics.extend((
+            ReportMetric("sidecar_present", diagnostics.source.sidecar_present, label="Sidecar Present"),
+            ReportMetric("sidecar_version", diagnostics.source.sidecar_version, label="Sidecar Version"),
+            ReportMetric("metadata_caveats", list(diagnostics.caveats), label="Metadata Caveats"),
+            ReportMetric("metadata_diagnostics_valid", diagnostics.valid, label="Diagnostics Valid"),
+        ))
+        issue_rows = [
+            {
+                "severity": issue.severity,
+                "code": issue.code,
+                "column": issue.column,
+                "field": issue.field,
+                "message": issue.message,
+                "suggestion": issue.suggestion,
+            }
+            for issue in diagnostics.issues
+        ]
+        tables.append(ReportTable(
+            "metadata_diagnostics",
+            ["severity", "code", "column", "field", "message", "suggestion"],
+            issue_rows,
+            description="Read-only metadata and sidecar diagnostics.",
+        ))
+        tables.append(ReportTable(
+            "metadata_coverage",
+            [
+                "column", "storage_type", "logical_type", "has_label",
+                "has_value_labels", "has_missing_values", "has_missing_ranges",
+                "display_format", "measurement_level", "metadata_source",
+            ],
+            [
+                {
+                    "column": column.column,
+                    "storage_type": column.storage_type,
+                    "logical_type": column.logical_type,
+                    "has_label": column.has_label,
+                    "has_value_labels": column.has_value_labels,
+                    "has_missing_values": column.has_missing_values,
+                    "has_missing_ranges": column.has_missing_ranges,
+                    "display_format": column.display_format,
+                    "measurement_level": column.measurement_level,
+                    "metadata_source": column.metadata_source,
+                }
+                for column in diagnostics.columns
+            ],
+            description="Bounded per-column metadata field coverage.",
+        ))
+        report_issues.extend(
+            ReportIssue(issue.severity, issue.code, issue.message, issue.column)
+            for issue in diagnostics.issues
+        )
     return ReportSection(
         key="metadata",
         title="Metadata",
         metrics=[*context_metrics, *metrics],
+        tables=tables,
+        issues=report_issues,
     )
 
 

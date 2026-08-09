@@ -85,6 +85,7 @@ class ArrowBackend(Backend):
             "file_type": extension,
             "backend": self.name,
             "arrow_format": arrow_format,
+            "embedded_metadata_present": embedded_payload is not None,
         }
 
 

@@ -8,6 +8,7 @@ import { IconFileExport, IconRefresh } from "@tabler/icons-react";
 import { CommandPreview } from "../components/CommandPreview";
 import { ErrorAlert } from "../components/ErrorAlert";
 import { InspectResultView } from "../components/InspectResultView";
+import { MetadataSidecarEditor } from "../components/MetadataSidecarEditor";
 import { PathPickerField } from "../components/PathPickerField";
 import { ResultView } from "../components/ResultView";
 import { WorkflowHeader } from "../components/WorkflowHeader";
@@ -151,6 +152,9 @@ export function InspectPage() {
         <ErrorAlert error={error} />
         {command && <CommandPreview command={command} />}
         <InspectResultView tab={activeTab} data={result} title={tabLabel} />
+        {activeTab === "metadata" && (
+          <MetadataSidecarEditor path={path} objectSelector={objectSelector} metadata={result} />
+        )}
         {activeTab === "metadata" && (
           <Paper withBorder radius="lg" p="lg">
             <Stack gap="md">

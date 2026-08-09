@@ -140,6 +140,24 @@ statconvert labels .\input\data.sav
 - `metadata` summarizes the metadata attached to the dataset.
 - `labels` displays variable and value labels when the format provides them.
 
+Diagnose or compare metadata without changing files or comparing data values:
+
+```powershell
+statconvert metadata .\input\data.sav --diagnose
+statconvert metadata .\input\data.csv --validate-sidecar --sidecar-input .\metadata\data.json
+statconvert metadata-diff .\input\before.sav .\input\after.csv --report .\review\metadata.html
+```
+
+Preview and save a closed metadata patch as a sidecar:
+
+```powershell
+statconvert metadata .\input\data.csv --patch .\metadata\labels.toml --sidecar-output .\metadata\edited.json --dry-run
+statconvert metadata .\input\data.csv --patch .\metadata\labels.toml --sidecar-output .\metadata\edited.json
+```
+
+The patch may edit only dataset labels/notes, variable and typed value labels, and
+measurement levels. It never edits the source dataset or native metadata.
+
 For script-friendly inspection, use a command that supports JSON, such as `summary`:
 
 ```powershell

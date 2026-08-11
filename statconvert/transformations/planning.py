@@ -259,6 +259,9 @@ def _plan_step(
         TransformStepType.DERIVE: _plan_derive,
         TransformStepType.FILTER: _plan_filter,
         TransformStepType.RECODE: _plan_recode,
+        TransformStepType.SORT: _plan_sort,
+        TransformStepType.DISTINCT: _plan_distinct,
+        TransformStepType.ROW_NUMBER: _plan_row_number,
     }
     return planners[step.step_type](step, step_index, current_columns)
 
@@ -768,6 +771,94 @@ def _plan_recode(
             step.parameters.get("update_value_labels", True)
         ),
         recode_affects_missing_values=False,
+        errors=tuple(errors),
+    )
+
+
+def _plan_sort(
+    step: TransformStep,
+    step_index: int,
+    current_columns: list[str],
+) -> _StepProjection:
+    columns = [str(key["column"]) for key in step.parameters["keys"]]
+    errors = _duplicate_column_issues(
+        columns,
+        step_index,
+        step.step_type,
+        "keys",
+    )
+    errors.extend(
+        _unknown_column_issue(
+            column,
+            step_index,
+            step.step_type,
+            "keys",
+            current_columns,
+        )
+        for column in columns
+        if column not in current_columns
+    )
+    return _StepProjection(
+        columns=list(current_columns),
+        referenced_columns=tuple(columns),
+        row_local=False,
+        errors=tuple(errors),
+    )
+
+
+def _plan_distinct(
+    step: TransformStep,
+    step_index: int,
+    current_columns: list[str],
+) -> _StepProjection:
+    columns = list(step.parameters["columns"])
+    errors = _duplicate_column_issues(
+        columns,
+        step_index,
+        step.step_type,
+        "columns",
+    )
+    errors.extend(
+        _unknown_column_issue(
+            column,
+            step_index,
+            step.step_type,
+            "columns",
+            current_columns,
+        )
+        for column in columns
+        if column not in current_columns
+    )
+    return _StepProjection(
+        columns=list(current_columns),
+        referenced_columns=tuple(columns),
+        row_local=False,
+        errors=tuple(errors),
+    )
+
+
+def _plan_row_number(
+    step: TransformStep,
+    step_index: int,
+    current_columns: list[str],
+) -> _StepProjection:
+    column = step.parameters["column"]
+    errors: list[TransformPlanIssue] = []
+    if column in current_columns:
+        errors.append(
+            _issue(
+                "transform_column_collision",
+                f"Row-number column '{column}' already exists.",
+                step_index,
+                step.step_type,
+                "column",
+                referenced_column=column,
+                suggestion="Choose a new row-number column name.",
+            )
+        )
+    return _StepProjection(
+        columns=[*current_columns, column],
+        row_local=False,
         errors=tuple(errors),
     )
 

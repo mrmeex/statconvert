@@ -78,6 +78,21 @@ default = "Unknown"
 update_value_labels = false
 [steps.map]
 A = "Active"
+
+[[steps]]
+type = "sort"
+keys = [{ column = "value", order = "descending", nulls = "last" }]
+
+[[steps]]
+type = "distinct"
+columns = ["status"]
+keep = "last"
+
+[[steps]]
+type = "row_number"
+column = "row_id"
+start = 10
+step = 2
 """,
     )
 
@@ -91,9 +106,17 @@ A = "Active"
         "derive",
         "filter",
         "recode",
+        "sort",
+        "distinct",
+        "row_number",
     ]
     assert config.options["steps"][2]["map"] == {"old": "value"}
     assert config.options["steps"][6]["map"] == {"A": "Active"}
+    assert config.options["steps"][7]["keys"] == [
+        {"column": "value", "order": "descending", "nulls": "last"}
+    ]
+    assert config.options["steps"][8]["keep"] == "last"
+    assert config.options["steps"][9]["start"] == 10
 
 
 def test_ordered_config_executes_existing_transformations_in_exact_order(tmp_path):

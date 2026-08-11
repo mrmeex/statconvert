@@ -165,6 +165,16 @@ class TransformConditionRequest(BaseModel):
     value: str | int | float | bool | None = None
 
 
+class TransformSortKeyRequest(BaseModel):
+    """One closed stable-sort key selected in the Transform editor."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    column: str = Field(min_length=1)
+    order: Literal["ascending", "descending"]
+    nulls: Literal["first", "last"]
+
+
 class TransformStepRequest(BaseModel):
     """One canonical ordered transform step table."""
 
@@ -178,6 +188,9 @@ class TransformStepRequest(BaseModel):
         "derive",
         "filter",
         "recode",
+        "sort",
+        "distinct",
+        "row_number",
     ]
     id: str | None = None
     columns: list[str] | None = Field(default=None, max_length=500)
@@ -185,6 +198,10 @@ class TransformStepRequest(BaseModel):
     from_: str | None = Field(default=None, alias="from")
     to: str | None = None
     map: dict[str, str | int | float | bool] | None = None
+    mappings: list[dict[str, str | int | float | bool]] | None = Field(
+        default=None,
+        max_length=10_000,
+    )
     column: str | None = None
     data_type: str | None = None
     errors: Literal["raise", "coerce", "ignore"] | None = None
@@ -198,6 +215,14 @@ class TransformStepRequest(BaseModel):
     reset_index: bool | None = None
     default: str | int | float | bool | None = None
     update_value_labels: bool | None = None
+    keys: list[TransformSortKeyRequest] | None = Field(
+        default=None,
+        min_length=1,
+        max_length=100,
+    )
+    keep: Literal["first", "last"] | None = None
+    start: int | None = None
+    step: int | None = None
 
     def to_step_dict(self) -> dict[str, Any]:
         """Return aliases and only explicitly supplied fields."""
@@ -215,7 +240,26 @@ class TransformRequest(BaseModel):
     overwrite: bool = False
     create_dirs: bool = False
     steps: list[TransformStepRequest] = Field(default_factory=list, max_length=100)
+    recipe_name: str | None = Field(default=None, max_length=200)
+    recipe_description: str | None = Field(default=None, max_length=2_000)
     preview_limit: int = Field(default=50, ge=1, le=100)
+
+
+class TransformRecipeLoadRequest(BaseModel):
+    """One explicit portable recipe file selected for import."""
+
+    path: str = Field(min_length=1)
+
+
+class TransformRecipeSaveRequest(BaseModel):
+    """One explicit portable recipe save target and visible ordered steps."""
+
+    output_path: str = Field(min_length=1)
+    name: str | None = Field(default=None, max_length=200)
+    description: str | None = Field(default=None, max_length=2_000)
+    steps: list[TransformStepRequest] = Field(min_length=1, max_length=100)
+    overwrite: bool = False
+    create_dirs: bool = False
 
 
 class ExpressionValidationRequest(BaseModel):

@@ -20,6 +20,7 @@ interface PathPickerFieldProps {
   extensions?: string[];
   required?: boolean;
   allowDirectorySelection?: boolean;
+  allowSaveSelection?: boolean;
 }
 
 function parentPath(value: string): string {
@@ -35,7 +36,7 @@ function joinPath(directory: string, name: string): string {
 
 export function PathPickerField({
   label, value, onChange, onCommit, description, placeholder, selection = "file",
-  extensions = [], required, allowDirectorySelection = false,
+  extensions = [], required, allowDirectorySelection = false, allowSaveSelection = false,
 }: PathPickerFieldProps) {
   const [opened, setOpened] = useState(false);
   const [root, setRoot] = useState("");
@@ -136,6 +137,19 @@ export function PathPickerField({
               </ActionIcon>
             </Tooltip>
           </Group>
+        ) : allowSaveSelection ? (
+          <Group gap={2} wrap="nowrap">
+            <Tooltip label="Select existing file">
+              <ActionIcon variant="subtle" onClick={() => void open("file")} aria-label={`Browse existing file for ${label.toLowerCase()}`}>
+                <IconFile size={18} />
+              </ActionIcon>
+            </Tooltip>
+            <Tooltip label="Choose save path">
+              <ActionIcon variant="subtle" onClick={() => void open("save_file")} aria-label={`Browse save path for ${label.toLowerCase()}`}>
+                <IconFolderOpen size={18} />
+              </ActionIcon>
+            </Tooltip>
+          </Group>
         ) : (
           <Tooltip label="Browse local paths">
             <ActionIcon variant="subtle" onClick={() => void open()} aria-label={`Browse for ${label.toLowerCase()}`}>
@@ -143,7 +157,7 @@ export function PathPickerField({
             </ActionIcon>
           </Tooltip>
         )}
-        rightSectionWidth={allowDirectorySelection ? 70 : undefined}
+        rightSectionWidth={allowDirectorySelection || allowSaveSelection ? 70 : undefined}
       />
       <Modal opened={opened} onClose={() => setOpened(false)} title={`Browse for ${label}`} size="xl">
         <Stack>

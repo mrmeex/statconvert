@@ -69,6 +69,8 @@ from statconvert.reporting import (
 from statconvert.registry import (
     get_backend_name,
     get_file_format,
+    get_reader_for_file,
+    get_writer_for_file,
     list_backends,
     list_dataset_objects,
     list_formats,
@@ -113,9 +115,18 @@ from statconvert.metadata.scripts import export_metadata_script
 from statconvert.transformer import transform_file
 from statconvert.transformations import (
     compile_transform_recipe,
+    parse_portable_recipe,
+    portable_recipe_from_transform_recipe,
+    portable_recipe_template,
+    portable_recipe_to_toml,
+    preflight_transform_output,
+    preview_full_transform,
     recipe_from_ordered_steps,
+    save_portable_recipe,
 )
 from statconvert.transformations.cli_parsing import build_pipeline_from_cli_options
+from statconvert.transformations.compatibility import recipe_from_transform_options
+from statconvert.transformations.planning import plan_transform_recipe
 from statconvert.transformations.recipes import TransformStepType
 from statconvert.version import format_version_status
 
@@ -158,6 +169,8 @@ from statconvert.ui import (
     show_schema,
     show_error,
     show_warning,
+    show_full_transform_preview,
+    show_transform_recipe_validation,
     show_transformation_summary,
 )
 
@@ -178,6 +191,12 @@ config_app = typer.Typer(
     no_args_is_help=True,
 )
 app.add_typer(config_app, name="config")
+transform_recipe_app = typer.Typer(
+    name="transform-recipe",
+    help="Validate and create portable transform recipe TOML.",
+    no_args_is_help=True,
+)
+app.add_typer(transform_recipe_app, name="transform-recipe")
 
 LogFileOption = Annotated[
     str | None,
@@ -511,6 +530,113 @@ def config_run(config_file: str):
         raise typer.Exit(1)
 
 
+@transform_recipe_app.command("validate")
+def transform_recipe_validate(
+    recipe_file: str,
+    input_file: str | None = typer.Option(
+        None,
+        "--input",
+        help="Optionally validate ordered column compatibility against a dataset.",
+    ),
+    object_selector: ObjectSelectorOption = None,
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help="Emit a plain machine-readable validation result.",
+    ),
+) -> None:
+    """Validate a portable recipe without writing files."""
+
+    try:
+        portable = parse_portable_recipe(recipe_file)
+        issues: list[dict[str, Any]] = []
+        mode = "syntax"
+        valid = True
+        if input_file is not None:
+            mode = "input_bound"
+            get_reader_for_file(input_file)
+            dataset = read_dataset(input_file, object_selector=object_selector)
+            bound = portable.bind(
+                input_file=input_file,
+                output_file="validation-only.output",
+            )
+            plan = plan_transform_recipe(
+                bound,
+                [str(column) for column in dataset.columns],
+                mode="full",
+            )
+            valid = plan.valid
+            issues = [
+                issue.to_dict() for issue in (*plan.errors, *plan.warnings)
+            ]
+        payload: dict[str, Any] = {
+            "valid": valid,
+            "mode": mode,
+            "schema_version": portable.version,
+            "recipe": portable.to_dict(),
+            "issues": issues,
+        }
+    except Exception as exc:
+        payload = {
+            "valid": False,
+            "mode": "input_bound" if input_file is not None else "syntax",
+            "schema_version": None,
+            "recipe": None,
+            "issues": [
+                {
+                    "code": "transform_recipe_invalid",
+                    "severity": "error",
+                    "message": str(exc),
+                }
+            ],
+        }
+
+    if json_output:
+        emit_json(payload)
+    else:
+        show_transform_recipe_validation(payload)
+    if not payload["valid"]:
+        raise typer.Exit(1)
+
+
+@transform_recipe_app.command("template")
+def transform_recipe_template_command(
+    output_file: str | None = typer.Option(
+        None,
+        "--output",
+        "-o",
+        help="Optional recipe TOML path to create.",
+    ),
+    overwrite_recipe: bool = typer.Option(
+        False,
+        "--overwrite-recipe",
+        help="Replace an existing recipe output.",
+    ),
+    create_dirs: bool = typer.Option(
+        False,
+        "--create-dirs",
+        help="Create missing recipe parent directories.",
+    ),
+) -> None:
+    """Print or atomically save a safe portable recipe template."""
+
+    try:
+        recipe = portable_recipe_template()
+        if output_file is None:
+            typer.echo(portable_recipe_to_toml(recipe), nl=False)
+            return
+        path = save_portable_recipe(
+            recipe,
+            output_file,
+            overwrite=overwrite_recipe,
+            create_dirs=create_dirs,
+        )
+        show_success(f"Transform recipe created: {path}")
+    except Exception as exc:
+        handle_exception(exc)
+        raise typer.Exit(1)
+
+
 def _run_batch_config(
     *,
     _config_option_names: frozenset[str],
@@ -550,7 +676,22 @@ def _run_transform_config(
     """Run legacy options or one canonical ordered recipe through shared logic."""
 
     if ordered_steps is None:
-        transform(**arguments)
+        transform(
+            recipe_file=None,
+            save_recipe_file=None,
+            overwrite_recipe=False,
+            create_recipe_dirs=False,
+            preview=False,
+            json_output=False,
+            sort_items=None,
+            sort_nulls="last",
+            distinct_columns=None,
+            distinct_keep="first",
+            row_number_column=None,
+            row_number_start=1,
+            row_number_step=1,
+            **arguments,
+        )
         return
 
     input_file = arguments["input_file"]
@@ -1266,7 +1407,6 @@ def collect(
     """Collect manifest-selected datasets into one multi-object output file."""
 
     validation_failure: ValidationFailedError | None = None
-
     try:
         _validate_write_config_options(write_config_file, overwrite_config)
         if write_config_file is not None:
@@ -1387,6 +1527,36 @@ def collect(
 def transform(
     input_file: str,
     output_file: str,
+    recipe_file: str | None = typer.Option(
+        None,
+        "--recipe",
+        help="Load path-independent ordered steps from portable recipe TOML.",
+    ),
+    save_recipe_file: str | None = typer.Option(
+        None,
+        "--save-recipe",
+        help="Save current transform flags as a portable recipe without running.",
+    ),
+    overwrite_recipe: bool = typer.Option(
+        False,
+        "--overwrite-recipe",
+        help="Replace an existing --save-recipe target.",
+    ),
+    create_recipe_dirs: bool = typer.Option(
+        False,
+        "--create-recipe-dirs",
+        help="Create missing parent directories for --save-recipe.",
+    ),
+    preview: bool = typer.Option(
+        False,
+        "--preview",
+        help="Apply the full transform to a copy and report exact impact without writing.",
+    ),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help="Emit a plain JSON result for --preview.",
+    ),
     object_selector: ObjectSelectorOption = None,
     extra_columns: list[str] | None = typer.Argument(
         None,
@@ -1467,6 +1637,41 @@ def transform(
         "--reset-index/--no-reset-index",
         help="Reset row index after filtering.",
     ),
+    sort_items: list[str] | None = typer.Option(
+        None,
+        "--sort",
+        help="Stable sort key COLUMN[:asc|desc]. Repeat for multiple keys.",
+    ),
+    sort_nulls: str = typer.Option(
+        "last",
+        "--sort-nulls",
+        help="Place missing sort values first or last for direct sort keys.",
+    ),
+    distinct_columns: list[str] | None = typer.Option(
+        None,
+        "--distinct",
+        help="Distinct key column. Repeat for a composite key.",
+    ),
+    distinct_keep: str = typer.Option(
+        "first",
+        "--distinct-keep",
+        help="Keep the first or last row for each distinct key.",
+    ),
+    row_number_column: str | None = typer.Option(
+        None,
+        "--row-number",
+        help="Append a deterministic integer row-number column.",
+    ),
+    row_number_start: int = typer.Option(
+        1,
+        "--row-number-start",
+        help="First generated row number.",
+    ),
+    row_number_step: int = typer.Option(
+        1,
+        "--row-number-step",
+        help="Positive increment between generated row numbers.",
+    ),
     overwrite: OverwriteOption = False,
     create_dirs: CreateDirsOption = False,
     write_config_file: WriteConfigOption = None,
@@ -1500,9 +1705,201 @@ def transform(
     """
 
     validation_failure: ValidationFailedError | None = None
+    portable_recipe = None
+    bound_recipe = None
 
     try:
         _validate_write_config_options(write_config_file, overwrite_config)
+        direct_operations = any(
+            (
+                select,
+                drop,
+                rename,
+                type_items,
+                derive_items,
+                filter_items,
+                filter_expression_items,
+                recode,
+                sort_items,
+                distinct_columns,
+                row_number_column,
+                extra_columns,
+            )
+        )
+        direct_modifiers = (
+            type_errors != "raise"
+            or datetime_format is not None
+            or filter_mode != "and"
+            or recode_default is not None
+            or not update_value_labels
+            or ignore_missing_columns
+            or not reset_index
+            or sort_nulls != "last"
+            or distinct_keep != "first"
+            or row_number_start != 1
+            or row_number_step != 1
+        )
+        if recipe_file is not None and (direct_operations or direct_modifiers):
+            raise ConversionError(
+                "--recipe cannot be combined with direct transform operation options."
+            )
+        if recipe_file is not None and save_recipe_file is not None:
+            raise ConversionError("Use either --recipe or --save-recipe, not both.")
+        if preview and dry_run:
+            raise ConversionError("Use either --preview or --dry-run, not both.")
+        if json_output and not preview:
+            raise ConversionError("--json is supported only with --preview.")
+        if save_recipe_file is not None and (
+            dry_run or preview or write_config_file is not None or recipe_file is not None
+        ):
+            raise ConversionError(
+                "--save-recipe cannot be combined with --recipe, --dry-run, "
+                "--preview, or --write-config."
+            )
+        if recipe_file is not None and write_config_file is not None:
+            raise ConversionError("--recipe cannot be combined with --write-config.")
+        if sort_items is None and sort_nulls != "last":
+            raise ConversionError("--sort-nulls requires at least one --sort option.")
+        if distinct_columns is None and distinct_keep != "first":
+            raise ConversionError(
+                "--distinct-keep requires at least one --distinct option."
+            )
+        if row_number_column is None and (
+            row_number_start != 1 or row_number_step != 1
+        ):
+            raise ConversionError(
+                "--row-number-start and --row-number-step require --row-number."
+            )
+        if write_config_file is not None and (
+            sort_items or distinct_columns or row_number_column is not None
+        ):
+            raise ConversionError(
+                "New row operations are not legacy workflow-config fields. "
+                "Use --save-recipe to export them."
+            )
+
+        if save_recipe_file is not None:
+            selected, dropped = _attach_extra_column_args(
+                extra_columns=extra_columns,
+                select=select,
+                drop=drop,
+            )
+            internal_recipe = recipe_from_transform_options(
+                input_file=input_file,
+                output_file=output_file,
+                select_columns=selected,
+                drop_columns=dropped,
+                rename_items=rename,
+                type_items=type_items,
+                type_errors=type_errors,
+                datetime_format=datetime_format,
+                derive_items=derive_items,
+                filter_items=filter_items,
+                filter_expression_items=filter_expression_items,
+                filter_mode=filter_mode,
+                recode_items=recode,
+                recode_default=recode_default,
+                update_value_labels=update_value_labels,
+                ignore_missing_columns=ignore_missing_columns,
+                reset_index=reset_index,
+                sort_items=sort_items,
+                sort_nulls=sort_nulls,
+                distinct_columns=distinct_columns,
+                distinct_keep=distinct_keep,
+                row_number_column=row_number_column,
+                row_number_start=row_number_start,
+                row_number_step=row_number_step,
+            )
+            portable = portable_recipe_from_transform_recipe(internal_recipe)
+            path = save_portable_recipe(
+                portable,
+                save_recipe_file,
+                overwrite=overwrite_recipe,
+                create_dirs=create_recipe_dirs,
+            )
+            show_success(f"Transform recipe saved: {path}")
+            return
+
+        if recipe_file is not None:
+            portable_recipe = parse_portable_recipe(recipe_file)
+            bound_recipe = portable_recipe.bind(
+                input_file=input_file,
+                output_file=output_file,
+                overwrite=overwrite,
+            )
+
+        if preview:
+            if portable_recipe is None:
+                selected, dropped = _attach_extra_column_args(
+                    extra_columns=extra_columns,
+                    select=select,
+                    drop=drop,
+                )
+                internal_recipe = recipe_from_transform_options(
+                    input_file=input_file,
+                    output_file=output_file,
+                    select_columns=selected,
+                    drop_columns=dropped,
+                    rename_items=rename,
+                    type_items=type_items,
+                    type_errors=type_errors,
+                    datetime_format=datetime_format,
+                    derive_items=derive_items,
+                    filter_items=filter_items,
+                    filter_expression_items=filter_expression_items,
+                    filter_mode=filter_mode,
+                    recode_items=recode,
+                    recode_default=recode_default,
+                    update_value_labels=update_value_labels,
+                    ignore_missing_columns=ignore_missing_columns,
+                    reset_index=reset_index,
+                    sort_items=sort_items,
+                    sort_nulls=sort_nulls,
+                    distinct_columns=distinct_columns,
+                    distinct_keep=distinct_keep,
+                    row_number_column=row_number_column,
+                    row_number_start=row_number_start,
+                    row_number_step=row_number_step,
+                )
+                portable_recipe = portable_recipe_from_transform_recipe(internal_recipe)
+                bound_recipe = internal_recipe
+            assert bound_recipe is not None
+            get_reader_for_file(input_file)
+            get_writer_for_file(output_file)
+            output_preflight = preflight_transform_output(
+                input_file,
+                output_file,
+                overwrite=overwrite,
+                create_dirs=create_dirs,
+                write=False,
+            )
+            read_options, _ = _dataset_io_options(
+                input_encoding,
+                output_encoding,
+                csv_delimiter,
+                csv_decimal,
+            )
+            source_dataset = read_dataset(
+                input_file,
+                object_selector=object_selector,
+                options=read_options,
+            )
+            preview_result = preview_full_transform(
+                source_dataset,
+                bound_recipe,
+                input_path=input_file,
+                output_preflight=output_preflight,
+                object_selector=object_selector,
+                portable_recipe=portable_recipe,
+            ).to_dict()
+            if json_output:
+                emit_json(preview_result)
+            else:
+                show_full_transform_preview(preview_result)
+            if not preview_result["valid"]:
+                raise typer.Exit(1)
+            return
+
         if write_config_file is not None:
             select, drop = _attach_extra_column_args(
                 extra_columns=extra_columns,
@@ -1580,6 +1977,9 @@ def transform(
                 "filters": filter_items,
                 "filter_expressions": filter_expression_items,
                 "recode": recode,
+                "sort": sort_items,
+                "distinct": distinct_columns,
+                "row_number": row_number_column,
                 "validate": validate_inputs,
                 "strict_validation": strict_validation,
                 "dry_run": dry_run,
@@ -1604,28 +2004,38 @@ def transform(
                 select=select,
                 drop=drop,
             )
-            pipeline = build_pipeline_from_cli_options(
-                select_columns=select,
-                drop_columns=drop,
-                rename_items=rename,
-                type_items=type_items,
-                type_errors=type_errors,
-                datetime_format=datetime_format,
-                derive_items=derive_items,
-                filter_items=filter_items,
-                filter_expression_items=filter_expression_items,
-                filter_mode=filter_mode,
-                recode_items=recode,
-                recode_default=recode_default,
-                update_value_labels=update_value_labels,
-                ignore_missing_columns=ignore_missing_columns,
-                reset_index=reset_index,
-            )
+            pipeline = None
+            if bound_recipe is None:
+                pipeline = build_pipeline_from_cli_options(
+                    select_columns=select,
+                    drop_columns=drop,
+                    rename_items=rename,
+                    type_items=type_items,
+                    type_errors=type_errors,
+                    datetime_format=datetime_format,
+                    derive_items=derive_items,
+                    filter_items=filter_items,
+                    filter_expression_items=filter_expression_items,
+                    filter_mode=filter_mode,
+                    recode_items=recode,
+                    recode_default=recode_default,
+                    update_value_labels=update_value_labels,
+                    ignore_missing_columns=ignore_missing_columns,
+                    reset_index=reset_index,
+                    sort_items=sort_items,
+                    sort_nulls=sort_nulls,
+                    distinct_columns=distinct_columns,
+                    distinct_keep=distinct_keep,
+                    row_number_column=row_number_column,
+                    row_number_start=row_number_start,
+                    row_number_step=row_number_step,
+                )
             try:
                 dataset = transform_file(
                     input_file=input_file,
                     output_file=output_file,
                     pipeline=pipeline,
+                    recipe=bound_recipe,
                     overwrite=overwrite,
                     create_dirs=create_dirs,
                     dry_run=dry_run,
@@ -1665,6 +2075,10 @@ def transform(
                     pipeline=pipeline,
                     transformed_dataset=dataset,
                     dry_run=dry_run,
+                    ordered_recipe=bound_recipe is not None,
+                    recipe_step_count=(
+                        len(bound_recipe.steps) if bound_recipe is not None else None
+                    ),
                 )
 
                 if not dry_run:
@@ -1672,6 +2086,8 @@ def transform(
                         "Transformation completed."
                     )
 
+    except typer.Exit:
+        raise
     except Exception as exc:
 
         handle_exception(exc)

@@ -545,5 +545,5 @@ StatConvert does not currently provide:
   relative tolerances, or chunked comparison; or
 - human-readable descriptions of raw display-format codes.
 
-See the [CLI Reference](cli.md) for command-specific boundaries and the
-[User Guide](user-guide.md) for supported workflow guidance.
+See the [User Guide](user-guide.md) and [CLI Reference](cli.md) for supported workflows
+and current capability behavior.

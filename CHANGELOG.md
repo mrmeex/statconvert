@@ -1,5 +1,53 @@
 # Changelog
 
+## Unreleased
+
+## 1.3.0 - 2026-08-11
+
+StatConvert 1.3.0 is the transform power release. It adds portable ordered recipes,
+non-writing full-impact preview, and three focused row operations without adding formats,
+runtime dependencies, ORC, databases, or batch recipe loading.
+
+### Sort, distinct, and row number (1.3.0c)
+
+- Added stable multi-column sort with per-key direction and missing-value placement,
+  order-preserving distinct with first/last retention, and deterministic row numbering.
+- Integrated all three operations with portable recipes, ordered workflow steps, planning,
+  full-impact preview, metadata synchronization, direct CLI flags, and the browser editor.
+- Added validation, ordering, preview, CLI, recipe round-trip, browser API, and metadata
+  coverage. Joins, aggregation, reshape, split/extract, batch recipe loading, formats,
+  dependencies, and versioning remain unchanged.
+- Polished the Transform recipe path picker, made sample and full-impact previews replace
+  each other, moved transform job status above results, and made Reference table caveats
+  and capability headings readable without changing the compact picker globally.
+
+### Transform recipes and full preview (1.3.0b)
+
+- Added a closed, path-independent version-1 transform recipe schema for the seven
+  existing operations, deterministic canonical TOML, typed ordered recode mappings, and
+  atomic explicit recipe saves.
+- Added `transform --recipe`, save-only `--save-recipe`, `transform-recipe validate` and
+  `template`, plus full-impact `transform --preview` with bounded Rich-free JSON.
+- Added source/output identity rejection, output and automatic-sidecar preflight, exact
+  per-step impact counters, and local browser recipe load/save plus separate sample and
+  full-impact previews.
+- Deferred workflow-config recipe references and batch recipe loading. Sort, distinct,
+  row number, formats, databases, ORC, dependencies, and versioning are unchanged.
+
+### Planning (1.3.0a)
+
+- Audited the current transform pipeline, seven ordered operations, closed expression
+  language, CLI/config/browser workflows, metadata synchronization, output safety,
+  documentation, and tests.
+- Defined the private 1.3.0 transform workflow and safety model: a path-independent,
+  versioned, data-only TOML recipe; typed recode mappings; syntax and input-bound
+  validation; non-writing full-impact preview with clean JSON; explicit source/output and
+  sidecar safety; and compatible CLI/browser workflows.
+- Approved exactly stable sort, stable distinct, and row number for the later operation
+  slice. No recipe save/load, runtime command, transform operation, format, database/ORC
+  support, dependency, conversion semantic, version, or release artifact changed in this
+  design slice.
+
 ## 1.2.0 - 2026-08-09
 
 StatConvert 1.2.0 is the metadata release. Metadata editing is preview-first and writes

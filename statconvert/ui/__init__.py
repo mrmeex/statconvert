@@ -46,7 +46,11 @@ from .streaming import (
     show_streaming_conversion_result,
     show_streaming_validation_summary,
 )
-from .transformations import show_transformation_summary
+from .transformations import (
+    show_full_transform_preview,
+    show_transform_recipe_validation,
+    show_transformation_summary,
+)
 
 __all__ = [
     "console",
@@ -66,6 +70,7 @@ __all__ = [
     "show_config_written",
     "show_success",
     "show_formats_table",
+    "show_full_transform_preview",
     "show_labels",
     "show_metadata_summary",
     "show_metadata_diagnostics",
@@ -73,6 +78,7 @@ __all__ = [
     "show_metadata_patch_preview",
     "show_schema",
     "show_transformation_summary",
+    "show_transform_recipe_validation",
     "show_warning",
     "show_verbose",
     "show_dataset_header",

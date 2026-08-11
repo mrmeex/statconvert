@@ -69,10 +69,10 @@ statconvert ui
 </section>
 
 <p>
-  StatConvert 1.2.0 is the metadata release. It adds diagnostics, sidecar validation,
-  metadata-only diff and reports, plus preview-first sidecar editing that never mutates
-  source datasets or native metadata. It adds no format family, database support, ORC,
-  or runtime dependency. Install the local interface with <code>statconvert[ui]</code>;
+  StatConvert 1.3.0 is the transform power release. It adds portable ordered recipes,
+  non-writing full-impact preview, stable sort, order-preserving distinct, and
+  deterministic row numbering. It adds no format family, database support, ORC, or
+  runtime dependency. Install the local interface with <code>statconvert[ui]</code>;
   the base CLI remains unchanged.
 </p>
 

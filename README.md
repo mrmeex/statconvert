@@ -5,13 +5,12 @@ inspecting, validating, batch-processing, comparing, reporting, and logging stat
 datasets. It uses a backend registry and a common `Dataset` model so format-specific code
 stays out of conversion and analysis workflows.
 
-Version 1.2.0 is the metadata release. It adds metadata diagnostics, diagnostic-only
-sidecar validation, metadata-only diff and reports, and preview-first sidecar editing for
-dataset labels, notes, variable labels, typed value labels, and measurement levels.
-Editing never mutates source datasets or native-file metadata. The complete local browser
-UI remains bound to the local machine and is installed through the optional
-`statconvert[ui]` extra. No format family or runtime dependency was added; the CLI keeps
-its 11 base runtime dependencies.
+Version 1.3.0 is the transform power release. It adds portable ordered recipes, canonical
+TOML save/load and validation, non-writing full-impact preview, typed recode mappings,
+stable multi-column sort, order-preserving distinct, deterministic row numbering, and a
+polished browser recipe workflow. The local browser UI remains bound to the local machine
+and is installed through the optional `statconvert[ui]` extra. No format family or runtime
+dependency was added; the CLI keeps its 11 base runtime dependencies.
 
 ## Implemented features
 
@@ -25,8 +24,10 @@ its 11 base runtime dependencies.
   value labels, and measurement levels
 - Ordered transformations: select, drop, rename, type conversion, derived columns,
   expression and structured filtering, and recoding
-- Canonical ordered `[[steps]]` TOML recipes with deterministic export, schema-aware
-  validation, exact-order execution, and legacy transform-config compatibility
+- Path-independent version-1 transform recipes with deterministic TOML, typed recode
+  mappings, atomic save/load, syntax or input-bound validation, and full-impact preview
+- Canonical ordered workflow-config `[[steps]]` with exact-order execution and legacy
+  transform-config compatibility
 - Closed row-local expression functions for text, numeric, missing-value, conditional,
   normalization, conversion, date/time, validation, and list-membership workflows
 - Dataset summary, descriptive profiles, frequencies, and missing-value analysis
@@ -53,6 +54,12 @@ its 11 base runtime dependencies.
 
 Dataset comparison is provided by `statconvert compare`. There is currently no separate
 `statconvert diff` alias.
+
+Portable recipes contain ordered steps only: no input/output paths, selectors, execution
+policy, or executable code. `transform --preview --json` applies the full recipe to a
+copied dataset and writes nothing. Recipes support the seven existing transformations plus
+stable multi-key sort, order-preserving distinct, and deterministic row number. Batch
+recipe loading, ORC, and database support are not part of the current implementation.
 
 ## Installation
 

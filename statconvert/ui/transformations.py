@@ -101,3 +101,48 @@ def show_transformation_summary(
             expand=False,
         )
     )
+
+
+def show_full_transform_preview(payload: dict[str, object]) -> None:
+    """Display the compact human view of an exact non-writing preview."""
+
+    summary = payload["summary"]
+    output = payload["output"]
+    assert isinstance(summary, dict)
+    assert isinstance(output, dict)
+    table = Table.grid(padding=(0, 2))
+    table.add_column(style="cyan", justify="right")
+    table.add_column()
+    table.add_row("Mode", "Full preview (writes nothing)")
+    table.add_row("Output", str(output["path"]))
+    table.add_row(
+        "Rows",
+        f"{summary['rows_before']:,} -> {summary['rows_after']:,} "
+        f"({summary['rows_removed']:,} removed)",
+    )
+    table.add_row(
+        "Columns",
+        f"{len(summary['columns_before']):,} -> {len(summary['columns_after']):,}",
+    )
+    table.add_row("Metadata", str(output["metadata_mode"]))
+    table.add_row("Steps", str(len(payload["steps"])))
+    console.print(Panel(table, title="Transform Preview", expand=False))
+
+
+def show_transform_recipe_validation(payload: dict[str, object]) -> None:
+    """Display a compact portable-recipe validation result."""
+
+    valid = bool(payload["valid"])
+    table = Table.grid(padding=(0, 2))
+    table.add_column(style="cyan", justify="right")
+    table.add_column()
+    table.add_row("Status", "Valid" if valid else "Invalid")
+    table.add_row("Mode", str(payload["mode"]))
+    table.add_row("Schema", str(payload.get("schema_version", "-")))
+    issues = payload.get("issues", [])
+    table.add_row("Issues", str(len(issues) if isinstance(issues, list) else 0))
+    console.print(Panel(table, title="Transform Recipe", expand=False))
+    if isinstance(issues, list):
+        for issue in issues:
+            if isinstance(issue, dict):
+                console.print(f"[red]{issue.get('message', 'Unknown issue')}[/red]")

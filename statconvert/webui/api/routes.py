@@ -62,6 +62,9 @@ from statconvert.webui.services import (
     plan_transform,
     plan_report,
     plan_validate,
+    load_transform_recipe,
+    save_transform_recipe,
+    preview_full_transform_request,
     preview_transform,
     reference_backends,
     reference_capabilities,
@@ -98,6 +101,8 @@ from .models import (
     RememberPathRequest,
     SettingsUpdateRequest,
     TransformRequest,
+    TransformRecipeLoadRequest,
+    TransformRecipeSaveRequest,
     ValidateRequest,
     VersionResponse,
 )
@@ -376,6 +381,22 @@ def create_api_router(
     @router.post("/transform/preview-recipe")
     async def transform_preview(request: TransformRequest) -> dict[str, object]:
         return {"data": preview_transform(request)}
+
+    @router.post("/transform/preview-full")
+    async def transform_full_preview(request: TransformRequest) -> dict[str, object]:
+        return {"data": preview_full_transform_request(request)}
+
+    @router.post("/transform/recipe/load")
+    async def transform_recipe_load(
+        request: TransformRecipeLoadRequest,
+    ) -> dict[str, object]:
+        return {"data": load_transform_recipe(request)}
+
+    @router.post("/transform/recipe/save")
+    async def transform_recipe_save(
+        request: TransformRecipeSaveRequest,
+    ) -> dict[str, object]:
+        return {"data": save_transform_recipe(request)}
 
     @router.post("/config/init")
     async def init_config(request: ConfigInitRequest) -> dict[str, object]:

@@ -8,6 +8,7 @@
 convert       Convert one dataset or a whole object container.
 collect       Collect manifest-selected datasets into one XLSX or ODS container.
 transform     Transform a dataset and write it to another format.
+transform-recipe  Validate or create path-independent transform recipes.
 formats       List registered extensions and extension-level read/write support.
 backends      List backend engines and backend-wide capabilities.
 capabilities  Show details for one extension or backend.
@@ -386,20 +387,48 @@ Recode remains last in the pipeline, can target a derived column, preserves miss
 values, and by default preserves unmapped values. `--recode-default` replaces only
 unmapped non-missing values.
 
-`transform --write-config recipe.toml` exports these operations as deterministic ordered
-`[[steps]]`. Validate and execute the result with:
+Portable version-1 recipes contain only path-independent ordered steps. Save the current
+direct flags without reading or transforming data, then validate or run the recipe:
 
 ```bash
-statconvert config validate recipe.toml
-statconvert config run recipe.toml
+statconvert transform input.csv output.csv --derive "clean=strip(raw)" --save-recipe clean.toml
+statconvert transform-recipe validate clean.toml
+statconvert transform-recipe validate clean.toml --input input.csv --json
+statconvert transform input.csv output.csv --recipe clean.toml
+statconvert transform input.csv output.csv --recipe clean.toml --preview
+statconvert transform input.csv output.csv --recipe clean.toml --preview --json
+statconvert transform-recipe template
 ```
 
-Canonical recipes support `select`, `drop`, `rename`, `convert_type`, `derive`, `filter`,
-and `recode`. Steps run in file order and may be interleaved. `filter` uses an expression;
-legacy top-level `filter` fields retain structured filter syntax. Existing top-level
-transform configs remain supported, but mixing them with `[[steps]]` is rejected.
-Ordered validation reports the zero-based step, type, field, stable code, expression
-span where applicable, and suggestion.
+Recipe saves are atomic, require an explicit path, and require `--overwrite-recipe` for
+an existing file. Missing parents require `--create-recipe-dirs`. `--save-recipe` returns
+without writing output data or sidecars. Typed recode `mappings = [{ from = ..., to =
+... }]` preserve numeric, text, and boolean scalar types and reject equality ambiguity.
+
+Recipes support exactly `select`, `drop`, `rename`, `convert_type`, `derive`, `filter`,
+`recode`, `sort`, `distinct`, and `row_number`; steps run in file order. Sort keys carry
+their own `ascending|descending` direction and `first|last` null placement. Distinct uses
+one or more key columns and keeps either the first or last retained row. Row number creates
+a non-colliding integer column with configurable start and positive step. Direct operation
+flags cannot be combined with
+`--recipe`. Full preview validates input/output identity and target/sidecar behavior,
+applies the complete recipe to a copied `Dataset`, reports exact bounded impact, creates
+no files or directories, and emits plain Rich-free JSON with `--json`.
+
+Workflow configs remain a separate, compatible schema. `transform --write-config`
+continues to embed input/output and ordered `[[steps]]`; `config validate` and `config run`
+remain unchanged. Referencing a portable recipe from a workflow config and loading a
+recipe in batch are deferred.
+
+Direct flags append the new operations after the established direct pipeline in fixed
+`sort`, `distinct`, `row_number` order:
+
+```bash
+statconvert transform input.csv output.csv --sort group:asc --sort score:desc --sort-nulls last --distinct group --distinct score --distinct-keep first --row-number row_id --row-number-start 1 --row-number-step 1
+```
+
+Use a portable recipe when any operation must be interleaved differently or when sort keys
+need different null-placement policies.
 
 Encoding and CSV options are available only on the datafile-writing commands `convert`,
 `collect`, `transform`, and `batch`. `--input-encoding` affects only readers that support explicit

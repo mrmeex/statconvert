@@ -6,6 +6,7 @@ from statconvert.transformations.cli_parsing import (
     parse_filter_items,
     parse_key_value_items,
     parse_recode_items,
+    parse_sort_items,
 )
 from statconvert.transformations.recipes import (
     TransformRecipe,
@@ -33,6 +34,13 @@ def recipe_from_transform_options(
     update_value_labels: bool = True,
     ignore_missing_columns: bool = False,
     reset_index: bool = True,
+    sort_items: list[str] | None = None,
+    sort_nulls: str = "last",
+    distinct_columns: list[str] | None = None,
+    distinct_keep: str = "first",
+    row_number_column: str | None = None,
+    row_number_start: int = 1,
+    row_number_step: int = 1,
     overwrite: bool = False,
 ) -> TransformRecipe:
     """Translate existing transform options into their fixed-order recipe form."""
@@ -145,6 +153,44 @@ def recipe_from_transform_options(
                     parameters,
                 )
             )
+
+    if sort_items:
+        steps.append(
+            TransformStep(
+                TransformStepType.SORT,
+                {
+                    "keys": [
+                        {
+                            "column": key.column,
+                            "order": key.order,
+                            "nulls": key.nulls,
+                        }
+                        for key in parse_sort_items(sort_items, sort_nulls)
+                    ]
+                },
+            )
+        )
+    if distinct_columns:
+        steps.append(
+            TransformStep(
+                TransformStepType.DISTINCT,
+                {
+                    "columns": list(distinct_columns),
+                    "keep": distinct_keep,
+                },
+            )
+        )
+    if row_number_column is not None:
+        steps.append(
+            TransformStep(
+                TransformStepType.ROW_NUMBER,
+                {
+                    "column": row_number_column,
+                    "start": row_number_start,
+                    "step": row_number_step,
+                },
+            )
+        )
 
     return TransformRecipe(
         input_file=input_file,

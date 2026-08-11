@@ -13,7 +13,6 @@ from statconvert.inspection import (
     validation_should_fail,
 )
 from statconvert.logging import get_logger
-from statconvert.output_paths import validate_output_file_path
 from statconvert.registry import (
     get_reader_for_file,
     get_writer_for_file,
@@ -25,6 +24,7 @@ from statconvert.transformations import (
     compile_transform_recipe,
 )
 from statconvert.transformations.recipes import TransformRecipe
+from statconvert.transformations.safety import preflight_transform_output
 
 
 def transform_dataset(
@@ -86,11 +86,12 @@ def transform_file(
         writer = get_writer_for_file(output_file)
     except ValueError as exc:
         raise ConversionError(str(exc)) from None
-    validate_output_file_path(
+    preflight_transform_output(
+        input_path,
         output_path,
         overwrite=overwrite,
         create_dirs=create_dirs,
-        dry_run=dry_run,
+        write=not dry_run,
     )
     logger.debug(
         "Transformation backends resolved: reader=%s writer=%s",

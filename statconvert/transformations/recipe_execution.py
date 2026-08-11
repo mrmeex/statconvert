@@ -20,6 +20,12 @@ from statconvert.transformations.filtering import (
 from statconvert.transformations.pipeline import TransformationPipeline
 from statconvert.transformations.planning import plan_transform_recipe
 from statconvert.transformations.recode import RecodeValuesTransformation
+from statconvert.transformations.row_operations import (
+    DistinctRowsTransformation,
+    RowNumberTransformation,
+    SortKey,
+    SortRowsTransformation,
+)
 from statconvert.transformations.recipes import (
     TransformRecipe,
     TransformStep,
@@ -168,6 +174,28 @@ def _compile_step(step: TransformStep):
             update_value_labels=bool(
                 parameters.get("update_value_labels", True)
             ),
+        )
+    if step.step_type == TransformStepType.SORT:
+        return SortRowsTransformation(
+            [
+                SortKey(
+                    column=str(key["column"]),
+                    order=str(key["order"]),
+                    nulls=str(key["nulls"]),
+                )
+                for key in parameters["keys"]
+            ]
+        )
+    if step.step_type == TransformStepType.DISTINCT:
+        return DistinctRowsTransformation(
+            columns=list(parameters["columns"]),
+            keep=str(parameters["keep"]),
+        )
+    if step.step_type == TransformStepType.ROW_NUMBER:
+        return RowNumberTransformation(
+            column=str(parameters["column"]),
+            start=int(parameters.get("start", 1)),
+            step=int(parameters.get("step", 1)),
         )
     raise TransformationError(
         f"Unsupported ordered transform step '{step.step_type.value}'."

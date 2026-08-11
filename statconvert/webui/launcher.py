@@ -12,6 +12,7 @@ from urllib.request import urlopen
 import webbrowser
 
 from statconvert.exceptions import StatConvertError
+from statconvert.version import get_statconvert_version
 
 from .dependencies import ensure_ui_dependencies
 
@@ -35,7 +36,8 @@ def validate_host(host: str) -> str:
     normalized = host.strip().casefold()
     if normalized not in LOOPBACK_HOSTS:
         raise WebUiLaunchError(
-            f"StatConvert 1.2.0 is local-only and cannot bind to host '{host}'.",
+            f"StatConvert {get_statconvert_version()} is local-only and cannot bind "
+            f"to host '{host}'.",
             suggestion="Use --host 127.0.0.1 or --host localhost.",
         )
     return normalized

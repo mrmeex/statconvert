@@ -136,7 +136,7 @@ def test_plan_projects_columns_and_canonical_toml(
     assert plan["steps"][1]["input_columns"] == ["old", "status"]
     assert plan["steps"][1]["output_columns"] == ["value", "status"]
     assert plan["final_columns"] == ["value", "status", "double_value"]
-    assert payload["command"] == "statconvert config run <saved-transform-recipe.toml>"
+    assert payload["command"].endswith("--recipe <saved-transform-recipe.toml>")
     parsed = tomllib.loads(payload["details"]["toml"])
     assert [step["type"] for step in parsed["steps"]] == [
         "drop",
@@ -189,6 +189,96 @@ def test_preview_returns_before_after_without_writing(
     assert not output.exists()
 
 
+def test_full_preview_returns_exact_impact_without_writing(
+    source: Path,
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "missing" / "output.csv"
+    response = _request(
+        create_app(),
+        "POST",
+        "/api/transform/preview-full",
+        _payload(source, output),
+    )
+    preview = response.json()["data"]
+
+    assert response.status_code == 200
+    assert preview["valid"] is True
+    assert preview["mode"] == "full_preview"
+    assert preview["summary"]["rows_before"] == 3
+    assert preview["summary"]["rows_after"] == 2
+    assert preview["summary"]["rows_removed"] == 1
+    assert preview["summary"]["columns_added"] == ["double_value"]
+    assert preview["summary"]["columns_removed"] == ["unused"]
+    assert preview["output"]["would_write"] is False
+    assert not output.parent.exists()
+
+
+def test_browser_recipe_load_and_save_use_backend_canonicalization(
+    tmp_path: Path,
+) -> None:
+    source_recipe = tmp_path / "source.toml"
+    saved_recipe = tmp_path / "saved.toml"
+    source_recipe.write_text(
+        """description = "Typed"
+version = 1
+name = "Groups"
+[[steps]]
+type = "recode"
+column = "group"
+mappings = [{ from = 1, to = "Control" }, { from = "1", to = "Text" }]
+""",
+        encoding="utf-8",
+    )
+    application = create_app()
+
+    loaded = _request(
+        application,
+        "POST",
+        "/api/transform/recipe/load",
+        {"path": str(source_recipe)},
+    )
+    loaded_data = loaded.json()["data"]
+    saved = _request(
+        application,
+        "POST",
+        "/api/transform/recipe/save",
+        {
+            "output_path": str(saved_recipe),
+            "name": loaded_data["recipe"]["name"],
+            "description": loaded_data["recipe"]["description"],
+            "steps": loaded_data["recipe"]["steps"],
+            "overwrite": False,
+            "create_dirs": False,
+        },
+    )
+
+    assert loaded.status_code == 200
+    assert loaded_data["recipe"]["steps"][0]["mappings"] == [
+        {"from": 1, "to": "Control"},
+        {"from": "1", "to": "Text"},
+    ]
+    assert saved.status_code == 200
+    assert saved.json()["data"]["canonical_toml"] == saved_recipe.read_text(
+        encoding="utf-8"
+    )
+    assert "input" not in tomllib.loads(saved.json()["data"]["canonical_toml"])
+    assert "output" not in tomllib.loads(saved.json()["data"]["canonical_toml"])
+
+
+def test_failed_browser_recipe_load_does_not_write_anything(tmp_path: Path) -> None:
+    missing = tmp_path / "missing.toml"
+    response = _request(
+        create_app(),
+        "POST",
+        "/api/transform/recipe/load",
+        {"path": str(missing)},
+    )
+
+    assert response.status_code == 400
+    assert not missing.exists()
+
+
 def test_background_execution_preserves_output_safety(
     source: Path,
     tmp_path: Path,
@@ -225,12 +315,77 @@ def test_transform_applies_selected_extension_when_output_has_none(
     plan = _request(application, "POST", "/api/transform/plan", payload)
     assert plan.status_code == 200
     assert plan.json()["details"]["output_path"] == f"{output_without_suffix}.csv"
-    assert tomllib.loads(plan.json()["details"]["toml"])["output"] == (
-        f"{output_without_suffix}.csv"
-    )
+    assert "output" not in tomllib.loads(plan.json()["details"]["toml"])
 
     created = _request(application, "POST", "/api/execute/transform", payload)
     job = _wait_for_job(application, created.json()["job_id"])
     assert job["status"] == "succeeded"
     assert job["result"]["output_path"] == f"{output_without_suffix}.csv"
     assert (tmp_path / "nested" / "output.csv").is_file()
+
+
+def test_browser_row_operations_plan_preview_and_recipe_round_trip(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "rows.csv"
+    output = tmp_path / "output.csv"
+    saved = tmp_path / "rows.toml"
+    pd.DataFrame(
+        {"group": ["b", "a", "a", "b"], "value": [2, 1, 1, 1]}
+    ).to_csv(source, index=False)
+    payload = {
+        "input_path": str(source),
+        "output_path": str(output),
+        "target_format": "csv",
+        "steps": [
+            {
+                "type": "sort",
+                "keys": [
+                    {"column": "group", "order": "ascending", "nulls": "last"},
+                    {"column": "value", "order": "descending", "nulls": "last"},
+                ],
+            },
+            {"type": "distinct", "columns": ["group", "value"], "keep": "first"},
+            {"type": "row_number", "column": "row_id", "start": 10, "step": 5},
+        ],
+    }
+    application = create_app()
+
+    plan = _request(application, "POST", "/api/transform/plan", payload)
+    preview = _request(application, "POST", "/api/transform/preview-full", payload)
+    save = _request(
+        application,
+        "POST",
+        "/api/transform/recipe/save",
+        {"output_path": str(saved), "steps": payload["steps"]},
+    )
+    load = _request(
+        application,
+        "POST",
+        "/api/transform/recipe/load",
+        {"path": str(saved)},
+    )
+
+    assert plan.status_code == 200
+    assert plan.json()["details"]["plan"]["final_columns"] == [
+        "group",
+        "value",
+        "row_id",
+    ]
+    assert preview.status_code == 200
+    assert preview.json()["data"]["summary"]["rows_removed"] == 1
+    assert preview.json()["data"]["steps"][0]["row_order_changed"] is True
+    assert save.status_code == 200
+    assert load.status_code == 200
+    loaded_steps = load.json()["data"]["recipe"]["steps"]
+    assert [step["type"] for step in loaded_steps] == [
+        "sort",
+        "distinct",
+        "row_number",
+    ]
+    assert loaded_steps[2] == {
+        "type": "row_number",
+        "column": "row_id",
+        "start": 10,
+        "step": 5,
+    }

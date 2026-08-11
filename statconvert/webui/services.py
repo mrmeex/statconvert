@@ -87,8 +87,14 @@ from statconvert.streaming.validation import (
 from statconvert.transformer import transform_file
 from statconvert.transformations import (
     compile_transform_recipe,
+    parse_portable_recipe,
+    portable_recipe_from_ordered_steps,
+    portable_recipe_to_toml,
+    preflight_transform_output,
+    preview_full_transform,
     preview_transform_recipe as build_transform_preview,
     recipe_from_ordered_steps,
+    save_portable_recipe,
 )
 from statconvert.transformations.expressions import parse_expression
 from statconvert.transformations.language import expression_function_specs
@@ -110,6 +116,8 @@ from .api.models import (
     MetadataSidecarEditRequest,
     ReportRequest,
     TransformRequest,
+    TransformRecipeLoadRequest,
+    TransformRecipeSaveRequest,
     ValidateRequest,
 )
 from .jobs import JobContext
@@ -786,6 +794,18 @@ def plan_transform(request: TransformRequest) -> dict[str, Any]:
     get_reader_for_file(str(input_path))
     get_writer_for_file(str(output_path))
     _validate_target_matches_output(request.target_format, output_path)
+    output_preflight = preflight_transform_output(
+        input_path,
+        output_path,
+        overwrite=request.overwrite,
+        create_dirs=request.create_dirs,
+        write=False,
+    )
+    if output_preflight.sidecar_exists and not request.overwrite:
+        raise WebUiRequestError(
+            f"Metadata sidecar already exists: {output_preflight.sidecar_path}",
+            suggestion="Enable overwrite or choose a different output path.",
+        )
     _validate_output_file_plan(
         output_path,
         overwrite=request.overwrite,
@@ -806,8 +826,8 @@ def plan_transform(request: TransformRequest) -> dict[str, Any]:
             "plan": make_json_safe(plan.to_dict()),
             "toml": toml,
             "command_note": (
-                "Ordered recipes run through config files. Save the canonical TOML "
-                "and run the displayed config command, or run directly from this UI."
+                "Portable recipes contain ordered steps only. Save the canonical TOML "
+                "and run the displayed transform command, or run directly from this UI."
             ),
             "input_path": str(input_path),
             "output_path": str(output_path),
@@ -825,6 +845,18 @@ def preview_transform(request: TransformRequest) -> dict[str, Any]:
         raise WebUiRequestError(
             f"Transform preview is limited to {MAX_TRANSFORM_PREVIEW_ROWS} rows."
         )
+    input_path = _existing_file(request.input_path)
+    output_path = Path(request.output_path)
+    get_reader_for_file(str(input_path))
+    get_writer_for_file(str(output_path))
+    _validate_target_matches_output(request.target_format, output_path)
+    preflight_transform_output(
+        input_path,
+        output_path,
+        overwrite=request.overwrite,
+        create_dirs=request.create_dirs,
+        write=False,
+    )
     dataset = _read(request.input_path, request.object_selector)
     preview = build_transform_preview(
         dataset,
@@ -834,7 +866,74 @@ def preview_transform(request: TransformRequest) -> dict[str, Any]:
     before = dataset.dataframe.head(request.preview_limit)
     return {
         **preview,
+        "mode": "sample_preview",
         "before_rows": make_json_safe(before.to_dict(orient="records")),
+    }
+
+
+def preview_full_transform_request(request: TransformRequest) -> dict[str, Any]:
+    """Return exact full-Dataset impact without creating output targets."""
+
+    request = _effective_transform_request(request)
+    input_path = _existing_file(request.input_path)
+    output_path = Path(request.output_path)
+    get_reader_for_file(str(input_path))
+    get_writer_for_file(str(output_path))
+    _validate_target_matches_output(request.target_format, output_path)
+    preflight = preflight_transform_output(
+        input_path,
+        output_path,
+        overwrite=request.overwrite,
+        create_dirs=request.create_dirs,
+        write=False,
+    )
+    dataset = _read(request.input_path, request.object_selector)
+    portable = _portable_transform_recipe(request)
+    return preview_full_transform(
+        dataset,
+        portable.bind(
+            input_file=request.input_path,
+            output_file=request.output_path,
+            overwrite=request.overwrite,
+        ),
+        input_path=input_path,
+        output_preflight=preflight,
+        object_selector=request.object_selector,
+        portable_recipe=portable,
+        sample_limit=request.preview_limit,
+    ).to_dict()
+
+
+def load_transform_recipe(request: TransformRecipeLoadRequest) -> dict[str, Any]:
+    """Parse one explicit portable recipe without changing workflow paths."""
+
+    path = _existing_file(request.path)
+    recipe = parse_portable_recipe(path)
+    return {
+        "path": str(path),
+        "recipe": recipe.to_dict(),
+        "canonical_toml": portable_recipe_to_toml(recipe),
+    }
+
+
+def save_transform_recipe(request: TransformRecipeSaveRequest) -> dict[str, Any]:
+    """Normalize and atomically save visible browser steps on the backend."""
+
+    recipe = portable_recipe_from_ordered_steps(
+        [step.to_step_dict() for step in request.steps],
+        name=request.name,
+        description=request.description,
+    )
+    path = save_portable_recipe(
+        recipe,
+        request.output_path,
+        overwrite=request.overwrite,
+        create_dirs=request.create_dirs,
+    )
+    return {
+        "path": str(path),
+        "recipe": recipe.to_dict(),
+        "canonical_toml": portable_recipe_to_toml(recipe),
     }
 
 
@@ -1631,10 +1730,20 @@ def batch_command(request: BatchRequest) -> str:
 def transform_command(request: TransformRequest) -> str:
     """Explain the supported CLI entry point for a canonical ordered recipe."""
 
-    return _display_command([
-        "statconvert", "config", "run", "<saved-transform-recipe.toml>",
-        *logging_cli_arguments("transform"),
-    ])
+    arguments = [
+        "statconvert",
+        "transform",
+        request.input_path,
+        request.output_path,
+        "--recipe",
+        "<saved-transform-recipe.toml>",
+    ]
+    if request.object_selector:
+        arguments.extend(("--object", request.object_selector))
+    if request.overwrite:
+        arguments.append("--overwrite")
+    arguments.extend(logging_cli_arguments("transform"))
+    return _display_command(arguments)
 
 
 def validate_command(request: ValidateRequest, *, chunk_size: int | None) -> str:
@@ -1803,28 +1912,23 @@ def _validate_batch_request(request: BatchRequest) -> None:
 
 
 def _transform_recipe(request: TransformRequest):
-    return recipe_from_ordered_steps(
+    return _portable_transform_recipe(request).bind(
         input_file=request.input_path,
         output_file=request.output_path,
-        steps=[step.to_step_dict() for step in request.steps],
         overwrite=request.overwrite,
     )
 
 
 def _transform_toml(request: TransformRequest) -> str:
-    config: dict[str, Any] = {
-        "command": "transform",
-        "input": request.input_path,
-        "output": request.output_path,
-        "steps": [step.to_step_dict() for step in request.steps],
-    }
-    if request.object_selector:
-        config["object"] = request.object_selector
-    if request.overwrite:
-        config["overwrite"] = True
-    if request.create_dirs:
-        config["create_dirs"] = True
-    return to_toml(config)
+    return portable_recipe_to_toml(_portable_transform_recipe(request))
+
+
+def _portable_transform_recipe(request: TransformRequest):
+    return portable_recipe_from_ordered_steps(
+        [step.to_step_dict() for step in request.steps],
+        name=request.recipe_name,
+        description=request.recipe_description,
+    )
 
 
 def _build_ui_batch_plan(request: BatchRequest):

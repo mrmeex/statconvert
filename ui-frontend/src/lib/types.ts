@@ -103,7 +103,7 @@ export interface AboutData extends Record<string, unknown> {
   links: Record<string, string>;
 }
 
-export type TransformStepType = "select" | "drop" | "rename" | "convert_type" | "derive" | "filter" | "recode";
+export type TransformStepType = "select" | "drop" | "rename" | "convert_type" | "derive" | "filter" | "recode" | "sort" | "distinct" | "row_number";
 
 export interface TransformCondition {
   column: string;
@@ -117,6 +117,7 @@ export interface TransformStep {
   columns?: string[];
   ignore_missing?: boolean;
   map?: Record<string, string | number | boolean>;
+  mappings?: Array<{ from: string | number | boolean; to: string | number | boolean }>;
   column?: string;
   data_type?: string;
   errors?: "raise" | "coerce" | "ignore";
@@ -127,6 +128,10 @@ export interface TransformStep {
   reset_index?: boolean;
   default?: string | number | boolean;
   update_value_labels?: boolean;
+  keys?: Array<{ column: string; order: "ascending" | "descending"; nulls: "first" | "last" }>;
+  keep?: "first" | "last";
+  start?: number;
+  step?: number;
 }
 
 export interface ExpressionFunction {
@@ -211,6 +216,37 @@ export interface TransformPreviewResponse {
     steps: Array<Record<string, unknown>>;
     errors: Array<Record<string, unknown>>;
     warnings: Array<Record<string, unknown>>;
+  };
+}
+
+export interface TransformFullPreviewResponse {
+  data: {
+    valid: boolean;
+    mode: "full_preview";
+    output: { path: string; metadata_mode: string; sidecar_behavior: Record<string, unknown> };
+    summary: {
+      rows_before: number; rows_after: number; rows_removed: number;
+      columns_before: string[]; columns_after: string[];
+      columns_added: string[]; columns_removed: string[];
+      columns_renamed: Record<string, string>;
+      metadata_changes: Record<string, unknown>;
+    };
+    steps: Array<Record<string, unknown>>;
+    sample: { before: Record<string, unknown>[]; after: Record<string, unknown>[] };
+    truncation: Record<string, unknown>;
+  };
+}
+
+export interface TransformRecipeFileResponse {
+  data: {
+    path: string;
+    recipe: {
+      version: number;
+      name?: string;
+      description?: string;
+      steps: Array<Omit<TransformStep, "id">>;
+    };
+    canonical_toml: string;
   };
 }
 

@@ -17,6 +17,9 @@ class TransformStepType(StrEnum):
     DERIVE = "derive"
     FILTER = "filter"
     RECODE = "recode"
+    SORT = "sort"
+    DISTINCT = "distinct"
+    ROW_NUMBER = "row_number"
 
 
 @dataclass(frozen=True)
@@ -53,6 +56,14 @@ _STEP_SCHEMAS: Mapping[TransformStepType, _StepSchema] = MappingProxyType(
         TransformStepType.RECODE: _StepSchema(
             required=("column", "map"),
             optional=("default", "update_value_labels"),
+        ),
+        TransformStepType.SORT: _StepSchema(required=("keys",)),
+        TransformStepType.DISTINCT: _StepSchema(
+            required=("columns", "keep"),
+        ),
+        TransformStepType.ROW_NUMBER: _StepSchema(
+            required=("column",),
+            optional=("start", "step"),
         ),
     }
 )
@@ -236,6 +247,62 @@ def _validate_step_parameters(
                 "'expression' or compatibility 'conditions'."
             )
 
+    if step_type == TransformStepType.SORT:
+        keys = parameters.get("keys")
+        if not isinstance(keys, (list, tuple)) or not keys:
+            raise ValueError("Transform step 'sort' requires a non-empty key list.")
+        key_columns: list[str] = []
+        for index, key in enumerate(keys):
+            if not isinstance(key, Mapping) or set(key) != {
+                "column", "order", "nulls"
+            }:
+                raise ValueError(
+                    f"Transform step 'sort' key {index} must contain exactly "
+                    "'column', 'order', and 'nulls'."
+                )
+            column = key["column"]
+            if not isinstance(column, str) or not column.strip():
+                raise ValueError("Transform sort key column must be non-blank text.")
+            if key["order"] not in {"ascending", "descending"}:
+                raise ValueError(
+                    "Transform sort key order must be 'ascending' or 'descending'."
+                )
+            if key["nulls"] not in {"first", "last"}:
+                raise ValueError("Transform sort key nulls must be 'first' or 'last'.")
+            key_columns.append(column)
+        duplicates = _duplicate_values(key_columns)
+        if duplicates:
+            raise ValueError(
+                "Transform sort key columns must be unique: "
+                + ", ".join(duplicates)
+                + "."
+            )
+
+    if step_type == TransformStepType.DISTINCT:
+        distinct_columns = parameters.get("columns")
+        if distinct_columns is not None:
+            duplicates = _duplicate_values(list(distinct_columns))
+            if duplicates:
+                raise ValueError(
+                    "Transform distinct columns must be unique: "
+                    + ", ".join(duplicates)
+                    + "."
+                )
+        if parameters.get("keep") not in {"first", "last"}:
+            raise ValueError("Transform distinct keep must be 'first' or 'last'.")
+
+    if step_type == TransformStepType.ROW_NUMBER:
+        start = parameters.get("start", 1)
+        increment = parameters.get("step", 1)
+        if isinstance(start, bool) or not isinstance(start, int):
+            raise TypeError("Transform row_number start must be an integer.")
+        if (
+            isinstance(increment, bool)
+            or not isinstance(increment, int)
+            or increment <= 0
+        ):
+            raise ValueError("Transform row_number step must be a positive integer.")
+
     for name, value in parameters.items():
         _validate_json_value(value, field_name=name)
         if name in _STRING_FIELDS and (
@@ -276,7 +343,16 @@ def _validate_json_value(value: Any, *, field_name: str) -> None:
         return
     if isinstance(value, Mapping):
         for key, item in value.items():
-            if not isinstance(key, str):
+            if field_name == "map":
+                if not isinstance(key, (str, int, float, bool)):
+                    raise TypeError(
+                        "Transform step field 'map' contains an unsupported key."
+                    )
+                if isinstance(key, float) and not math.isfinite(key):
+                    raise ValueError(
+                        "Transform step field 'map' contains a non-finite key."
+                    )
+            elif not isinstance(key, str):
                 raise TypeError(
                     f"Transform step field '{field_name}' contains a non-string key."
                 )
@@ -312,3 +388,13 @@ def _copy_json_value(value: Any) -> Any:
             for key, item in value.items()
         }
     return value
+
+
+def _duplicate_values(values: list[Any]) -> list[str]:
+    seen: list[Any] = []
+    duplicates: list[str] = []
+    for value in values:
+        if value in seen and str(value) not in duplicates:
+            duplicates.append(str(value))
+        seen.append(value)
+    return duplicates

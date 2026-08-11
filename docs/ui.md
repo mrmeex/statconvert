@@ -134,7 +134,7 @@ A transform recipe is an ordered list of changes. Each step receives the columns
 produced by the step above it, so order matters. For example, rename `income` before a
 derive expression refers to `annual_income`.
 
-The visual builder supports the seven existing ordered step types:
+The visual builder supports ten ordered step types:
 
 - **select** keeps named columns;
 - **drop** removes named columns;
@@ -142,7 +142,11 @@ The visual builder supports the seven existing ordered step types:
 - **convert_type** converts one column to a supported data type;
 - **derive** creates or replaces a column from a safe expression;
 - **filter** keeps rows that satisfy an expression or structured conditions; and
-- **recode** maps existing values to replacements.
+- **recode** maps existing values to replacements;
+- **sort** stably orders rows using one or more keys with per-key direction and missing
+  placement;
+- **distinct** retains the first or last row for each selected key; and
+- **row number** creates an integer sequence in the current row order.
 
 ### Beginner example
 
@@ -155,23 +159,29 @@ Parquet dataset for active adults:
 3. Add another **filter** step with `status == 'active'`.
 4. Add a **derive** step named `income_monthly` with `income / 12`.
 5. Add a **select** step for `name`, `age`, `status`, `income`, and `income_monthly`.
-6. Review projected columns, preview before/after rows, and run the transform.
+6. Review projected columns, use sample or full-impact preview, and run the transform.
 
 The column picker inserts columns known at that point in the recipe. The function picker
 uses the active safe-expression registry, and expression validation reports unknown
-columns, functions, or invalid syntax without evaluating the dataset. The preview is
-bounded and does not write the output file.
+columns, functions, or invalid syntax without evaluating the dataset. **Sample preview**
+applies the steps to a bounded head sample. **Full impact preview** applies them to a
+copied full dataset and reports exact row, column, per-step, metadata, target, and sidecar
+effects with bounded samples. Neither preview writes files or creates directories.
 
-The TOML panel shows the canonical ordered recipe. Save that TOML from Configs when you
-want a repeatable workflow. Transform execution remains non-streaming.
+Use **Load recipe** and **Save recipe** with an explicit local TOML path. A successful
+load replaces only visible steps, name, and description; it never changes input, output,
+object selection, or overwrite state. A failed load leaves the current editor intact.
+The backend parses, validates, normalizes, previews, and atomically saves the portable
+path-independent recipe. Typed recode mappings use JSON scalar notation so `1` and `"1"`
+remain distinct. Raw canonical TOML/details stay secondary and collapsed. Transform
+execution remains non-streaming.
 
 ## Configs
 
 Configs creates starter TOML for supported workflows, loads a local TOML file, validates
 editor text with the existing config schema, saves validated TOML, and runs it as a
-background job. Transform TOML from the visual builder uses the same ordered `[[steps]]`
-structure. Loading Transform TOML does not reconstruct the visual step editor; edit and
-run it in Configs instead. Config results show workflow fields without repeating the CLI
+background job. Workflow configs remain separate from portable Transform recipes.
+Config results show workflow fields without repeating the CLI
 command; the equivalent command remains in its Settings-controlled panel, and the full
 payload remains under collapsed **Raw details**.
 

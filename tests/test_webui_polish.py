@@ -38,6 +38,8 @@ def test_frontend_polish_contracts_are_centralized() -> None:
     )
     theme = (source / "theme.ts").read_text(encoding="utf-8")
     styles = (source / "styles" / "app.css").read_text(encoding="utf-8")
+    transform = (source / "pages" / "TransformPage.tsx").read_text(encoding="utf-8")
+    reference = (source / "pages" / "ReferencePage.tsx").read_text(encoding="utf-8")
 
     assert 'label="Confirmed starting folder"' in picker
     assert 'postJson<PathBrowseResponse>("/api/files/browse"' in picker
@@ -65,6 +67,14 @@ def test_frontend_polish_contracts_are_centralized() -> None:
     assert '"--sc-table-header"' in theme
     assert ".result-table tbody tr:nth-of-type(even) td" in styles
     assert ".path-browser-table" not in styles
+    assert "allowSaveSelection" in picker
+    assert 'open("file")' in picker and 'open("save_file")' in picker
+    assert 'extensions={[".toml"]} allowSaveSelection' in transform
+    assert 'setFullPreview(null); try' in transform
+    assert 'setPreview(null); try' in transform
+    assert transform.index("<JobProgress jobId={jobId} />") < transform.index("<BeforeAfterPreview preview={preview} />")
+    assert 'className="result-table reference-table"' in reference
+    assert '.reference-table [data-column="caveat"]' in styles
 
 
 def test_format_selectors_keep_payload_values_and_use_friendly_options() -> None:
@@ -165,7 +175,7 @@ def test_implementation_build_labels_are_removed_but_about_keeps_version() -> No
 
     version = _request(create_app(), "GET", "/api/version")
     assert version.status_code == 200
-    assert version.json()["version"] == "1.2.0"
+    assert version.json()["version"] == "1.3.0"
 
 
 def test_report_and_configs_page_polish_contracts() -> None:

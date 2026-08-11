@@ -54,7 +54,7 @@ export function ReferencePage() {
             </Group>
             {(["formats", "backends", "capabilities"] as ReferenceKind[]).map((kind) => <Tabs.Panel value={kind} key={kind}>
               <Group justify="space-between" mb="sm"><Text size="sm" c="dimmed">{rows.length} of {datasets[kind]?.count ?? 0} records</Text></Group>
-              <ScrollArea><Table striped highlightOnHover className="result-table"><Table.Thead><Table.Tr>{columns[kind].map((column) => <Table.Th key={column}>{column.replaceAll("_", " ")}</Table.Th>)}</Table.Tr></Table.Thead><Table.Tbody>{rows.map((row, index) => <Table.Tr key={index}>{columns[kind].map((column) => <Table.Td key={column}>{cell(row[column])}</Table.Td>)}</Table.Tr>)}</Table.Tbody></Table></ScrollArea>
+              <ScrollArea><Table striped highlightOnHover className="result-table reference-table"><Table.Thead><Table.Tr>{columns[kind].map((column) => <Table.Th key={column} data-column={column}>{column.replaceAll("_", " ")}</Table.Th>)}</Table.Tr></Table.Thead><Table.Tbody>{rows.map((row, index) => <Table.Tr key={index}>{columns[kind].map((column) => <Table.Td key={column} data-column={column}>{cell(row[column])}</Table.Td>)}</Table.Tr>)}</Table.Tbody></Table></ScrollArea>
               {rows.length === 0 && <Text ta="center" c="dimmed" py="xl">No registry records match this search.</Text>}
             </Tabs.Panel>)}
           </Tabs>

@@ -11,7 +11,11 @@ from statconvert.transformations import (
     FilterRowsTransformation,
     RecodeValuesTransformation,
     RenameColumnsTransformation,
+    RowNumberTransformation,
     SelectColumnsTransformation,
+    SortKey,
+    SortRowsTransformation,
+    DistinctRowsTransformation,
     TransformationPipeline,
 )
 from statconvert.transformations.exceptions import TransformationError
@@ -194,6 +198,43 @@ def parse_recode_items(
     return parsed
 
 
+def parse_sort_items(items: list[str], nulls: str = "last") -> list[SortKey]:
+    """Parse repeated COLUMN[:asc|desc] stable-sort options."""
+
+    if nulls not in {"first", "last"}:
+        raise TransformationError("--sort-nulls must be 'first' or 'last'.")
+    keys: list[SortKey] = []
+    seen: set[str] = set()
+    for item in items:
+        column, separator, direction = item.rpartition(":")
+        if not separator:
+            column = item
+            direction = "asc"
+        column = column.strip()
+        direction = direction.strip().lower()
+        if not column:
+            raise TransformationError("Sort column cannot be empty.")
+        if direction not in {"asc", "desc", "ascending", "descending"}:
+            raise TransformationError(
+                f"Invalid --sort direction '{direction}'. Use asc or desc."
+            )
+        if column in seen:
+            raise TransformationError(f"Duplicate --sort column: {column}")
+        seen.add(column)
+        keys.append(
+            SortKey(
+                column=column,
+                order=(
+                    "ascending"
+                    if direction in {"asc", "ascending"}
+                    else "descending"
+                ),
+                nulls=nulls,
+            )
+        )
+    return keys
+
+
 def build_pipeline_from_cli_options(
     select_columns: list[str] | None = None,
     drop_columns: list[str] | None = None,
@@ -210,6 +251,13 @@ def build_pipeline_from_cli_options(
     update_value_labels: bool = True,
     ignore_missing_columns: bool = False,
     reset_index: bool = True,
+    sort_items: list[str] | None = None,
+    sort_nulls: str = "last",
+    distinct_columns: list[str] | None = None,
+    distinct_keep: str = "first",
+    row_number_column: str | None = None,
+    row_number_start: int = 1,
+    row_number_step: int = 1,
 ) -> TransformationPipeline:
     """
     Build the CLI transformation pipeline in the documented order.
@@ -303,6 +351,26 @@ def build_pipeline_from_cli_options(
                 default=recode_default,
                 use_default=recode_default is not None,
                 update_value_labels=update_value_labels,
+            )
+        )
+
+    if sort_items:
+        pipeline.add(SortRowsTransformation(parse_sort_items(sort_items, sort_nulls)))
+
+    if distinct_columns:
+        pipeline.add(
+            DistinctRowsTransformation(
+                columns=distinct_columns,
+                keep=distinct_keep,
+            )
+        )
+
+    if row_number_column is not None:
+        pipeline.add(
+            RowNumberTransformation(
+                column=row_number_column,
+                start=row_number_start,
+                step=row_number_step,
             )
         )
 

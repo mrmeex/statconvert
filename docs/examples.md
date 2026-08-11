@@ -94,7 +94,7 @@ config itself.
 New transform config exports use canonical ordered `[[steps]]`; the file order is the
 execution order. Existing legacy top-level transform fields remain readable, but one
 config cannot mix those fields with `[[steps]]`. See
-[Run an ordered transform recipe](#run-an-ordered-transform-recipe) for a complete
+[Run a portable ordered transform recipe](#run-a-portable-ordered-transform-recipe) for a complete
 example.
 
 If either file already exists, StatConvert names the protected path and suggests the
@@ -887,15 +887,14 @@ statconvert batch .\incoming .\converted --to parquet --transform --select id --
 Batch dry-run plans paths and parses the options without reading datasets or checking
 whether referenced columns exist.
 
-## Run an ordered transform recipe
+## Run a portable ordered transform recipe
 
-Canonical transform configs use `[[steps]]` and execute them in file order:
+Portable recipes use `version = 1`, contain no paths, and execute them in file order:
 
 ```toml
-command = "transform"
-input = "survey_raw.csv"
-output = "survey_clean.csv"
-overwrite = true
+version = 1
+name = "Clean survey extract"
+description = "Reusable steps; paths are selected at run time."
 
 [[steps]]
 type = "derive"
@@ -912,33 +911,61 @@ type = "filter"
 expression = "country_clean == 'NL'"
 
 [[steps]]
+type = "sort"
+keys = [
+  { column = "household_id", order = "ascending", nulls = "last" },
+  { column = "interview_date", order = "descending", nulls = "last" },
+]
+
+[[steps]]
+type = "distinct"
+columns = ["household_id"]
+keep = "first"
+
+[[steps]]
+type = "row_number"
+column = "export_row"
+start = 1
+step = 1
+
+[[steps]]
 type = "recode"
 column = "status"
 default = "Unknown"
 
-[steps.map]
-"1" = "Active"
-"2" = "Inactive"
-"9" = "Unknown"
+mappings = [
+  { from = 1, to = "Active" },
+  { from = 2, to = "Inactive" },
+  { from = 9, to = "Unknown" },
+]
 ```
 
 Validate and run the recipe:
 
 ```powershell
-python -m statconvert config validate survey-cleanup.toml
-python -m statconvert config run survey-cleanup.toml
+python -m statconvert transform-recipe validate survey-cleanup.toml
+python -m statconvert transform-recipe validate survey-cleanup.toml --input survey_raw.csv
+python -m statconvert transform survey_raw.csv survey_clean.csv --recipe survey-cleanup.toml --preview
+python -m statconvert transform survey_raw.csv survey_clean.csv --recipe survey-cleanup.toml
 ```
 
 To export a deterministic ordered recipe without transforming data:
 
 ```powershell
-statconvert transform .\input\data.csv .\output\data-clean.csv --derive "country_clean=normalize_code(country)" --filter-expression "country_clean == 'NL'" --write-config .\transform.toml
+statconvert transform .\input\data.csv .\output\data-clean.csv --derive "country_clean=normalize_code(country)" --filter-expression "country_clean == 'NL'" --save-recipe .\transform.toml
 ```
 
-Legacy top-level transform fields remain compatible and retain their fixed order.
-Mixing legacy operation fields with `[[steps]]` is rejected because their combined order
-would be ambiguous. The bounded preview foundation is internal only; there is no preview
-CLI or browser-UI command. The local browser interface is documented in the
+For the fixed direct order (existing operations, then sort, distinct, row number):
+
+```powershell
+statconvert transform input.csv output.csv --sort household_id:asc --sort interview_date:desc --distinct household_id --row-number export_row
+```
+
+Saving writes only the explicit recipe path and returns without transforming data. Use
+`--overwrite-recipe` to replace an existing recipe. Typed mapping entries preserve scalar
+types and reject ambiguous boolean/integer keys. Preview applies the full recipe to a
+copied dataset and writes nothing. Workflow configs remain compatible and self-contained;
+config recipe references and batch recipe loading are deferred. The local browser interface is documented in the
 [Browser UI Guide](ui.md).
 
 ## Choose separate outputs for large object sets
@@ -1032,7 +1059,7 @@ format, metadata, or value differences rather than a command crash.
 | I need bounded text conversion | [Stream CSV and line-oriented JSON](#stream-csv-and-line-oriented-json) |
 | I need a reusable data contract | [Export and validate a schema contract](#export-and-validate-a-schema-contract) |
 | I need derived columns or expression filters | [Derive columns and filter rows safely](#derive-columns-and-filter-rows-safely) |
-| I need exact transform ordering | [Run an ordered transform recipe](#run-an-ordered-transform-recipe) |
+| I need exact transform ordering | [Run a portable ordered transform recipe](#run-a-portable-ordered-transform-recipe) |
 | I need to select one sheet | [Work with Excel workbook sheets](#work-with-excel-workbook-sheets) |
 | I need one object from RData | [Work with RData or RDA workspaces](#work-with-rdata-or-rda-workspaces) |
 | I need many files converted | [Batch convert a folder](#batch-convert-a-folder) |
@@ -1041,5 +1068,6 @@ format, metadata, or value differences rather than a command crash.
 | I need automation output | [Use JSON output in scripts](#use-json-output-in-scripts) and [Write logs for troubleshooting](#write-logs-for-troubleshooting) |
 
 For deeper behavior, return to the [User Guide](user-guide.md),
-[CLI Reference](cli.md), or [Format Guide](formats.md). StatConvert is licensed under the
+[CLI Reference](cli.md), [Format Guide](formats.md), or
+[CLI Reference](cli.md). StatConvert is licensed under the
 [GNU Affero General Public License v3.0 or later](../LICENSE).

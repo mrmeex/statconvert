@@ -983,14 +983,37 @@ non-RFC-complete check after deterministic text conversion: exactly one `@`, non
 parts, no whitespace or edge dots, a dotted domain without empty labels, and a
 254-character maximum.
 
-Recode runs last, after derived columns and filters. It can therefore target a derived
+Recode runs last for direct flags, after derived columns and filters. It can therefore target a derived
 column, such as normalized status codes, and sees only retained rows. Unmapped values are
 preserved unless `--recode-default` is supplied; existing missing values remain missing.
 
-Use `transform --dry-run` to inspect the planned pipeline without writing. The complete
-syntax for filters, recoding, type errors, validation, object selection, supported
-functions and operators, ordered recipes, and the closed evaluator's security boundary
-is in the [CLI Reference](cli.md#transform).
+For reusable ordering, save or load a portable version-1 recipe:
+
+```powershell
+statconvert transform input.csv output.csv --derive "status_clean=normalize_code(status)" --save-recipe clean.toml
+statconvert transform-recipe validate clean.toml --input input.csv
+statconvert transform input.csv output.csv --recipe clean.toml --preview --json
+statconvert transform input.csv output.csv --recipe clean.toml
+```
+
+Portable recipes contain ordered steps only and never store input/output paths, object
+selectors, credentials, output policy, or code. Their typed recode mapping list preserves
+the difference between numeric `1` and text `"1"`; ambiguous boolean/integer sources are
+rejected. Recipe validation and full preview write nothing. Full preview applies every
+step to a copied full dataset, reports exact row/column/metadata and sidecar impact, and
+keeps before/after samples bounded. Input and output may never identify the same file,
+even with overwrite.
+
+Use `transform --dry-run` to retain the existing direct-pipeline dry run. Workflow configs
+remain separate and continue to embed paths and ordered steps; config recipe references
+and batch recipe loading are deferred. Portable recipes and the browser builder support
+stable multi-column `sort`, order-preserving `distinct` with first/last retention, and
+deterministic `row_number`. Direct flags apply these after the existing operations in
+sort, distinct, row-number order; use a recipe for arbitrary interleaving. The complete
+syntax for filters, recoding, type errors, validation, and object selection is in the
+[CLI Reference](cli.md#transform), including every supported function and operator,
+bracketed references for awkward column names, ordered recipe semantics, and the closed
+evaluator's security boundary.
 
 For many inputs, `batch --transform` continues to support the established select, drop,
 rename, type, structured filter, and recode options. The new derive and expression-filter

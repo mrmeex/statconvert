@@ -108,3 +108,25 @@ def test_public_docs_describe_metadata_release_boundaries() -> None:
     assert "Missing values/ranges, display formats" in public_docs
     assert "Container editing is currently refused" in public_docs
     assert "database files, ORC" in public_docs
+
+
+def test_public_docs_describe_transform_release_boundaries() -> None:
+    public_docs = "\n".join(
+        (PROJECT_ROOT / path).read_text(encoding="utf-8")
+        for path in (
+            "README.md",
+            "docs/cli.md",
+            "docs/user-guide.md",
+            "docs/ui.md",
+            "docs/examples.md",
+        )
+    )
+
+    assert "Version 1.3.0 is the transform power release" in public_docs
+    assert "--save-recipe" in public_docs
+    assert "transform-recipe validate" in public_docs
+    assert "Full impact preview" in public_docs
+    assert "stable multi-column `sort`" in public_docs
+    assert "order-preserving `distinct`" in public_docs
+    assert "deterministic `row_number`" in public_docs
+    assert "batch recipe loading" in public_docs

@@ -6,7 +6,7 @@ import { ResultView } from "./ResultView";
 export function BeforeAfterPreview({ preview }: { preview: TransformPreviewResponse["data"] | null }) {
   if (!preview) return null;
   return <Paper withBorder radius="lg" p="lg">
-    <Title order={3}>Before / after preview</Title>
+    <Title order={3}>Sample preview</Title>
     <Text size="sm" c="dimmed" mb="md">Sampled {preview.sampled_rows} of {preview.rows_before} rows; the preview never writes the output file.</Text>
     <Grid>
       <Grid.Col span={{ base: 12, xl: 6 }}><ResultView title="Before" data={{ rows: preview.before_rows }} /></Grid.Col>

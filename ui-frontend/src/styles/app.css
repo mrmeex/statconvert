@@ -258,6 +258,25 @@ a {
   white-space: nowrap;
 }
 
+.reference-table th,
+.reference-table td {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  vertical-align: top;
+}
+
+.reference-table [data-column="can_read"],
+.reference-table [data-column="can_write"] {
+  min-width: 5.5rem;
+}
+
+.reference-table [data-column="caveat"] {
+  min-width: 22rem;
+  max-width: 32rem;
+  line-height: 1.45;
+}
+
 .result-stat {
   padding: 0.8rem 0.9rem;
   background: var(--sc-stat-bg);

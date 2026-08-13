@@ -168,13 +168,17 @@ applies the steps to a bounded head sample. **Full impact preview** applies them
 copied full dataset and reports exact row, column, per-step, metadata, target, and sidecar
 effects with bounded samples. Neither preview writes files or creates directories.
 
-Use **Load recipe** and **Save recipe** with an explicit local TOML path. A successful
+Use **Load recipe** and **Save recipe** with an explicit local TOML path. Saving an
+extensionless recipe path appends `.toml`. A successful
 load replaces only visible steps, name, and description; it never changes input, output,
 object selection, or overwrite state. A failed load leaves the current editor intact.
 The backend parses, validates, normalizes, previews, and atomically saves the portable
 path-independent recipe. Typed recode mappings use JSON scalar notation so `1` and `"1"`
 remain distinct. Raw canonical TOML/details stay secondary and collapsed. Transform
 execution remains non-streaming.
+
+Full impact preview remains available when an existing output or sidecar blocks planning
+or execution, so the collision can be reviewed without replacing either file.
 
 ## Configs
 

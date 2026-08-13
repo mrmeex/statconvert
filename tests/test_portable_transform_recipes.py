@@ -196,3 +196,15 @@ def test_save_is_explicit_atomic_and_requires_recipe_overwrite(tmp_path: Path) -
         save_portable_recipe(recipe, output)
     save_portable_recipe(recipe, output, overwrite=True)
     assert math.isfinite(float(parse_portable_recipe(output).version))
+
+
+def test_save_appends_toml_to_extensionless_path(tmp_path: Path) -> None:
+    requested = tmp_path / "portable-recipe"
+    recipe = parse_portable_recipe_text(MINIMAL)
+
+    saved = save_portable_recipe(recipe, requested)
+
+    assert saved == requested.with_suffix(".toml")
+    assert saved.is_file()
+    assert not requested.exists()
+    assert parse_portable_recipe(saved) == recipe

@@ -252,10 +252,13 @@ def save_portable_recipe(
     overwrite: bool = False,
     create_dirs: bool = False,
 ) -> Path:
-    """Atomically save canonical recipe TOML to one explicit path."""
+    """Atomically save canonical recipe TOML to one normalized path."""
 
+    requested_path = Path(path)
+    if not requested_path.suffix:
+        requested_path = requested_path.with_suffix(".toml")
     output_path = validate_output_file_path(
-        path,
+        requested_path,
         overwrite=overwrite,
         create_dirs=create_dirs,
         overwrite_option="--overwrite-recipe",

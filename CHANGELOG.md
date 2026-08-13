@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## 1.3.1 - 2026-08-13
+
+StatConvert 1.3.1 is a stabilization release for the 1.3.0 transform workflow.
+
+- Empty transform plans no longer count as valid in the browser workflow.
+- Full-impact preview remains available when an existing output or metadata sidecar
+  prevents execution, without replacing either file.
+- Saving a portable recipe to an extensionless path consistently appends `.toml`.
+- Added regression coverage for direct flags and recipes, preview and dry-run safety,
+  source preservation, row operations, collision handling, overwrite behavior, and UI
+  state contracts.
+- No transform operations, formats, runtime dependencies, ORC support, database support,
+  batch recipe loading, or conversion semantics were added or changed.
+
 ## 1.3.0 - 2026-08-11
 
 StatConvert 1.3.0 is the transform power release. It adds portable ordered recipes,

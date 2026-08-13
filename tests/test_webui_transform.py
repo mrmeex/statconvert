@@ -266,6 +266,56 @@ mappings = [{ from = 1, to = "Control" }, { from = "1", to = "Text" }]
     assert "output" not in tomllib.loads(saved.json()["data"]["canonical_toml"])
 
 
+def test_browser_recipe_save_appends_toml_for_extensionless_path(
+    tmp_path: Path,
+) -> None:
+    requested = tmp_path / "portable-recipe"
+
+    response = _request(
+        create_app(),
+        "POST",
+        "/api/transform/recipe/save",
+        {
+            "output_path": str(requested),
+            "steps": [{"type": "select", "columns": ["id"]}],
+        },
+    )
+
+    expected = requested.with_suffix(".toml")
+    assert response.status_code == 200
+    assert response.json()["data"]["path"] == str(expected)
+    assert expected.is_file()
+    assert not requested.exists()
+    assert list(tmp_path.iterdir()) == [expected]
+
+
+def test_full_preview_reports_existing_sidecar_without_replacing_it(
+    source: Path,
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "output.csv"
+    sidecar = Path(f"{output}.statconvert-metadata.json")
+    sidecar.write_text("unrelated", encoding="utf-8")
+
+    response = _request(
+        create_app(),
+        "POST",
+        "/api/transform/preview-full",
+        _payload(source, output),
+    )
+    payload = response.json()["data"]
+
+    assert response.status_code == 200
+    assert payload["output"]["overwrite_required"] is True
+    assert payload["output"]["sidecar_behavior"] == {
+        "target": str(sidecar),
+        "would_write": False,
+        "exists": True,
+    }
+    assert sidecar.read_text(encoding="utf-8") == "unrelated"
+    assert not output.exists()
+
+
 def test_failed_browser_recipe_load_does_not_write_anything(tmp_path: Path) -> None:
     missing = tmp_path / "missing.toml"
     response = _request(

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 import tomllib
@@ -246,3 +247,163 @@ def test_row_operation_cli_modifiers_require_their_operation(tmp_path: Path) -> 
 
     assert result.exit_code == 1
     assert "--row-number" in result.output
+
+
+def test_cli_saved_recipe_preview_and_execution_match_direct_flags(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "input.csv"
+    direct_output = tmp_path / "direct.csv"
+    recipe_output = tmp_path / "recipe.csv"
+    preview_output = tmp_path / "preview.csv"
+    dry_run_output = tmp_path / "dry-run.csv"
+    recipe_request = tmp_path / "portable"
+    recipe = recipe_request.with_suffix(".toml")
+    pd.DataFrame(
+        {
+            "group": ["b", "a", "a", "b", "a"],
+            "value": [2, 1, 1, 1, 3],
+        }
+    ).to_csv(source, index=False)
+    source_hash = hashlib.sha256(source.read_bytes()).hexdigest()
+    source_timestamp = source.stat().st_mtime_ns
+    operations = [
+        "--sort",
+        "group:asc",
+        "--sort",
+        "value:desc",
+        "--distinct",
+        "group",
+        "--distinct",
+        "value",
+        "--row-number",
+        "row_id",
+        "--row-number-start",
+        "10",
+        "--row-number-step",
+        "5",
+    ]
+
+    saved = runner.invoke(
+        app,
+        [
+            "transform",
+            str(source),
+            str(tmp_path / "unused.csv"),
+            *operations,
+            "--save-recipe",
+            str(recipe_request),
+        ],
+    )
+    validated = runner.invoke(
+        app,
+        [
+            "transform-recipe",
+            "validate",
+            str(recipe),
+            "--input",
+            str(source),
+            "--json",
+        ],
+    )
+    previewed = runner.invoke(
+        app,
+        [
+            "transform",
+            str(source),
+            str(preview_output),
+            "--recipe",
+            str(recipe),
+            "--preview",
+            "--json",
+        ],
+    )
+    dry_run = runner.invoke(
+        app,
+        [
+            "transform",
+            str(source),
+            str(dry_run_output),
+            "--recipe",
+            str(recipe),
+            "--dry-run",
+        ],
+    )
+    direct = runner.invoke(
+        app,
+        ["transform", str(source), str(direct_output), *operations],
+    )
+    from_recipe = runner.invoke(
+        app,
+        [
+            "transform",
+            str(source),
+            str(recipe_output),
+            "--recipe",
+            str(recipe),
+        ],
+    )
+
+    assert saved.exit_code == 0, saved.output
+    assert recipe.is_file()
+    assert not recipe_request.exists()
+    assert validated.exit_code == 0, validated.output
+    assert json.loads(validated.output)["valid"] is True
+    assert previewed.exit_code == 0, previewed.output
+    preview_payload = json.loads(previewed.output)
+    assert preview_payload["summary"]["rows_after"] == 4
+    assert preview_payload["summary"]["columns_after"] == [
+        "group",
+        "value",
+        "row_id",
+    ]
+    assert not preview_output.exists()
+    assert dry_run.exit_code == 0, dry_run.output
+    assert not dry_run_output.exists()
+    assert not Path(f"{dry_run_output}.statconvert-metadata.json").exists()
+    assert direct.exit_code == 0, direct.output
+    assert from_recipe.exit_code == 0, from_recipe.output
+    pd.testing.assert_frame_equal(
+        pd.read_csv(direct_output),
+        pd.read_csv(recipe_output),
+    )
+    assert hashlib.sha256(source.read_bytes()).hexdigest() == source_hash
+    assert source.stat().st_mtime_ns == source_timestamp
+
+
+def test_recipe_execution_requires_overwrite_for_sidecar_only_collision(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "input.csv"
+    output = tmp_path / "output.csv"
+    sidecar = Path(f"{output}.statconvert-metadata.json")
+    recipe = tmp_path / "recipe.toml"
+    _source(source)
+    _recipe(recipe)
+    sidecar.write_text("unrelated", encoding="utf-8")
+
+    blocked = runner.invoke(
+        app,
+        ["transform", str(source), str(output), "--recipe", str(recipe)],
+    )
+
+    assert blocked.exit_code == 1
+    assert "Metadata sidecar already exists" in blocked.output
+    assert not output.exists()
+    assert sidecar.read_text(encoding="utf-8") == "unrelated"
+
+    replaced = runner.invoke(
+        app,
+        [
+            "transform",
+            str(source),
+            str(output),
+            "--recipe",
+            str(recipe),
+            "--overwrite",
+        ],
+    )
+
+    assert replaced.exit_code == 0, replaced.output
+    assert output.is_file()
+    assert sidecar.read_text(encoding="utf-8") != "unrelated"

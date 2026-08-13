@@ -72,6 +72,11 @@ def test_frontend_polish_contracts_are_centralized() -> None:
     assert 'extensions={[".toml"]} allowSaveSelection' in transform
     assert 'setFullPreview(null); try' in transform
     assert 'setPreview(null); try' in transform
+    assert "steps.length > 0 && steps.every(complete)" in transform
+    assert (
+        'disabled={!canPlan || Boolean(extensionWarning)}>Full impact preview'
+        in transform
+    )
     assert transform.index("<JobProgress jobId={jobId} />") < transform.index("<BeforeAfterPreview preview={preview} />")
     assert 'className="result-table reference-table"' in reference
     assert '.reference-table [data-column="caveat"]' in styles
@@ -175,7 +180,7 @@ def test_implementation_build_labels_are_removed_but_about_keeps_version() -> No
 
     version = _request(create_app(), "GET", "/api/version")
     assert version.status_code == 200
-    assert version.json()["version"] == "1.3.0"
+    assert version.json()["version"] == "1.3.1"
 
 
 def test_report_and_configs_page_polish_contracts() -> None:

@@ -5,12 +5,12 @@ inspecting, validating, batch-processing, comparing, reporting, and logging stat
 datasets. It uses a backend registry and a common `Dataset` model so format-specific code
 stays out of conversion and analysis workflows.
 
-Version 1.3.0 is the transform power release. It adds portable ordered recipes, canonical
-TOML save/load and validation, non-writing full-impact preview, typed recode mappings,
-stable multi-column sort, order-preserving distinct, deterministic row numbering, and a
-polished browser recipe workflow. The local browser UI remains bound to the local machine
-and is installed through the optional `statconvert[ui]` extra. No format family or runtime
-dependency was added; the CLI keeps its 11 base runtime dependencies.
+Version 1.3.1 stabilizes the 1.3.0 transform workflow. Empty browser transform plans no
+longer validate, full-impact preview remains available when an output or sidecar collision
+blocks execution, and extensionless recipe-save paths consistently receive `.toml`. The
+release adds no operations, formats, ORC or database support, or runtime dependencies. The
+local browser UI remains bound to the local machine and is installed through the optional
+`statconvert[ui]` extra; the CLI keeps its 11 base runtime dependencies.
 
 ## Implemented features
 

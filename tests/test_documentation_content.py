@@ -122,7 +122,8 @@ def test_public_docs_describe_transform_release_boundaries() -> None:
         )
     )
 
-    assert "Version 1.3.0 is the transform power release" in public_docs
+    assert "Version 1.3.1 stabilizes the 1.3.0 transform workflow" in public_docs
+    assert "extensionless recipe-save paths consistently receive `.toml`" in public_docs
     assert "--save-recipe" in public_docs
     assert "transform-recipe validate" in public_docs
     assert "Full impact preview" in public_docs

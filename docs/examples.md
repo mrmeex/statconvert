@@ -61,6 +61,23 @@ python -m statconvert convert input.csv output.parquet --overwrite
 Omit `--overwrite` when replacement is not intended. The equivalent `statconvert`
 console command can be used when it is on `PATH`.
 
+## Plan and optimize target types
+
+Opt into target-aware preflight for one conversion, preview without writing, or apply
+only exact smallest-type decisions:
+
+```powershell
+statconvert convert input.csv output.parquet --policy safe
+statconvert convert input.csv output.parquet --policy smallest-types --type-plan
+statconvert convert input.csv output.parquet --policy smallest-types --optimize-types
+statconvert report input.csv --output transfer.json --target-format parquet --policy safe
+```
+
+The type-plan form creates no output or directory. Omitting `--policy` preserves ordinary
+conversion behavior. Analysis-ready recommendations are plan-only, and policy planning is
+not available with streaming, batch, configs, or validation policy flags. The local
+browser Convert page offers the same explicit preview and smallest-types apply workflow.
+
 ## Create and validate a repeatable workflow config
 
 Create a single-command TOML starter, inspect or edit it, and validate it:
@@ -1068,6 +1085,5 @@ format, metadata, or value differences rather than a command crash.
 | I need automation output | [Use JSON output in scripts](#use-json-output-in-scripts) and [Write logs for troubleshooting](#write-logs-for-troubleshooting) |
 
 For deeper behavior, return to the [User Guide](user-guide.md),
-[CLI Reference](cli.md), [Format Guide](formats.md), or
-[CLI Reference](cli.md). StatConvert is licensed under the
+[CLI Reference](cli.md), or [Format Guide](formats.md). StatConvert is licensed under the
 [GNU Affero General Public License v3.0 or later](../LICENSE).

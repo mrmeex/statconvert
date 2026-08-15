@@ -2,6 +2,61 @@
 
 ## Unreleased
 
+## 1.4.0 - 2026-08-15
+
+StatConvert 1.4.0 is the transfer policy and type optimization release. It adds
+target-aware full-dataset planning, exact opt-in smallest-type application, bounded
+transfer reporting, and matching local browser controls while preserving ordinary
+no-policy conversion behavior.
+
+#### Browser UI and release integration (1.4.0d)
+
+- Added an explicit Convert policy selector whose default is current/no-policy behavior,
+  non-writing transfer preview, bounded decision/finding presentation, and blocked-plan
+  Run gating.
+- Added a separately unchecked smallest-types exact-application control; analysis-ready
+  remains plan-only and any relevant form change invalidates the preview.
+- Added optional Report target/policy controls and concise Reference policy guidance.
+- Kept Batch and Settings free of policy controls and retained the loopback-only UI,
+  optional UI dependency extra, and existing compact file picker.
+
+#### Convert and report integration (1.4.0c)
+
+- Added explicit single-file `convert --policy` preflight, blocked-plan enforcement, and
+  concise terminal summaries without changing the no-policy conversion path.
+- Added non-writing `convert --policy POLICY --type-plan`; it bypasses output collision
+  and parent-directory creation because it produces no output or sidecar.
+- Added `smallest-types --optimize-types`, applying only exact supported integer and float
+  decisions to a deep Dataset copy while retaining unsafe/manual columns and metadata.
+- Added optional `report --target-format TARGET --policy POLICY` transfer sections with
+  bounded decisions, findings, metadata disposition, sidecar, and truncation summaries.
+- Kept analysis-ready application, validate policy flags, batch/config/browser policy
+  behavior, and streaming policy planning deferred.
+
+#### Non-writing transfer/type planner (1.4.0b)
+
+- Added backend-neutral immutable transfer-plan, column-decision, metadata-disposition,
+  issue, and full-column scan models with stable schema version 1 output.
+- Added conservative extension-level target declarations and exact planning behavior for
+  `safe`, `strict`, `analysis-ready`, `preserve-metadata`, and `smallest-types`.
+- Added non-writing `type-plan` with object selection, bounded Rich human output, plain
+  deterministic JSON, blocked-plan exit codes, and aggregate-only logging.
+- The standalone planner applies no type changes. Existing no-policy convert, batch,
+  streaming, reporting, configs, validation, and browser behavior remain unchanged.
+
+- Audited the 1.3.1 conversion, Dataset/type, normalized metadata, sidecar, validation,
+  reporting, batch, browser, documentation, and test behavior for the private 1.4.0a
+  design slice.
+- Defined exact `safe`, `strict`, `analysis-ready`, `preserve-metadata`, and
+  `smallest-types` transfer policies, a deterministic full-scan target-aware type plan,
+  stable issue/report contracts, non-writing CLI/browser previews, and phased release
+  gates in the private transfer-policy design.
+- Deferred `legacy-compatible` until target-version profiles exist and deferred batch
+  policy execution, streaming policy planning, global defaults, sampling, new formats,
+  ORC, databases, and codebook workflows.
+- No runtime policy/type optimization, CLI option or command, UI control, conversion
+  behavior, format, dependency, version, or release artifact changed in this design slice.
+
 ## 1.3.1 - 2026-08-13
 
 StatConvert 1.3.1 is a stabilization release for the 1.3.0 transform workflow.

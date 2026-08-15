@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Badge, Box, Group, Paper, ScrollArea, Stack, Table, Tabs, Text, TextInput } from "@mantine/core";
+import { Badge, Box, Group, Paper, ScrollArea, SimpleGrid, Stack, Table, Tabs, Text, TextInput, Title } from "@mantine/core";
 import { IconDatabase, IconSearch, IconServer, IconTableOptions } from "@tabler/icons-react";
 
 import { CommandPreview } from "../components/CommandPreview";
@@ -46,6 +46,18 @@ export function ReferencePage() {
       <WorkflowHeader title="Reference" description="Browse the live format, backend, and capability registries used by StatConvert." />
       <Stack gap="lg">
         <ErrorAlert error={error} />
+        <Paper withBorder radius="lg" p="lg">
+          <Title order={3} mb="xs">Transfer policies</Title>
+          <Text size="sm" c="dimmed" mb="md">No policy means current conversion behavior. Policies run the same backend-owned, full-dataset transfer planner; there is no saved or global default.</Text>
+          <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }}>
+            <Text size="sm"><strong>Safe:</strong> preserve values and disclose known risks.</Text>
+            <Text size="sm"><strong>Strict:</strong> promote unverifiable or unsupported transfer findings to blockers.</Text>
+            <Text size="sm"><strong>Analysis-ready:</strong> exact semantic recommendations, plan-only in 1.4.0.</Text>
+            <Text size="sm"><strong>Preserve metadata:</strong> prioritize normalized metadata and required sidecars.</Text>
+            <Text size="sm"><strong>Smallest types:</strong> propose exact lossless compaction; application remains separately opt-in.</Text>
+            <Text size="sm"><strong>Legacy-compatible:</strong> deferred until reviewed target-version profiles exist.</Text>
+          </SimpleGrid>
+        </Paper>
         <Paper withBorder radius="lg" p="lg">
           <Tabs value={active} onChange={(value) => setActive((value ?? "formats") as ReferenceKind)}>
             <Group justify="space-between" align="end" mb="md">

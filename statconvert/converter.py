@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 from statconvert.backends.objects import DatasetObjectInfo, NamedDataset
 from statconvert.dataset import Dataset
@@ -27,6 +27,12 @@ from statconvert.registry import (
 )
 from statconvert.ui import show_verbose
 from statconvert.ui.progress import progress
+from statconvert.transfer import (
+    TransferApplicationResult,
+    TransferPlan,
+    apply_transfer_plan,
+    build_transfer_plan,
+)
 
 
 @dataclass(frozen=True)
@@ -39,6 +45,24 @@ class MultiObjectConversionResult:
     @property
     def rows(self) -> int:
         return sum(item.dataset.rows for item in self.objects)
+
+
+@dataclass(frozen=True)
+class PolicyConversionResult:
+    """Result of one explicit policy-aware single-dataset conversion."""
+
+    dataset: Dataset
+    transfer_plan: TransferPlan
+    application: TransferApplicationResult | None
+    wrote_output: bool
+
+
+@dataclass(frozen=True)
+class _ConversionContext:
+    input_path: Path
+    output_path: Path
+    reader: Any
+    writer: Any
 
 
 def transform(
@@ -58,92 +82,221 @@ def transform(
     Convert one dataset file to another format.
     """
 
-    input_path = Path(input_file)
-    output_path = Path(output_file)
-    logger = get_logger()
+    conversion = _prepare_single_conversion(
+        input_file,
+        output_file,
+        overwrite=overwrite,
+        create_dirs=create_dirs,
+    )
+    dataset = _read_single_conversion(
+        conversion,
+        object_selector=object_selector,
+        read_options=read_options,
+        on_option_warning=on_option_warning,
+    )
+    _validate_single_conversion(
+        dataset,
+        conversion.output_path,
+        validate=validate,
+        strict_validation=strict_validation,
+        on_validation=on_validation,
+    )
+    _write_single_conversion(
+        dataset,
+        conversion,
+        write_options=write_options,
+        on_option_warning=on_option_warning,
+    )
+    return dataset
 
-    if not input_path.exists():
+
+def transform_with_policy(
+    input_file: str,
+    output_file: str,
+    *,
+    policy: str,
+    type_plan_only: bool = False,
+    optimize_types: bool = False,
+    overwrite: bool = False,
+    create_dirs: bool = False,
+    validate: bool = False,
+    strict_validation: bool = False,
+    on_validation: Callable[[list[ValidationIssue]], None] | None = None,
+    on_transfer_plan: Callable[[TransferPlan], None] | None = None,
+    object_selector: str | None = None,
+    read_options: DatasetReadOptions | None = None,
+    write_options: DatasetWriteOptions | None = None,
+    on_option_warning: Callable[[str], None] | None = None,
+) -> PolicyConversionResult:
+    """Plan and optionally execute one explicit policy-aware conversion."""
+
+    conversion = _prepare_single_conversion(
+        input_file,
+        output_file,
+        overwrite=overwrite,
+        create_dirs=create_dirs,
+        validate_output=not type_plan_only,
+    )
+    source_dataset = _read_single_conversion(
+        conversion,
+        object_selector=object_selector,
+        read_options=read_options,
+        on_option_warning=on_option_warning,
+    )
+    transfer_plan = build_transfer_plan(
+        source_dataset,
+        source_path=input_file,
+        target=conversion.output_path.suffix,
+        policy=policy,
+        object_selector=object_selector,
+    )
+    if on_transfer_plan is not None:
+        on_transfer_plan(transfer_plan)
+    if transfer_plan.status == "blocked":
         raise ConversionError(
-            f"Input file does not exist: {input_file}"
+            "Transfer policy blocked conversion. Output was not written.",
+            suggestion="Review the transfer findings or choose a compatible target/policy.",
         )
 
-    # Determine reader and writer
+    application = None
+    dataset_to_write = source_dataset
+    if optimize_types:
+        application = apply_transfer_plan(source_dataset, transfer_plan)
+        dataset_to_write = application.dataset
 
+    _validate_single_conversion(
+        dataset_to_write,
+        conversion.output_path,
+        validate=validate,
+        strict_validation=strict_validation,
+        on_validation=on_validation,
+    )
+    if type_plan_only:
+        return PolicyConversionResult(
+            dataset=dataset_to_write,
+            transfer_plan=transfer_plan,
+            application=application,
+            wrote_output=False,
+        )
+
+    _write_single_conversion(
+        dataset_to_write,
+        conversion,
+        write_options=write_options,
+        on_option_warning=on_option_warning,
+    )
+    return PolicyConversionResult(
+        dataset=dataset_to_write,
+        transfer_plan=transfer_plan,
+        application=application,
+        wrote_output=True,
+    )
+
+
+def _prepare_single_conversion(
+    input_file: str,
+    output_file: str,
+    *,
+    overwrite: bool,
+    create_dirs: bool,
+    validate_output: bool = True,
+) -> _ConversionContext:
+    input_path = Path(input_file)
+    output_path = Path(output_file)
+    if not input_path.exists():
+        raise ConversionError(f"Input file does not exist: {input_file}")
     try:
         reader = get_reader_for_file(input_file)
         writer = get_writer_for_file(output_file)
     except ValueError as exc:
         raise ConversionError(str(exc)) from None
-    validate_output_file_path(
-        output_path,
-        overwrite=overwrite,
-        create_dirs=create_dirs,
-    )
-    logger.debug(
+    if validate_output:
+        validate_output_file_path(
+            output_path,
+            overwrite=overwrite,
+            create_dirs=create_dirs,
+        )
+    get_logger().debug(
         "Conversion backends resolved: reader=%s writer=%s",
         reader.__class__.__name__,
         writer.__class__.__name__,
     )
+    return _ConversionContext(input_path, output_path, reader, writer)
 
-    # Read dataset
-    
-    show_verbose(f"Reader backend : {reader.__class__.__name__}")
-    show_verbose(f"Reading        : {input_file}")
 
-    with progress(f"Reading {input_path.name}"):
-
+def _read_single_conversion(
+    conversion: _ConversionContext,
+    *,
+    object_selector: str | None,
+    read_options: DatasetReadOptions | None,
+    on_option_warning: Callable[[str], None] | None,
+) -> Dataset:
+    show_verbose(f"Reader backend : {conversion.reader.__class__.__name__}")
+    show_verbose(f"Reading        : {conversion.input_path}")
+    with progress(f"Reading {conversion.input_path.name}"):
         dataset = read_dataset(
-            input_file,
+            conversion.input_path,
             object_selector=object_selector,
             options=read_options,
             on_option_warning=on_option_warning,
         )
-
-    logger.info(
+    get_logger().info(
         "Input read completed: input_file=%s rows=%s columns=%s",
-        input_file,
+        conversion.input_path,
         dataset.rows,
         len(dataset.columns),
     )
+    return dataset
 
-    if validate or strict_validation:
-        logger.debug("Validating dataset before conversion write")
-        issues = validate_for_write(
-            dataset,
-            target_format=output_path.suffix.lower() or None,
-            strict=strict_validation,
-        )
-        if on_validation is not None:
-            on_validation(issues)
-        logger.info(
-            "Conversion validation completed: issues=%s errors=%s warnings=%s",
-            len(issues),
-            sum(issue.severity == "error" for issue in issues),
-            sum(issue.severity == "warning" for issue in issues),
-        )
-        if validation_should_fail(issues, strict=strict_validation):
-            raise ValidationFailedError(issues)
 
-    # Write dataset
-    
-    show_verbose(f"Writer backend : {writer.__class__.__name__}")
-    show_verbose(f"Writing        : {output_file}")
+def _validate_single_conversion(
+    dataset: Dataset,
+    output_path: Path,
+    *,
+    validate: bool,
+    strict_validation: bool,
+    on_validation: Callable[[list[ValidationIssue]], None] | None,
+) -> None:
+    if not (validate or strict_validation):
+        return
+    logger = get_logger()
+    logger.debug("Validating dataset before conversion write")
+    issues = validate_for_write(
+        dataset,
+        target_format=output_path.suffix.lower() or None,
+        strict=strict_validation,
+    )
+    if on_validation is not None:
+        on_validation(issues)
+    logger.info(
+        "Conversion validation completed: issues=%s errors=%s warnings=%s",
+        len(issues),
+        sum(issue.severity == "error" for issue in issues),
+        sum(issue.severity == "warning" for issue in issues),
+    )
+    if validation_should_fail(issues, strict=strict_validation):
+        raise ValidationFailedError(issues)
 
+
+def _write_single_conversion(
+    dataset: Dataset,
+    conversion: _ConversionContext,
+    *,
+    write_options: DatasetWriteOptions | None,
+    on_option_warning: Callable[[str], None] | None,
+) -> None:
+    show_verbose(f"Writer backend : {conversion.writer.__class__.__name__}")
+    show_verbose(f"Writing        : {conversion.output_path}")
     show_verbose(f"Rows           : {dataset.rows:,}")
     show_verbose(f"Columns        : {len(dataset.columns):,}")
-
-    with progress(f"Writing {output_path.name}"):
-
+    with progress(f"Writing {conversion.output_path.name}"):
         write_dataset(
             dataset,
-            output_file,
+            conversion.output_path,
             options=write_options,
             on_option_warning=on_option_warning,
         )
-
-    logger.info("Output write completed: output_file=%s", output_file)
-        
-    return dataset
+    get_logger().info("Output write completed: output_file=%s", conversion.output_path)
 
 
 def transform_all_objects(

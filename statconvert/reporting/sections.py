@@ -26,6 +26,7 @@ from statconvert.reporting.models import (
 )
 from statconvert.reporting.exceptions import ReportError
 from statconvert.metadata.diagnostics import build_metadata_diagnostics
+from statconvert.transfer import TransferApplicationResult, TransferPlan
 
 
 def build_summary_section(dataset: Dataset) -> ReportSection:
@@ -403,6 +404,114 @@ def build_schema_contract_section(
     )
 
 
+def build_transfer_plan_section(
+    plan: TransferPlan,
+    application: TransferApplicationResult | None = None,
+) -> ReportSection:
+    """Build a bounded backend-neutral transfer-policy report section."""
+
+    payload = plan.to_dict()
+    summary = payload["summary"]
+    dispositions = dict(summary["metadata_disposition_counts"])
+
+    metrics = [
+        ReportMetric("policy", plan.policy, label="Policy"),
+        ReportMetric("target", plan.target["extension"], label="Target"),
+        ReportMetric("status", plan.status, label="Status"),
+        ReportMetric(
+            "changed_proposed_count",
+            summary["changed_proposed_count"],
+            label="Changed/proposed columns",
+        ),
+        ReportMetric("manual_count", summary["manual_count"], label="Manual columns"),
+        ReportMetric(
+            "unchanged_count", summary["unchanged_count"], label="Unchanged columns"
+        ),
+        ReportMetric("warning_count", summary["warning_count"], label="Warnings"),
+        ReportMetric("error_count", summary["error_count"], label="Errors"),
+        ReportMetric(
+            "sidecar_requirement_count",
+            dispositions.get("sidecar", 0),
+            label="Metadata fields requiring sidecar",
+        ),
+        ReportMetric(
+            "metadata_disposition_summary",
+            dispositions,
+            label="Metadata disposition summary",
+        ),
+        ReportMetric(
+            "truncation",
+            payload["truncated"],
+            label="Bounded payload truncation",
+        ),
+    ]
+    if application is not None:
+        metrics.append(
+            ReportMetric(
+                "application_summary",
+                application.to_summary_dict(),
+                label="Type application summary",
+            )
+        )
+
+    decision_rows = [
+        {
+            "column": item["column"],
+            "current_storage_type": item["current_storage_type"],
+            "proposed_storage_type": item["proposed_storage_type"],
+            "action": item["action"],
+            "reason_code": item["reason_code"],
+            "evidence_level": item["evidence_level"],
+            "target_compatibility": item["target_compatibility"],
+        }
+        for item in payload["decisions"]
+        if item["action"] != "keep"
+    ]
+    issue_rows = [
+        {
+            "severity": item["severity"],
+            "code": item["code"],
+            "column": item["column"],
+            "field": item["field"],
+            "message": item["message"],
+        }
+        for item in payload["issues"]
+    ]
+    tables = [
+        ReportTable(
+            "transfer_decisions",
+            [
+                "column",
+                "current_storage_type",
+                "proposed_storage_type",
+                "action",
+                "reason_code",
+                "evidence_level",
+                "target_compatibility",
+            ],
+            decision_rows,
+            description="Changed and manual decisions only; bounded by the plan schema.",
+        ),
+        ReportTable(
+            "transfer_issues",
+            ["severity", "code", "column", "field", "message"],
+            issue_rows,
+            description="Bounded transfer-policy findings.",
+        ),
+    ]
+    issues = [
+        ReportIssue(item.severity, item.code, item.message, item.column)
+        for item in plan.issues[:200]
+    ]
+    return ReportSection(
+        key="transfer_policy",
+        title="Transfer Policy",
+        metrics=metrics,
+        tables=tables,
+        issues=issues,
+    )
+
+
 def build_dataset_report(
     dataset: Dataset,
     title: str | None = None,
@@ -422,6 +531,8 @@ def build_dataset_report(
     strict_validation: bool = False,
     label_preview_values: int = 5,
     schema_contract_validation: SchemaContractValidation | None = None,
+    transfer_plan: TransferPlan | None = None,
+    transfer_application: TransferApplicationResult | None = None,
 ) -> DatasetReport:
     sections: list[ReportSection] = []
     if include_summary:
@@ -462,6 +573,10 @@ def build_dataset_report(
                     strict=strict_validation,
                 )
             )
+    if transfer_plan is not None:
+        sections.append(
+            build_transfer_plan_section(transfer_plan, transfer_application)
+        )
 
     issues = [issue for section in sections for issue in section.issues]
     return DatasetReport(

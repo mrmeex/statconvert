@@ -122,6 +122,8 @@ class ConvertRequest(BaseModel):
     create_dirs: bool = False
     stream: bool = False
     chunk_size: int | None = Field(default=None, ge=1)
+    policy: str | None = None
+    optimize_types: bool = False
 
 
 class BatchRequest(BaseModel):
@@ -338,6 +340,7 @@ class ReportRequest(BaseModel):
     max_table_rows: int = Field(default=1000, ge=1, le=100_000)
     max_preview_values: int = Field(default=5, ge=1, le=1000)
     target_format: str | None = None
+    policy: str | None = None
     strict_validation: bool = False
     schema_contract: str | None = None
 

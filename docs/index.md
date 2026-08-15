@@ -69,12 +69,11 @@ statconvert ui
 </section>
 
 <p>
-  StatConvert 1.3.1 stabilizes the 1.3.0 transform workflow. Empty transform plans no
-  longer validate, full-impact preview remains available when output or sidecar
-  collisions block execution, and extensionless recipe-save paths receive
-  <code>.toml</code>. It adds no operation, format family, database support, ORC, or
-  runtime dependency. Install the local interface with <code>statconvert[ui]</code>;
-  the base CLI remains unchanged.
+  StatConvert 1.4.0 adds complete target-aware transfer planning, five explicit
+  policies, exact opt-in smallest-type application, policy-aware reports, and matching
+  browser controls. Plans scan the full selected dataset and write nothing. Omitting a
+  policy keeps the established conversion path unchanged; batch, streaming, saved-plan,
+  and legacy-emulation support remain outside this release.
 </p>
 
 <footer class="statconvert-home-footer">

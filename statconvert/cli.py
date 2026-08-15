@@ -23,6 +23,7 @@ from statconvert.compare import (
 from statconvert.converter import (
     transform as convert_file,
     transform_all_objects as convert_all_objects,
+    transform_with_policy,
 )
 from statconvert.collection import (
     CollectionPlanItem,
@@ -128,6 +129,13 @@ from statconvert.transformations.cli_parsing import build_pipeline_from_cli_opti
 from statconvert.transformations.compatibility import recipe_from_transform_options
 from statconvert.transformations.planning import plan_transform_recipe
 from statconvert.transformations.recipes import TransformStepType
+from statconvert.transfer import (
+    TransferIssue,
+    TransferPlanningError,
+    build_transfer_plan,
+    resolve_policy,
+    resolve_target_capabilities,
+)
 from statconvert.version import format_version_status
 
 from statconvert.ui import (
@@ -171,6 +179,8 @@ from statconvert.ui import (
     show_warning,
     show_full_transform_preview,
     show_transform_recipe_validation,
+    show_transfer_plan,
+    show_transfer_plan_summary,
     show_transformation_summary,
 )
 
@@ -999,6 +1009,51 @@ def _validate_streaming_convert_options(
         )
 
 
+def _validate_convert_transfer_options(
+    *,
+    policy: str | None,
+    type_plan_only: bool,
+    optimize_types: bool,
+    stream: bool,
+    all_objects: bool,
+    write_config_file: str | None,
+) -> str | None:
+    """Resolve explicit transfer options without changing the legacy path."""
+
+    if policy is None:
+        if type_plan_only:
+            raise ConversionError("--type-plan requires --policy POLICY.")
+        if optimize_types:
+            raise ConversionError(
+                "--optimize-types requires --policy smallest-types."
+            )
+        return None
+
+    resolved_policy = resolve_policy(policy)
+    if type_plan_only and optimize_types:
+        raise ConversionError("Use either --type-plan or --optimize-types, not both.")
+    if optimize_types and resolved_policy != "smallest-types":
+        raise ConversionError(
+            "--optimize-types requires --policy smallest-types."
+        )
+    if stream:
+        raise ConversionError(
+            "Policy/type planning requires full-dataset planning and cannot use --stream.",
+            suggestion="Streaming policy planning is deferred; run without --stream.",
+        )
+    if all_objects:
+        raise ConversionError(
+            "--policy is supported only for single-dataset conversion in 1.4.0.",
+            suggestion="Use --object to select one object, or omit --policy.",
+        )
+    if write_config_file is not None:
+        raise ConversionError(
+            "Transfer policy options are not supported by workflow configuration yet.",
+            suggestion="Run the conversion directly without --write-config.",
+        )
+    return resolved_policy
+
+
 def _show_dataset_option_warning(message: str, *, json_output: bool = False) -> None:
     if json_output:
         typer.echo(message, err=True)
@@ -1123,6 +1178,126 @@ def _show_collection_validation(
     )
 
 
+@app.command("type-plan")
+def type_plan(
+    input_file: str,
+    target: Annotated[
+        str,
+        typer.Option(
+            "--target",
+            help="Required registered target extension, with or without the leading dot.",
+        ),
+    ],
+    policy: Annotated[
+        str,
+        typer.Option(
+            "--policy",
+            help=(
+                "Planning policy: safe, strict, analysis-ready, "
+                "preserve-metadata, or smallest-types."
+            ),
+        ),
+    ] = "safe",
+    object_selector: ObjectSelectorOption = None,
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Emit a plain bounded machine-readable plan."),
+    ] = False,
+    log_file: LogFileOption = None,
+    log_level: LogLevelOption = "info",
+    log_append: LogAppendOption = False,
+    developer_log: DeveloperLogOption = False,
+) -> None:
+    """Fully scan and plan a target-aware transfer without writing anything."""
+
+    resolved_policy = policy
+    try:
+        resolved_policy = resolve_policy(policy)
+        resolve_target_capabilities(target)
+        with command_log_wrapper(
+            command="type-plan",
+            parameters={
+                "input_file": input_file,
+                "target": target,
+                "policy": resolved_policy,
+                "object": object_selector,
+                "json": json_output,
+            },
+            log_file=log_file,
+            log_level=log_level,
+            log_append=log_append,
+            developer_log=developer_log,
+        ):
+            dataset = _read_dataset(input_file, object_selector=object_selector)
+            plan = build_transfer_plan(
+                dataset,
+                source_path=input_file,
+                target=target,
+                policy=resolved_policy,
+                object_selector=object_selector,
+            )
+            get_logger().info(
+                "Transfer plan completed: policy=%s target=%s status=%s rows=%s "
+                "columns=%s warnings=%s errors=%s",
+                plan.policy,
+                plan.target["extension"],
+                plan.status,
+                plan.scan["rows_scanned"],
+                plan.scan["columns_scanned"],
+                plan.summary["warning_count"],
+                plan.summary["error_count"],
+            )
+            if json_output:
+                emit_json(plan.to_dict())
+            else:
+                show_transfer_plan(plan)
+            if plan.status == "blocked":
+                raise typer.Exit(1)
+    except typer.Exit:
+        raise
+    except Exception as exc:
+        if json_output:
+            code = (
+                exc.code
+                if isinstance(exc, TransferPlanningError)
+                else "TRANSFER_POLICY_BLOCKED"
+            )
+            issue = TransferIssue(
+                code=code,
+                severity="error",
+                message=getattr(exc, "message", str(exc)),
+                suggestion=getattr(exc, "suggestion", None),
+                policy=resolved_policy,
+                target=target,
+            )
+            emit_json(
+                {
+                    "schema_version": 1,
+                    "source": {"path": input_file, "object": object_selector},
+                    "target": {"requested": target},
+                    "policy": resolved_policy,
+                    "status": "blocked",
+                    "scan": {"full_scan": False, "rows_scanned": 0, "columns_scanned": 0},
+                    "summary": {"warning_count": 0, "error_count": 1},
+                    "decisions": [],
+                    "metadata": [],
+                    "issues": [issue.to_dict()],
+                    "output": None,
+                    "truncated": {
+                        "decisions": False,
+                        "decisions_omitted": 0,
+                        "metadata": False,
+                        "metadata_omitted": 0,
+                        "issues": False,
+                        "issues_omitted": 0,
+                    },
+                }
+            )
+        else:
+            handle_exception(exc)
+        raise typer.Exit(1)
+
+
 @app.command()
 def convert(
     input_file: str,
@@ -1140,6 +1315,24 @@ def convert(
     create_dirs: CreateDirsOption = False,
     stream: StreamOption = False,
     chunk_size: ChunkSizeOption = None,
+    policy: str | None = typer.Option(
+        None,
+        "--policy",
+        help=(
+            "Opt into transfer planning: safe, strict, analysis-ready, "
+            "preserve-metadata, or smallest-types."
+        ),
+    ),
+    type_plan_only: bool = typer.Option(
+        False,
+        "--type-plan",
+        help="Show the transfer plan without writing anything; requires --policy.",
+    ),
+    optimize_types: bool = typer.Option(
+        False,
+        "--optimize-types",
+        help="Apply exact type decisions; requires --policy smallest-types.",
+    ),
     write_config_file: WriteConfigOption = None,
     overwrite_config: OverwriteConfigOption = False,
     validate_inputs: bool = typer.Option(
@@ -1168,6 +1361,19 @@ def convert(
     validation_failure: ValidationFailedError | None = None
 
     try:
+        # Config execution calls command functions directly, so newly added Typer
+        # defaults must be normalized when the option was not serialized.
+        policy = policy if isinstance(policy, str) else None
+        type_plan_only = type_plan_only if isinstance(type_plan_only, bool) else False
+        optimize_types = optimize_types if isinstance(optimize_types, bool) else False
+        resolved_policy = _validate_convert_transfer_options(
+            policy=policy,
+            type_plan_only=type_plan_only,
+            optimize_types=optimize_types,
+            stream=stream,
+            all_objects=all_objects,
+            write_config_file=write_config_file,
+        )
         effective_chunk_size = _streaming_chunk_size(
             stream=stream,
             chunk_size=chunk_size,
@@ -1216,6 +1422,9 @@ def convert(
                 "create_dirs": create_dirs,
                 "stream": stream,
                 "chunk_size": effective_chunk_size,
+                "policy": resolved_policy,
+                "type_plan": type_plan_only,
+                "optimize_types": optimize_types,
                 "validate": validate_inputs,
                 "strict_validation": strict_validation,
                 "input_encoding": input_encoding,
@@ -1271,7 +1480,7 @@ def convert(
                             )
                         ),
                     )
-                else:
+                elif resolved_policy is None:
                     dataset = convert_file(
                         input_file=input_file,
                         output_file=output_file,
@@ -1291,6 +1500,35 @@ def convert(
                             ),
                         ),
                     )
+                else:
+                    policy_result = transform_with_policy(
+                        input_file=input_file,
+                        output_file=output_file,
+                        policy=resolved_policy,
+                        type_plan_only=type_plan_only,
+                        optimize_types=optimize_types,
+                        overwrite=overwrite,
+                        create_dirs=create_dirs,
+                        validate=validate_inputs,
+                        strict_validation=strict_validation,
+                        object_selector=object_selector,
+                        read_options=read_options,
+                        write_options=write_options,
+                        on_option_warning=show_warning,
+                        on_transfer_plan=(
+                            show_transfer_plan
+                            if type_plan_only
+                            else show_transfer_plan_summary
+                        ),
+                        on_validation=lambda issues: show_validation_issues(
+                            issues,
+                            strict=strict_validation,
+                            target_format=(
+                                Path(output_file).suffix.lower() or None
+                            ),
+                        ),
+                    )
+                    dataset = policy_result.dataset
             except ValidationFailedError as exc:
                 validation_failure = exc
                 _log_validation_block(
@@ -1340,7 +1578,36 @@ def convert(
                     console.print(
                         f"Rows converted: {conversion_result.rows:,}"
                     )
+                elif type_plan_only:
+                    logger.info(
+                        "Non-writing conversion type plan: policy=%s target=%s "
+                        "status=%s warnings=%s errors=%s",
+                        policy_result.transfer_plan.policy,
+                        policy_result.transfer_plan.target["extension"],
+                        policy_result.transfer_plan.status,
+                        policy_result.transfer_plan.summary["warning_count"],
+                        policy_result.transfer_plan.summary["error_count"],
+                    )
                 else:
+                    if (
+                        resolved_policy is not None
+                        and policy_result.application is not None
+                    ):
+                        console.print(
+                            "Exact type decisions applied: "
+                            f"{policy_result.application.applied_count:,}"
+                        )
+                        console.print(
+                            "Unsupported proposals retained unchanged: "
+                            f"{len(policy_result.application.unsupported_proposals):,}"
+                        )
+                        logger.info(
+                            "Transfer application result: applied=%s retained=%s "
+                            "unsupported_proposals=%s",
+                            policy_result.application.applied_count,
+                            len(policy_result.application.retained_columns),
+                            len(policy_result.application.unsupported_proposals),
+                        )
                     logger.info(
                         "Conversion result: output_file=%s rows=%s columns=%s",
                         output_file,
@@ -3756,6 +4023,13 @@ def report(
         "--target-format",
         help="Validate suitability for a target dataset format.",
     ),
+    policy: str | None = typer.Option(
+        None,
+        "--policy",
+        help=(
+            "Add a target-aware transfer-policy section; requires --target-format."
+        ),
+    ),
     strict_validation: bool = typer.Option(
         False,
         "--strict-validation",
@@ -3784,6 +4058,18 @@ def report(
     """Generate a profile report for one dataset."""
 
     try:
+        # Preserve direct config execution for configs created before this option existed.
+        policy = policy if isinstance(policy, str) else None
+        resolved_policy = None
+        if policy is not None:
+            if target_format is None:
+                raise ConversionError("--policy requires --target-format TARGET.")
+            if write_config_file is not None:
+                raise ConversionError(
+                    "Report transfer policies are not supported by workflow configuration yet."
+                )
+            resolved_policy = resolve_policy(policy)
+            resolve_target_capabilities(target_format)
         _validate_write_config_options(write_config_file, overwrite_config)
         if write_config_file is not None:
             _validate_positive_option("--frequency-top", frequency_top)
@@ -3862,6 +4148,7 @@ def report(
                 "max_table_rows": max_table_rows,
                 "max_preview_values": max_preview_values,
                 "target_format": target_format,
+                "policy": resolved_policy,
                 "strict_validation": strict_validation,
                 "schema_contract": schema_contract,
                 "json": json_output,
@@ -3906,6 +4193,17 @@ def report(
                 if schema_contract is not None
                 else None
             )
+            transfer_plan = (
+                build_transfer_plan(
+                    dataset,
+                    source_path=input_file,
+                    target=target_format,
+                    policy=resolved_policy,
+                    object_selector=object_selector,
+                )
+                if resolved_policy is not None and target_format is not None
+                else None
+            )
             logger.debug("Building dataset report")
             dataset_report = build_dataset_report(
                 dataset,
@@ -3925,6 +4223,7 @@ def report(
                 strict_validation=strict_validation,
                 label_preview_values=report_options.max_preview_values,
                 schema_contract_validation=contract_validation,
+                transfer_plan=transfer_plan,
             )
             logger.debug("Writing dataset report: %s", output_file)
             write_dataset_report(

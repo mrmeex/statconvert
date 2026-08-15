@@ -102,6 +102,20 @@ Enable **Overwrite existing output** only when replacing a file is intentional. 
 **Create missing directories** when the output's parent folder does not exist. Streaming
 controls appear for eligible line-oriented text workflows.
 
+The **Transfer policy** selector defaults to **Current behavior / no policy**. Selecting
+`safe`, `strict`, `analysis-ready`, `preserve-metadata`, or `smallest-types` enables a
+non-writing **Preview transfer plan** action backed by the same full-dataset planner as
+the CLI. The preview shows status and complete counts with bounded changed/manual
+decisions, findings, metadata disposition, sidecar requirements, and collapsed raw JSON.
+Blocked plans keep **Run conversion** disabled. Changing an input, object, output, target,
+policy, or apply choice invalidates the preview.
+
+For `smallest-types`, **Apply exact type optimization** is a separate unchecked control
+that becomes usable after a successful preview. Checking it invalidates the preview so
+the applied choice must be planned again before Run. Only exact lossless supported
+decisions are applied. `analysis-ready` remains plan-only. Policy planning cannot be
+combined with streaming, and no policy is saved in Settings or used as a hidden default.
+
 ## Batch Convert
 
 Batch Convert discovers supported files in an input folder and plans their output paths.
@@ -211,6 +225,9 @@ schema contracts, and table-row limits refine the output. Planning checks the da
 and effective output path without writing; generation replaces the plan with progress
 and keeps the final output path visible.
 
+An optional transfer target and explicit policy add the existing bounded transfer-policy
+section. Report never infers a policy automatically.
+
 ## Collect
 
 Collect writes selected datasets into one XLSX or ODS workbook. It requires a CSV
@@ -306,3 +323,7 @@ starting the job.
 For detailed command options, see the [CLI Reference](cli.md). For general workflows, see
 the [User Guide](user-guide.md) and [Examples and Recipes](examples.md). StatConvert is
 licensed under the [GNU Affero General Public License v3.0 or later](../LICENSE).
+
+Batch policy controls, streaming policy planning, saved plans, and Settings defaults are
+not available. The Reference page summarizes the five implemented policies and the
+deferred `legacy-compatible` profile.

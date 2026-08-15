@@ -429,6 +429,42 @@ statconvert metadata data.csv --validate-sidecar --sidecar-input .\metadata\data
 Diagnostics report source precedence, field coverage, stable issues, provenance, and format
 caveats. Validation never copies, applies, overwrites, or writes the sidecar.
 
+### Planning target types without writing
+
+Use `type-plan` to fully scan one dataset or selected workbook/RData object and explain
+target compatibility, type proposals, and metadata disposition:
+
+```powershell
+statconvert type-plan input.csv --target parquet
+statconvert type-plan input.csv --target parquet --policy smallest-types
+statconvert type-plan input.csv --target parquet --policy analysis-ready --json
+statconvert type-plan workbook.xlsx --object Data --target dta --policy strict
+```
+
+The five planning policies are `safe`, `strict`, `analysis-ready`, `preserve-metadata`,
+and `smallest-types`; `safe` is the default for `type-plan` only. The command scans every
+selected row, uses aggregate evidence rather than samples, and writes nothing. JSON is
+bounded and includes complete counts plus truncation metadata.
+
+The standalone plan does not change the source, write an output or sidecar, or apply a
+proposed type. Normal conversion without `--policy` behaves as before. To add the same
+gate to one conversion, use:
+
+```powershell
+statconvert convert input.csv output.parquet --policy safe
+statconvert convert input.csv output.parquet --policy smallest-types --type-plan
+statconvert convert input.csv output.parquet --policy smallest-types --optimize-types
+statconvert report input.csv --output transfer.json --target-format parquet --policy safe
+```
+
+The convert type-plan form writes nothing and does not create the output directory.
+Smallest-types proposals are applied only with the explicit `--optimize-types` flag, on a
+deep copy, and only when exact; `analysis-ready` remains plan-only. Blocked plans stop
+before writing and warnings-only plans continue. The browser Convert page exposes the
+same explicit preview and smallest-types apply gate, and Report can add an explicit
+target/policy section. Transfer planning is not available in batch, streaming, configs,
+or validation policy flags. `legacy-compatible` is deferred.
+
 Compare metadata without comparing data values:
 
 ```powershell
@@ -1127,5 +1163,6 @@ run the single-dataset files without `--object`.
 - [Examples and Recipes](examples.md) for copyable task-oriented workflows
 - [CLI Reference](cli.md) for every command option and exit policy
 - [Format Guide](formats.md) for the capability matrix and format caveats
+- [CLI Reference: transform](cli.md#transform) for safe expressions and ordered recipes
 - [Administrator Guide](admin-guide.md) for installation, updates, and deployment
 - [License](../LICENSE) for the GNU AGPLv3-or-later terms

@@ -9,12 +9,20 @@ import { PathPickerField } from "../components/PathPickerField";
 import { ResultView } from "../components/ResultView";
 import { WorkflowHeader } from "../components/WorkflowHeader";
 import { executeWorkflow, planWorkflow } from "../lib/api";
-import { formatOptions } from "../lib/formats";
+import { formatOptions, writableFormatOptions } from "../lib/formats";
 import { ensureOutputExtension, outputExtensionWarning, updateGeneratedExtension } from "../lib/outputPath";
 import type { PlanResponse } from "../lib/types";
 
 const list = (value: string) => value.split(",").map((item) => item.trim()).filter(Boolean);
 const reportFormats = formatOptions(["html", "json", "csv"]);
+const reportPolicies = [
+  { value: "current", label: "No transfer policy section" },
+  { value: "safe", label: "Safe" },
+  { value: "strict", label: "Strict" },
+  { value: "analysis-ready", label: "Analysis-ready (plan only)" },
+  { value: "preserve-metadata", label: "Preserve metadata" },
+  { value: "smallest-types", label: "Smallest types" },
+];
 
 export function ReportPage() {
   const [inputPath, setInputPath] = useState("");
@@ -30,6 +38,8 @@ export function ReportPage() {
   const [overwrite, setOverwrite] = useState(false);
   const [createDirs, setCreateDirs] = useState(false);
   const [maxRows, setMaxRows] = useState<number | string>(1000);
+  const [targetFormat, setTargetFormat] = useState<string | null>(null);
+  const [policy, setPolicy] = useState("current");
   const [plan, setPlan] = useState<PlanResponse | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
   const [error, setError] = useState<unknown>(null);
@@ -46,6 +56,8 @@ export function ReportPage() {
     max_table_rows: Number(maxRows) || 1000,
     strict_validation: strict,
     schema_contract: schemaContract || null,
+    target_format: targetFormat,
+    policy: policy === "current" ? null : policy,
     overwrite,
     create_dirs: createDirs,
   });
@@ -79,6 +91,10 @@ export function ReportPage() {
           <PathPickerField label="Output report" value={outputPath} onChange={(value) => { setOutputPath(value); setOutputAutoExtended(false); }} onCommit={commitOutputPath} selection="save_file" extensions={outputFormat ? [`.${outputFormat}`] : []} required />
           <Group grow><TextInput label="Object selector" value={objectSelector} onChange={(event) => setObjectSelector(event.currentTarget.value)} /><Select label="Output format" data={reportFormats} value={outputFormat} onChange={changeOutputFormat} /><Select label="Preset" data={["quick", "full", "validation", "metadata"]} clearable value={preset} onChange={setPreset} /></Group>
           <PathPickerField label="Optional schema contract" value={schemaContract} onChange={setSchemaContract} extensions={[".toml"]} />
+          <Group grow>
+            <Select label="Optional transfer target" description="Required only when adding a transfer-policy section." data={writableFormatOptions} searchable clearable value={targetFormat} onChange={(value) => { setTargetFormat(value); if (!value) setPolicy("current"); setPlan(null); }} />
+            <Select label="Transfer-policy section" data={reportPolicies} value={policy} disabled={!targetFormat} onChange={(value) => { setPolicy(value ?? "current"); setPlan(null); }} />
+          </Group>
           <Group grow><TextInput label="Profile columns" description="Comma-separated; blank uses defaults." value={columns} onChange={(event) => setColumns(event.currentTarget.value)} /><NumberInput label="Maximum rows per rendered table" min={1} max={100000} value={maxRows} onChange={setMaxRows} /></Group>
           <Group><Checkbox label="Include frequency tables" checked={frequencies} onChange={(event) => setFrequencies(event.currentTarget.checked)} /><Checkbox label="Strict validation" checked={strict} onChange={(event) => setStrict(event.currentTarget.checked)} /><Checkbox label="Overwrite existing report" checked={overwrite} onChange={(event) => setOverwrite(event.currentTarget.checked)} /><Checkbox label="Create missing directories" checked={createDirs} onChange={(event) => setCreateDirs(event.currentTarget.checked)} /></Group>
           {reportExtensionWarning && <Alert color="orange" icon={<IconAlertTriangle size={18} />}>{reportExtensionWarning}</Alert>}

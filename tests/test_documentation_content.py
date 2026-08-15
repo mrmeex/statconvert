@@ -122,8 +122,6 @@ def test_public_docs_describe_transform_release_boundaries() -> None:
         )
     )
 
-    assert "Version 1.3.1 stabilizes the 1.3.0 transform workflow" in public_docs
-    assert "extensionless recipe-save paths consistently receive `.toml`" in public_docs
     assert "--save-recipe" in public_docs
     assert "transform-recipe validate" in public_docs
     assert "Full impact preview" in public_docs
@@ -131,3 +129,26 @@ def test_public_docs_describe_transform_release_boundaries() -> None:
     assert "order-preserving `distinct`" in public_docs
     assert "deterministic `row_number`" in public_docs
     assert "batch recipe loading" in public_docs
+
+
+def test_public_docs_describe_transfer_policy_boundaries() -> None:
+    public_docs = "\n".join(
+        (PROJECT_ROOT / path).read_text(encoding="utf-8")
+        for path in (
+            "README.md",
+            "docs/cli.md",
+            "docs/user-guide.md",
+            "docs/ui.md",
+            "docs/examples.md",
+        )
+    )
+
+    assert "statconvert type-plan" in public_docs
+    assert "complete, deterministic" in public_docs
+    assert "writes nothing" in public_docs
+    assert "--policy smallest-types --optimize-types" in public_docs
+    assert "analysis-ready` remains plan-only" in public_docs
+    assert "`legacy-compatible`" in public_docs
+    assert "no-policy conversion remains on the 1.3.1 path" in public_docs
+    assert "validation policy flags" in public_docs
+    assert "browser UI" in public_docs

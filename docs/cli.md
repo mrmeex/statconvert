@@ -15,6 +15,7 @@ capabilities  Show details for one extension or backend.
 objects       Discover dataset-like objects in a file or folder.
 info          Display basic dataset information.
 schema        Display normalized variable schema.
+type-plan     Fully scan and plan target-aware types without writing.
 labels        Display variable and value labels.
 metadata      Display a normalized metadata summary.
 summary       Display a dataset-level statistical summary.
@@ -144,7 +145,7 @@ statconvert compare before.sav after.sav --json --log compare.log
 ## JSON output
 
 The commands `objects`, `summary`, `describe`, `frequencies`, `missing`, `validate`,
-`batch`, and `compare` support machine-readable JSON stdout. `report --json` writes the requested report
+`type-plan`, `batch`, and `compare` support machine-readable JSON stdout. `report --json` writes the requested report
 and prints a concise JSON completion summary.
 
 JSON is written directly to stdout without Rich rendering. Markup-like strings, ANSI-like
@@ -176,6 +177,7 @@ rendering out of JSON stdout.
 - `0` means the command completed under its default policy.
 - `1` means an operational error or an intentional failing policy outcome.
 - `validate` exits `1` for errors, and for warnings with `--strict`.
+- `type-plan` exits `1` for a blocked plan; warnings-only plans exit `0`.
 - `convert`, `collect`, and `transform` exit `1` when their validation write gate
   blocks output.
 - `compare` exits `1` for error-level differences, and for warnings with `--strict`.
@@ -184,6 +186,37 @@ rendering out of JSON stdout.
 - Report validation findings are observational; a successfully written report exits `0`.
 
 ## Conversion and transformation
+
+### `type-plan`
+
+```text
+statconvert type-plan INPUT_FILE --target TARGET [--policy POLICY] [--object OBJECT] [--json]
+```
+
+`type-plan` reads one selected dataset object and performs a complete, deterministic
+column scan. It writes no data, sidecar, report, config, directory, cache, or saved plan.
+`TARGET` follows the normal format convention: use a registered extension name with or
+without its leading dot, such as `parquet`, `.csv`, `xlsx`, `sav`, `dta`, or `xpt`.
+Read-only and unknown targets are rejected.
+
+`--policy` defaults to `safe` for this command only. Supported policies are `safe`,
+`strict`, `analysis-ready`, `preserve-metadata`, and `smallest-types`.
+`legacy-compatible` is not implemented. `--object` selects an existing sheet or RData
+object through the normal registry. `--json` returns schema version 1 with complete
+summary counts and bounded decisions, metadata dispositions, issues, and explicit
+truncation counts.
+
+```bash
+statconvert type-plan input.csv --target parquet
+statconvert type-plan input.csv --target parquet --policy smallest-types
+statconvert type-plan workbook.xlsx --object Data --target dta --policy strict
+statconvert type-plan input.csv --target parquet --policy analysis-ready --json
+```
+
+The standalone command never applies its proposals. Single-file `convert` can reuse the
+same planner explicitly; no-policy conversion remains on the 1.3.1 path. Batch, streaming,
+configs and validation policy flags are not integrated with transfer policies. The local
+browser Convert page uses the same planner and explicit smallest-types application gate.
 
 ### `convert`
 
@@ -202,6 +235,24 @@ Options:
 - `--stream` opts into bounded conversion for CSV, JSONL, and NDJSON pairs only.
 - `--chunk-size ROWS` sets a positive streaming chunk size and requires `--stream`.
   Streaming defaults to 100,000 rows per chunk.
+- `--policy POLICY` opts single-file conversion into `safe`, `strict`, `analysis-ready`,
+  `preserve-metadata`, or `smallest-types` planning before write.
+- `--type-plan` requires `--policy`, scans and displays the plan, and writes nothing. It
+  ignores output collision/create-directory checks because no output is attempted.
+- `--optimize-types` requires `--policy smallest-types` and applies only proven exact
+  integer/nullable-integer and float32 decisions to a deep copy before the normal write.
+
+`smallest-types` without `--optimize-types` reports proposals but writes the unchanged
+representation. `analysis-ready` is plan-only. A blocked policy plan fails before write;
+warnings alone continue. Policy planning with `--stream` or `--all-objects` is rejected;
+ordinary streaming and all-object conversion without a policy remain unchanged.
+
+```bash
+statconvert convert input.csv output.parquet --policy safe
+statconvert convert input.csv output.parquet --policy strict
+statconvert convert input.csv output.parquet --policy smallest-types --type-plan
+statconvert convert input.csv output.parquet --policy smallest-types --optimize-types
+```
 - `--write-config FILE` writes this invocation as TOML without converting data.
 - `--overwrite-config` permits replacement of the selected config file only.
 - `--validate` validates the loaded dataset for the output extension before writing.
@@ -1117,6 +1168,8 @@ Options:
 - `--max-table-rows N` - HTML/CSV rows per table (default `1000`).
 - `--max-preview-values N` - value-label preview limit (default `5`).
 - `--target-format FORMAT` - add conversion-readiness validation.
+- `--policy POLICY` - with `--target-format`, add a bounded transfer-policy section using
+  the shared full-scan planner. Reports remain observational even when the plan is blocked.
 - `--strict-validation` - use strict validation severity in the report.
 - `--schema-contract PATH` - add a Schema Contract Validation section using an existing
   version 1 TOML contract. This requires the validation section.

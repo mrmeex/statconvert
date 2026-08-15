@@ -51,6 +51,7 @@ from .transformations import (
     show_transform_recipe_validation,
     show_transformation_summary,
 )
+from .transfer import show_transfer_plan, show_transfer_plan_summary
 
 __all__ = [
     "console",
@@ -79,6 +80,8 @@ __all__ = [
     "show_schema",
     "show_transformation_summary",
     "show_transform_recipe_validation",
+    "show_transfer_plan",
+    "show_transfer_plan_summary",
     "show_warning",
     "show_verbose",
     "show_dataset_header",

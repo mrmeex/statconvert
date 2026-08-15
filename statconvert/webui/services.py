@@ -35,7 +35,10 @@ from statconvert.config import (
     validate_config,
     write_config,
 )
-from statconvert.converter import transform as convert_file
+from statconvert.converter import (
+    transform as convert_file,
+    transform_with_policy,
+)
 from statconvert.dataset import Dataset
 from statconvert.exceptions import ConfigError, StatConvertError
 from statconvert.inspection import (
@@ -101,6 +104,7 @@ from statconvert.transformations.language import expression_function_specs
 from statconvert.transformations.planning import (
     plan_transform_recipe as build_transform_recipe_plan,
 )
+from statconvert.transfer import build_transfer_plan, resolve_policy
 
 from .api.models import (
     BatchRequest,
@@ -534,13 +538,17 @@ def plan_convert(request: ConvertRequest) -> dict[str, Any]:
     reader = get_reader_for_file(str(input_path))
     writer = get_writer_for_file(str(output_path))
     _validate_target_matches_output(request.target_format, output_path)
-    _validate_output_file_plan(
-        output_path,
-        overwrite=request.overwrite,
-        create_dirs=request.create_dirs,
-    )
+    resolved_policy = _resolve_ui_policy(request.policy)
+    _validate_ui_type_application(resolved_policy, request.optimize_types)
     chunk_size = _effective_chunk_size(request.stream, request.chunk_size)
     streaming_details = None
+    transfer_plan = None
+    warnings: list[str] = []
+    if resolved_policy is not None and request.stream:
+        raise WebUiRequestError(
+            "Transfer-policy planning requires a full dataset and cannot use streaming.",
+            suggestion="Turn off streaming or return to Current behavior / no policy.",
+        )
     if request.stream:
         if request.object_selector is not None:
             raise WebUiRequestError(
@@ -550,10 +558,34 @@ def plan_convert(request: ConvertRequest) -> dict[str, Any]:
         streaming_plan = build_streaming_plan(str(input_path), str(output_path))
         streaming_plan.require_executable()
         streaming_details = make_json_safe(streaming_plan)
+    elif resolved_policy is not None:
+        dataset = _read(str(input_path), request.object_selector)
+        transfer_plan = build_transfer_plan(
+            dataset,
+            source_path=str(input_path),
+            target=output_path.suffix,
+            policy=resolved_policy,
+            object_selector=request.object_selector,
+        )
+        warnings = [
+            issue.message
+            for issue in transfer_plan.issues
+            if issue.severity == "warning"
+        ][:200]
+    else:
+        _validate_output_file_plan(
+            output_path,
+            overwrite=request.overwrite,
+            create_dirs=request.create_dirs,
+        )
     return {
         "workflow": "convert",
-        "valid": True,
-        "command": convert_command(request, chunk_size=chunk_size),
+        "valid": transfer_plan is None or transfer_plan.status != "blocked",
+        "command": convert_command(
+            request,
+            chunk_size=chunk_size,
+            type_plan_only=transfer_plan is not None,
+        ),
         "details": {
             "input_path": str(input_path),
             "output_path": str(output_path),
@@ -562,8 +594,14 @@ def plan_convert(request: ConvertRequest) -> dict[str, Any]:
             "stream": request.stream,
             "chunk_size": chunk_size,
             "streaming": streaming_details,
+            "policy": resolved_policy,
+            "optimize_types": request.optimize_types,
+            "transfer_plan": (
+                transfer_plan.to_dict() if transfer_plan is not None else None
+            ),
+            "writes": False,
         },
-        "warnings": [],
+        "warnings": warnings,
     }
 
 
@@ -571,6 +609,11 @@ def execute_convert(request: ConvertRequest, context: JobContext) -> dict[str, A
     request = _effective_convert_request(request)
     plan = plan_convert(request)
     chunk_size = _effective_chunk_size(request.stream, request.chunk_size)
+    if not plan["valid"]:
+        raise WebUiRequestError(
+            "The selected transfer policy blocks this conversion.",
+            suggestion="Review the transfer findings or choose a compatible target/policy.",
+        )
     context.emit("planned", message="Conversion plan validated.", progress=0.1)
     if request.stream:
         result = execute_streaming_convert(
@@ -586,7 +629,7 @@ def execute_convert(request: ConvertRequest, context: JobContext) -> dict[str, A
             ),
         )
         payload = result.to_dict()
-    else:
+    elif request.policy is None:
         context.emit("reading", message="Reading input dataset.", progress=0.2)
         dataset = convert_file(
             request.input_path,
@@ -600,6 +643,30 @@ def execute_convert(request: ConvertRequest, context: JobContext) -> dict[str, A
             "rows": dataset.rows,
             "columns": len(dataset.columns),
             "streaming": False,
+        }
+    else:
+        context.emit("reading", message="Reading and planning input dataset.", progress=0.2)
+        result = transform_with_policy(
+            request.input_path,
+            request.output_path,
+            policy=resolve_policy(request.policy),
+            optimize_types=request.optimize_types,
+            overwrite=request.overwrite,
+            create_dirs=request.create_dirs,
+            object_selector=request.object_selector,
+        )
+        payload = {
+            "output_path": request.output_path,
+            "rows": result.dataset.rows,
+            "columns": len(result.dataset.columns),
+            "streaming": False,
+            "policy": result.transfer_plan.policy,
+            "transfer_plan": result.transfer_plan.to_dict(),
+            "application": (
+                result.application.to_summary_dict()
+                if result.application is not None
+                else None
+            ),
         }
     return {
         "plan": plan,
@@ -1259,6 +1326,22 @@ def plan_report(request: ReportRequest) -> dict[str, Any]:
         raise WebUiRequestError(
             "A schema contract requires the report validation section."
         )
+    resolved_policy = _resolve_ui_policy(request.policy)
+    if resolved_policy is not None and not request.target_format:
+        raise WebUiRequestError(
+            "A report transfer policy requires a target format."
+        )
+    transfer_plan = (
+        build_transfer_plan(
+            dataset,
+            source_path=request.input_path,
+            target=request.target_format,
+            policy=resolved_policy,
+            object_selector=request.object_selector,
+        )
+        if resolved_policy is not None and request.target_format is not None
+        else None
+    )
     return {
         "workflow": "report",
         "valid": True,
@@ -1278,6 +1361,10 @@ def plan_report(request: ReportRequest) -> dict[str, Any]:
                 if getattr(report_options, f"include_{name}")
             ],
             "max_table_rows": report_options.max_table_rows,
+            "policy": resolved_policy,
+            "transfer_plan": (
+                transfer_plan.to_dict() if transfer_plan is not None else None
+            ),
         },
         "warnings": [],
     }
@@ -1293,6 +1380,18 @@ def execute_report(request: ReportRequest, context: JobContext) -> dict[str, Any
     contract_validation = (
         validate_schema_contract_file(dataset, request.schema_contract)
         if request.schema_contract
+        else None
+    )
+    resolved_policy = _resolve_ui_policy(request.policy)
+    transfer_plan = (
+        build_transfer_plan(
+            dataset,
+            source_path=request.input_path,
+            target=request.target_format,
+            policy=resolved_policy,
+            object_selector=request.object_selector,
+        )
+        if resolved_policy is not None and request.target_format is not None
         else None
     )
     context.emit("building", message="Building dataset report.", progress=0.55)
@@ -1314,6 +1413,7 @@ def execute_report(request: ReportRequest, context: JobContext) -> dict[str, Any
         strict_validation=request.strict_validation,
         label_preview_values=options.max_preview_values,
         schema_contract_validation=contract_validation,
+        transfer_plan=transfer_plan,
     )
     context.emit("writing", message="Writing dataset report.", progress=0.85)
     write_dataset_report(
@@ -1578,6 +1678,8 @@ def report_command(request: ReportRequest) -> str:
     arguments.extend(["--max-table-rows", str(request.max_table_rows)])
     if request.target_format:
         arguments.extend(["--target-format", request.target_format])
+    if request.policy:
+        arguments.extend(["--policy", request.policy])
     if request.strict_validation:
         arguments.append("--strict-validation")
     if request.schema_contract:
@@ -1669,7 +1771,12 @@ def inspection_command(
     return _display_command(arguments)
 
 
-def convert_command(request: ConvertRequest, *, chunk_size: int | None) -> str:
+def convert_command(
+    request: ConvertRequest,
+    *,
+    chunk_size: int | None,
+    type_plan_only: bool = False,
+) -> str:
     arguments = ["statconvert", "convert", request.input_path, request.output_path]
     if request.object_selector:
         arguments.extend(["--object", request.object_selector])
@@ -1680,6 +1787,12 @@ def convert_command(request: ConvertRequest, *, chunk_size: int | None) -> str:
     if request.stream:
         arguments.append("--stream")
         arguments.extend(["--chunk-size", str(chunk_size)])
+    if request.policy:
+        arguments.extend(["--policy", request.policy])
+    if type_plan_only:
+        arguments.append("--type-plan")
+    elif request.optimize_types:
+        arguments.append("--optimize-types")
     arguments.extend(logging_cli_arguments("convert"))
     return _display_command(arguments)
 
@@ -1852,6 +1965,28 @@ def _effective_output_path(output_path: str, target_format: str | None) -> str:
 def _effective_convert_request(request: ConvertRequest) -> ConvertRequest:
     output_path = _effective_output_path(request.output_path, request.target_format)
     return request.model_copy(update={"output_path": output_path})
+
+
+def _resolve_ui_policy(policy: str | None) -> str | None:
+    if policy is None:
+        return None
+    try:
+        return resolve_policy(policy)
+    except StatConvertError as exc:
+        raise WebUiRequestError(
+            exc.message,
+            suggestion=exc.suggestion,
+        ) from exc
+
+
+def _validate_ui_type_application(
+    policy: str | None,
+    optimize_types: bool,
+) -> None:
+    if optimize_types and policy != "smallest-types":
+        raise WebUiRequestError(
+            "Exact type optimization requires the smallest-types policy."
+        )
 
 
 def _effective_transform_request(request: TransformRequest) -> TransformRequest:

@@ -5,12 +5,13 @@ inspecting, validating, batch-processing, comparing, reporting, and logging stat
 datasets. It uses a backend registry and a common `Dataset` model so format-specific code
 stays out of conversion and analysis workflows.
 
-Version 1.3.1 stabilizes the 1.3.0 transform workflow. Empty browser transform plans no
-longer validate, full-impact preview remains available when an output or sidecar collision
-blocks execution, and extensionless recipe-save paths consistently receive `.toml`. The
-release adds no operations, formats, ORC or database support, or runtime dependencies. The
-local browser UI remains bound to the local machine and is installed through the optional
-`statconvert[ui]` extra; the CLI keeps its 11 base runtime dependencies.
+Version 1.4.0 adds target-aware transfer/type planning, five explicit transfer policies,
+non-writing plan previews, exact opt-in smallest-type application, bounded transfer-policy
+report sections, and matching local browser controls. Ordinary conversion without a
+policy remains unchanged, and analysis-ready recommendations remain plan-only. The release
+adds no formats, ORC or database support, or runtime dependencies. The local browser UI
+remains bound to the local machine and is installed through the optional `statconvert[ui]`
+extra; the CLI keeps its 11 base runtime dependencies.
 
 ## Implemented features
 
@@ -33,6 +34,8 @@ local browser UI remains bound to the local machine and is installed through the
 - Dataset summary, descriptive profiles, frequencies, and missing-value analysis
 - Dataset-quality and target-format validation, versioned schema contracts, and named
   allowed-value, range, regex, uniqueness, row-count, not-null, and length rules
+- Target-aware transfer planning with five explicit policies, non-writing plan modes,
+  deterministic full-column evidence, and opt-in exact smallest-type application
 - Deterministic batch planning, parallel execution, shared transformation pipelines,
   validation, progress, workload summaries, worker-memory guidance, and CSV/JSON reports
 - Dataset comparison with positional or unique-key row matching, ignored columns,
@@ -128,6 +131,11 @@ statconvert convert workbook.xlsx output.csv --object Data
 statconvert convert workbook.xlsx combined.ods --all-objects
 statconvert collect objects.csv combined.xlsx --base-dir incoming
 statconvert validate input.sav --to parquet
+statconvert type-plan input.csv --target parquet --policy smallest-types
+statconvert type-plan input.csv --target parquet --policy analysis-ready --json
+statconvert convert input.csv output.parquet --policy safe
+statconvert convert input.csv output.parquet --policy smallest-types --type-plan
+statconvert convert input.csv output.parquet --policy smallest-types --optimize-types
 statconvert ui
 statconvert schema input.sav --export-contract schema.toml
 statconvert validate input.sav --schema-contract schema.toml
@@ -177,6 +185,18 @@ Commands that write files refuse to replace an existing output unless `--overwri
 used. `convert`, `collect`, `transform`, `batch`, `report`, and `objects --output` accept
 `--create-dirs` for a missing
 user-specified output directory; dry-run does not create directories or write files.
+
+`type-plan` is a separate non-writing analysis command. It requires a registered writable
+target extension, scans the selected dataset object completely, and supports `safe`,
+`strict`, `analysis-ready`, `preserve-metadata`, and `smallest-types`. `convert --policy`
+opts a single-file conversion into the same planning gate; omitting it preserves the
+1.3.1 conversion path. `convert --policy POLICY --type-plan` writes nothing, while
+`--policy smallest-types --optimize-types` is the only type-application path and applies
+exact supported decisions on a copy. `analysis-ready` remains plan-only. Reports can add
+an explicit policy section only with `--target-format`. Batch, streaming, configs,
+validation policy flags remain deferred; `legacy-compatible` is not implemented. The
+browser Convert page exposes the same explicit policy preview and smallest-types apply
+control, without adding batch policies or a Settings default.
 
 Batch conversion, including `batch --all-objects` and `batch --transform`, processes each
 planned item independently. Dry-run reports planned workload size and worker settings;

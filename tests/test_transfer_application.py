@@ -43,7 +43,20 @@ def test_application_narrows_integer_nullable_integer_and_exact_float() -> None:
     assert str(result.dataset.dataframe["exact_float"].dtype) == "float32"
     assert str(result.dataset.dataframe["inexact_float"].dtype) == "float64"
     assert result.applied_columns == ("integer", "nullable", "exact_float")
+    assert list(result.dataset.dataframe.columns) == list(original.columns)
     assert result.dataset.dataframe.isna().equals(original.isna())
+    pdt.assert_series_equal(
+        result.dataset.dataframe["integer"].astype("int64"),
+        original["integer"],
+    )
+    pdt.assert_series_equal(
+        result.dataset.dataframe["nullable"].astype("Int64"),
+        original["nullable"],
+    )
+    pdt.assert_series_equal(
+        result.dataset.dataframe["exact_float"].astype("float64"),
+        original["exact_float"],
+    )
     pdt.assert_frame_equal(dataset.dataframe, original)
 
 

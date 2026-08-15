@@ -5,13 +5,15 @@ inspecting, validating, batch-processing, comparing, reporting, and logging stat
 datasets. It uses a backend registry and a common `Dataset` model so format-specific code
 stays out of conversion and analysis workflows.
 
-Version 1.4.0 adds target-aware transfer/type planning, five explicit transfer policies,
+Version 1.4.1 stabilizes the 1.4.0 transfer-policy workflow by deeply freezing nested
+transfer-plan data while keeping exported `to_dict()` data independent and JSON-ready.
+Version 1.4.0 added target-aware transfer/type planning, five explicit transfer policies,
 non-writing plan previews, exact opt-in smallest-type application, bounded transfer-policy
 report sections, and matching local browser controls. Ordinary conversion without a
-policy remains unchanged, and analysis-ready recommendations remain plan-only. The release
-adds no formats, ORC or database support, or runtime dependencies. The local browser UI
-remains bound to the local machine and is installed through the optional `statconvert[ui]`
-extra; the CLI keeps its 11 base runtime dependencies.
+policy remains unchanged, and analysis-ready recommendations remain plan-only. Version
+1.4.1 adds no features, policies, formats, ORC or database support, or runtime dependencies.
+The local browser UI remains bound to the local machine and is installed through the
+optional `statconvert[ui]` extra; the CLI keeps its 11 base runtime dependencies.
 
 ## Implemented features
 

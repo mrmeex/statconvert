@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 1.4.1 - 2026-08-15
+
+StatConvert 1.4.1 is a stabilization release for the 1.4.0 transfer-policy workflow.
+
+- Transfer plans now deeply freeze nested source, target, scan, summary, and metadata
+  mappings, including nested lists and dictionaries.
+- Exported `to_dict()` data remains independent, plain, and JSON-ready.
+- Planner decisions, ordinary no-policy conversion, browser behavior, policies, formats,
+  and runtime dependencies remain unchanged.
+
 ## 1.4.0 - 2026-08-15
 
 StatConvert 1.4.0 is the transfer policy and type optimization release. It adds

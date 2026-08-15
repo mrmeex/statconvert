@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 import pandas as pd
+import pytest
 from typer.testing import CliRunner
 
 from statconvert.cli import app
@@ -38,6 +39,39 @@ def test_type_plan_smallest_types_reports_proposal(tmp_path: Path) -> None:
     assert result.exit_code == 0
     assert "smallest-types" in result.output
     assert "TYPE_NARROW_SAFE" in result.output
+
+
+@pytest.mark.parametrize(
+    "policy",
+    [
+        "safe",
+        "strict",
+        "analysis-ready",
+        "preserve-metadata",
+        "smallest-types",
+    ],
+)
+def test_type_plan_json_reports_each_supported_policy_exactly(
+    tmp_path: Path,
+    policy: str,
+) -> None:
+    source = _csv(tmp_path)
+
+    result = runner.invoke(
+        app,
+        [
+            "type-plan",
+            str(source),
+            "--target",
+            "parquet",
+            "--policy",
+            policy,
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output)["policy"] == policy
 
 
 def test_type_plan_json_is_parseable_bounded_and_rich_free(tmp_path: Path) -> None:

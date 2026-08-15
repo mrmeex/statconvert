@@ -152,3 +152,7 @@ def test_public_docs_describe_transfer_policy_boundaries() -> None:
     assert "no-policy conversion remains on the 1.3.1 path" in public_docs
     assert "validation policy flags" in public_docs
     assert "browser UI" in public_docs
+    index = (PROJECT_ROOT / "docs/index.md").read_text(encoding="utf-8")
+    assert "StatConvert 1.4.1 stabilizes the 1.4.0 transfer-policy workflow" in index
+    assert "deeply freezing" in index
+    assert "It adds no features, policies, formats" in index

@@ -147,6 +147,32 @@ def test_no_policy_convert_still_uses_legacy_entrypoint(monkeypatch, tmp_path: P
     assert called == {"legacy": 1, "policy": 0}
 
 
+def test_policy_conversion_rejects_workflow_config_serialization_without_writing(
+    tmp_path: Path,
+) -> None:
+    source = _source(tmp_path)
+    output = tmp_path / "output.parquet"
+    config = tmp_path / "workflow.toml"
+
+    result = runner.invoke(
+        app,
+        [
+            "convert",
+            str(source),
+            str(output),
+            "--policy",
+            "safe",
+            "--write-config",
+            str(config),
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "not supported by workflow configuration" in result.output
+    assert not output.exists()
+    assert not config.exists()
+
+
 def test_strict_blocked_plan_writes_nothing(tmp_path: Path) -> None:
     source = tmp_path / "timezone.parquet"
     pd.DataFrame(

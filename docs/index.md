@@ -69,11 +69,15 @@ statconvert ui
 </section>
 
 <p>
-  StatConvert 1.4.0 adds complete target-aware transfer planning, five explicit
-  policies, exact opt-in smallest-type application, policy-aware reports, and matching
-  browser controls. Plans scan the full selected dataset and write nothing. Omitting a
-  policy keeps the established conversion path unchanged; batch, streaming, saved-plan,
-  and legacy-emulation support remain outside this release.
+  StatConvert 1.4.1 stabilizes the 1.4.0 transfer-policy workflow by deeply freezing
+  nested transfer-plan data while keeping exported data independent and JSON-ready.
+  It adds no features, policies, formats, ORC or database support, or runtime
+  dependencies. Version 1.4.0 added complete target-aware transfer planning, five
+  explicit policies, exact opt-in smallest-type application, policy-aware reports, and
+  matching browser controls. Plans scan the full selected dataset and write nothing.
+  Omitting a policy keeps the established conversion path unchanged; batch, streaming,
+  saved-plan, default/global-policy, and legacy-emulation support remain outside this
+  release.
 </p>
 
 <footer class="statconvert-home-footer">

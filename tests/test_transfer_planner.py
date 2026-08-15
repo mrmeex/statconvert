@@ -357,6 +357,29 @@ def test_planning_does_not_mutate_source_dataset() -> None:
     assert dataset.column_metadata == columns_before
 
 
+def test_transfer_plan_is_deeply_immutable_and_json_copies_are_independent() -> None:
+    plan = _plan(
+        pd.DataFrame({"value": pd.Series([1, 2], dtype="int64")}),
+        policy="smallest-types",
+    )
+
+    with pytest.raises(TypeError):
+        plan.summary["error_count"] = 99
+    with pytest.raises(TypeError):
+        plan.summary["metadata_disposition_counts"]["embedded"] = 99
+    with pytest.raises(TypeError):
+        plan.decisions[0].metadata_impact["protected"] = True
+    with pytest.raises(TypeError):
+        plan.decisions[0].scan.value_family_counts["integer"] = 99
+
+    payload = plan.to_dict()
+    payload["summary"]["error_count"] = 99
+    payload["decisions"][0]["metadata_impact"]["protected"] = True
+
+    assert plan.summary["error_count"] == 0
+    assert plan.decisions[0].metadata_impact["protected"] is False
+
+
 def test_csv_metadata_is_explicitly_sidecar_only() -> None:
     plan = _plan(pd.DataFrame({"value": [1]}), target="csv")
 

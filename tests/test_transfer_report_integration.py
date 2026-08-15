@@ -56,8 +56,18 @@ def test_report_policy_adds_bounded_parseable_json_section(tmp_path: Path) -> No
     assert result.output == ""
     assert "transfer_policy" in sections
     metrics = {item["name"]: item["value"] for item in sections["transfer_policy"]["metrics"]}
+    expected = build_transfer_plan(
+        Dataset(pd.read_csv(source)),
+        source_path=source,
+        target="parquet",
+        policy="smallest-types",
+    )
     assert metrics["policy"] == "smallest-types"
     assert metrics["target"] == ".parquet"
+    assert metrics["status"] == expected.status
+    assert metrics["changed_proposed_count"] == expected.summary["changed_proposed_count"]
+    assert metrics["warning_count"] == expected.summary["warning_count"]
+    assert metrics["error_count"] == expected.summary["error_count"]
     assert "truncation" in metrics
 
 

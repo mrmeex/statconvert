@@ -95,6 +95,31 @@ def test_blocked_policy_preview_disables_execution_contract(tmp_path: Path) -> N
     assert not output.exists()
 
 
+def test_warning_only_policy_preview_remains_runnable(tmp_path: Path) -> None:
+    source = tmp_path / "input.csv"
+    source.write_text("value\n1\n2\n", encoding="utf-8")
+    output = tmp_path / "output.csv"
+    request = {
+        "input_path": str(source),
+        "output_path": str(output),
+        "target_format": "csv",
+        "policy": "safe",
+    }
+    application = create_app()
+
+    preview = _request(application, "POST", "/api/workflows/plan-convert", request)
+    created = _request(application, "POST", "/api/execute/convert", request)
+    job = _wait(application, created.json()["job_id"])
+
+    transfer = preview.json()["details"]["transfer_plan"]
+    assert preview.status_code == 200
+    assert preview.json()["valid"] is True
+    assert transfer["status"] == "warnings"
+    assert transfer["summary"]["warning_count"] > 0
+    assert job["status"] == "succeeded"
+    assert output.exists()
+
+
 def test_smallest_types_application_runs_only_when_explicit(tmp_path: Path) -> None:
     source = tmp_path / "input.csv"
     source.write_text("small,exact,inexact\n1,1.5,0.1\n2,2.0,0.2\n", encoding="utf-8")

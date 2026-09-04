@@ -261,7 +261,7 @@ LIST_FIELDS_WITH_UNIQUE_VALUES = {
 REPORT_FORMATS: dict[CommandName, set[str]] = {
     "compare": {"csv", "json", "html"},
     "report": {"csv", "json", "html"},
-    "batch": {"csv", "json"},
+    "batch": {"csv", "json", "html"},
 }
 REPORT_PRESETS = {"default", "quick", "full", "validation", "metadata"}
 

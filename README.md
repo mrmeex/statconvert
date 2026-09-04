@@ -5,13 +5,12 @@ inspecting, validating, batch-processing, comparing, reporting, and logging stat
 datasets. It uses a backend registry and a common `Dataset` model so format-specific code
 stays out of conversion and analysis workflows.
 
-Version 1.4.1 stabilizes the 1.4.0 transfer-policy workflow by deeply freezing nested
-transfer-plan data while keeping exported `to_dict()` data independent and JSON-ready.
-Version 1.4.0 added target-aware transfer/type planning, five explicit transfer policies,
-non-writing plan previews, exact opt-in smallest-type application, bounded transfer-policy
-report sections, and matching local browser controls. Ordinary conversion without a
-policy remains unchanged, and analysis-ready recommendations remain plan-only. Version
-1.4.1 adds no features, policies, formats, ORC or database support, or runtime dependencies.
+Version 1.5.0 matures batch and automation workflows with lightweight filesystem planning,
+explicit non-writing full plans, portable recipe and transfer-policy integration, exact
+opt-in smallest-type optimization, bounded JSON/CSV/HTML reports, and matching local
+browser controls. Recipes run before policies, ordinary conversion and lightweight dry-run
+behavior remain unchanged, and analysis-ready recommendations remain plan-only. Version
+1.5.0 adds no formats, ORC or database support, persistent jobs, or runtime dependencies.
 The local browser UI remains bound to the local machine and is installed through the
 optional `statconvert[ui]` extra; the CLI keeps its 11 base runtime dependencies.
 
@@ -102,6 +101,7 @@ The browser opens at `http://statconvert.localhost:<port>` when available while 
 server remains bound to `127.0.0.1`. The UI has no accounts, cloud processing,
 telemetry, or remote-server mode.
 
+
 ## Quick start
 
 Start with `statconvert formats` before choosing a destination. ZSAV, POR, and SAS7BDAT
@@ -179,7 +179,10 @@ Existing top-level transform configs remain supported, but cannot be mixed with
 
 Human batch runs show planned workload settings before execution, stable active-worker
 slots while work is running, and complete success, failure, skipped, and blocked counts
-afterward. Dry-run is explicitly planning-only. Human errors distinguish `--overwrite`,
+afterward. Dry-run is explicitly lightweight filesystem planning: it reports existing
+outputs, missing/generated directory implications, same-path and duplicate-output
+conflicts, filtered/unsupported reasons, stable reason codes, and complete counts without
+reading dataset schemas or values. Human errors distinguish `--overwrite`,
 `--overwrite-config`, and `--create-dirs`; JSON modes bypass Rich progress and error
 rendering so stdout stays parseable.
 
@@ -195,19 +198,33 @@ opts a single-file conversion into the same planning gate; omitting it preserves
 1.3.1 conversion path. `convert --policy POLICY --type-plan` writes nothing, while
 `--policy smallest-types --optimize-types` is the only type-application path and applies
 exact supported decisions on a copy. `analysis-ready` remains plan-only. Reports can add
-an explicit policy section only with `--target-format`. Batch, streaming, configs,
-validation policy flags remain deferred; `legacy-compatible` is not implemented. The
-browser Convert page exposes the same explicit policy preview and smallest-types apply
-control, without adding batch policies or a Settings default.
+an explicit policy section only with `--target-format`. Batch CLI reuses these policies
+per item through explicit `--policy`, while `--full-plan` scans without writing and
+`--optimize-types` still requires `smallest-types`. Streaming and workflow-config policy
+references remain deferred; `legacy-compatible` is not implemented. Browser Batch exposes
+optional recipe and policy controls, explicitly separates lightweight file planning from
+full dataset-reading planning, and keeps policy decisions in the backend.
 
 Batch conversion, including `batch --all-objects` and `batch --transform`, processes each
-planned item independently. Dry-run reports planned workload size and worker settings;
+planned item independently. Dry-run reports planned workload size, worker settings,
+per-item overwrite/directory dispositions, and potential sidecar paths without claiming
+that a metadata sidecar is required. `batch --recipe RECIPE.toml` reuses portable recipes;
+recipe dry-run checks syntax only, while `--full-plan` reads each pending item to check
+recipe compatibility and/or policy decisions without writing dataset outputs. Normal
+in-memory execution applies a recipe before policy planning and optional exact optimization;
 each active worker may hold one dataset in memory, so use `--workers 1` for huge or
 memory-constrained runs. By contrast, `convert --all-objects` and `collect` must hold
 their selected datasets in memory before writing one final XLSX or ODS container. For very
 large inputs, prefer separate Parquet/Feather batch outputs over JSON/Excel/ODS where
 practical. Object listing is metadata-oriented, although
 RData/RDA discovery may load workspace data because of backend-library limitations.
+
+Explicit batch reports support CSV, JSON, and standalone HTML (`.html` or `.htm`) for filesystem dry-run,
+full-plan, and execution. They use the normal `--overwrite` and `--create-dirs` protections
+and are capped at 500 detailed items with complete aggregate and omission counts. HTML is
+an operational summary rather than a data preview: reports contain no row-level values,
+raw backend metadata, recipe contents, or saved transfer plans. Without `--report`, dry-run
+and full-plan write nothing.
 
 Streaming is explicitly enabled with `--stream` and is limited to CSV, JSONL, and NDJSON.
 All nine source/target pairs are available for `convert` and plain `batch`; streaming

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
+from copy import deepcopy
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -9,6 +10,7 @@ from time import perf_counter
 from typing import Callable
 
 from statconvert.batch.exceptions import BatchError
+from statconvert.batch.integration import BatchIntegrationError
 from statconvert.batch.models import (
     BATCH_STATUS_BLOCKED,
     BATCH_STATUS_FAILED,
@@ -19,6 +21,8 @@ from statconvert.batch.models import (
     BATCH_PROGRESS_ITEM_FINISHED,
     BATCH_PROGRESS_ITEM_STARTED,
     BATCH_PROGRESS_STARTED,
+    BATCH_READ_FAILED,
+    BATCH_READ_READY,
     MULTI_WORKER_MEMORY_NOTE,
     BatchItem,
     BatchPlan,
@@ -26,6 +30,7 @@ from statconvert.batch.models import (
     BatchResult,
 )
 from statconvert.dataset_options import DatasetReadOptions, DatasetWriteOptions
+from statconvert.dataset import Dataset
 from statconvert.exceptions import OutputPathError
 from statconvert.inspection import ValidationIssue, validate_dataset
 from statconvert.streaming.execution import execute_streaming_convert
@@ -35,6 +40,7 @@ from statconvert.transformations.pipeline import TransformationPipeline
 
 BatchItemCallback = Callable[[BatchItem], None]
 BatchProgressCallback = Callable[[BatchProgressEvent], None]
+BatchDatasetProcessor = Callable[[BatchItem, Dataset], Dataset]
 
 
 def execute_batch_plan(
@@ -52,6 +58,7 @@ def execute_batch_plan(
     write_options: DatasetWriteOptions | None = None,
     on_option_warning: Callable[[str], None] | None = None,
     transform_pipeline: TransformationPipeline | None = None,
+    item_processor: BatchDatasetProcessor | None = None,
     on_progress: BatchProgressCallback | None = None,
 ) -> BatchResult:
     """
@@ -92,12 +99,7 @@ def execute_batch_plan(
 
     validation_target = target_format or plan.options.target_extension
 
-    result_items = [
-        replace(
-            item
-        )
-        for item in plan.items
-    ]
+    result_items = deepcopy(plan.items)
     _emit_progress(
         on_progress,
         BatchProgressEvent(
@@ -119,6 +121,7 @@ def execute_batch_plan(
             write_options=write_options,
             on_option_warning=on_option_warning,
             transform_pipeline=transform_pipeline,
+            item_processor=item_processor,
             streaming=plan.options.streaming_enabled,
             chunk_size=plan.options.chunk_size,
             on_item_start=on_item_start,
@@ -140,6 +143,7 @@ def execute_batch_plan(
             write_options=write_options,
             on_option_warning=on_option_warning,
             transform_pipeline=transform_pipeline,
+            item_processor=item_processor,
             streaming=plan.options.streaming_enabled,
             chunk_size=plan.options.chunk_size,
             on_item_start=on_item_start,
@@ -179,6 +183,7 @@ def _execute_sequential(
     write_options: DatasetWriteOptions | None,
     on_option_warning: Callable[[str], None] | None,
     transform_pipeline: TransformationPipeline | None,
+    item_processor: BatchDatasetProcessor | None,
     streaming: bool,
     chunk_size: int | None,
     on_item_start: BatchItemCallback | None,
@@ -238,6 +243,7 @@ def _execute_sequential(
             write_options=write_options,
             on_option_warning=on_option_warning,
             transform_pipeline=transform_pipeline,
+            item_processor=item_processor,
             streaming=streaming,
             chunk_size=chunk_size,
         )
@@ -264,6 +270,7 @@ def _execute_parallel(
     write_options: DatasetWriteOptions | None,
     on_option_warning: Callable[[str], None] | None,
     transform_pipeline: TransformationPipeline | None,
+    item_processor: BatchDatasetProcessor | None,
     streaming: bool,
     chunk_size: int | None,
     on_item_start: BatchItemCallback | None,
@@ -303,6 +310,7 @@ def _execute_parallel(
                 write_options,
                 on_option_warning,
                 transform_pipeline,
+                item_processor,
                 streaming,
                 chunk_size,
                 on_progress,
@@ -349,6 +357,7 @@ def _execute_one_item(
     write_options: DatasetWriteOptions | None = None,
     on_option_warning: Callable[[str], None] | None = None,
     transform_pipeline: TransformationPipeline | None = None,
+    item_processor: BatchDatasetProcessor | None = None,
     streaming: bool = False,
     chunk_size: int | None = None,
     on_progress: BatchProgressCallback | None = None,
@@ -371,6 +380,7 @@ def _execute_one_item(
             write_options=write_options,
             on_option_warning=on_option_warning,
             transform_pipeline=transform_pipeline,
+            item_processor=item_processor,
             streaming=streaming,
             chunk_size=chunk_size,
         )
@@ -407,6 +417,7 @@ def _execute_item(
     write_options: DatasetWriteOptions | None = None,
     on_option_warning: Callable[[str], None] | None = None,
     transform_pipeline: TransformationPipeline | None = None,
+    item_processor: BatchDatasetProcessor | None = None,
     streaming: bool = False,
     chunk_size: int | None = None,
 ) -> None:
@@ -416,6 +427,7 @@ def _execute_item(
 
     start = perf_counter()
     item.started_at = _timestamp()
+    stage = "preflight"
 
     try:
         if streaming:
@@ -452,14 +464,20 @@ def _execute_item(
             if item.input_object is not None
             else object_selector
         )
+        stage = "read"
         dataset = _read_file(
             str(item.input_file),
             object_selector=item_object_selector,
             read_options=read_options,
             on_option_warning=on_option_warning,
         )
+        if item_processor is not None:
+            item.read_state = BATCH_READ_READY
+        stage = "execution"
         if transform_pipeline is not None:
             dataset = transform_pipeline.apply(dataset)
+        if item_processor is not None:
+            dataset = item_processor(item, dataset)
         item.rows = dataset.rows
         item.columns = len(dataset.columns)
 
@@ -474,6 +492,7 @@ def _execute_item(
                 strict_validation=strict_validation,
             )
 
+        _validate_item_ready(item, overwrite=overwrite)
         if create_output_dirs:
             item.output_file.parent.mkdir(
                 parents=True,
@@ -495,9 +514,22 @@ def _execute_item(
         item.reason = "Validation failed"
         item.error = str(exc)
 
+    except BatchIntegrationError as exc:
+        item.status = BATCH_STATUS_FAILED
+        item.reason = str(exc)
+        item.reason_code = exc.code
+        item.subsystem = exc.subsystem
+        item.error = str(exc)
+
     except Exception as exc:
         item.status = BATCH_STATUS_FAILED
-        item.reason = "Conversion failed"
+        if item_processor is not None and stage == "read":
+            item.read_state = BATCH_READ_FAILED
+            item.reason = "Dataset could not be read"
+            item.reason_code = "INPUT_READ_FAILED"
+            item.subsystem = "read"
+        else:
+            item.reason = "Conversion failed"
         item.error = str(
             exc
         )
@@ -540,6 +572,16 @@ def _validate_item_ready(
             suggestion=(
                 "Use --overwrite to replace it, or choose a different output path."
             ),
+        )
+    if (
+        item.sidecar_disposition in {"required", "optional"}
+        and item.potential_sidecar_path is not None
+        and item.potential_sidecar_path.exists()
+        and not overwrite
+    ):
+        raise OutputPathError(
+            f"Required metadata sidecar already exists: {item.potential_sidecar_path}",
+            suggestion="Use --overwrite to replace it, or choose a different output path.",
         )
 
 

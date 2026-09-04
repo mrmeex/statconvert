@@ -128,7 +128,7 @@ def test_public_docs_describe_transform_release_boundaries() -> None:
     assert "stable multi-column `sort`" in public_docs
     assert "order-preserving `distinct`" in public_docs
     assert "deterministic `row_number`" in public_docs
-    assert "batch recipe loading" in public_docs
+    assert "Batch CLI loads the same portable recipe" in public_docs
 
 
 def test_public_docs_describe_transfer_policy_boundaries() -> None:
@@ -153,6 +153,29 @@ def test_public_docs_describe_transfer_policy_boundaries() -> None:
     assert "validation policy flags" in public_docs
     assert "browser UI" in public_docs
     index = (PROJECT_ROOT / "docs/index.md").read_text(encoding="utf-8")
-    assert "StatConvert 1.4.1 stabilizes the 1.4.0 transfer-policy workflow" in index
-    assert "deeply freezing" in index
-    assert "It adds no features, policies, formats" in index
+    assert "StatConvert 1.5.0 matures batch and automation workflows" in index
+    assert "Recipes run before policies" in index
+    assert "new runtime dependency" in index
+
+
+def test_public_docs_describe_batch_recipe_policy_and_full_plan_boundary() -> None:
+    public_docs = "\n".join(
+        (PROJECT_ROOT / path).read_text(encoding="utf-8")
+        for path in (
+            "README.md",
+            "docs/cli.md",
+            "docs/user-guide.md",
+            "docs/ui.md",
+            "docs/examples.md",
+        )
+    )
+
+    assert "`batch --recipe RECIPE.toml`" in public_docs
+    assert "`--full-plan` is the explicit dataset-reading, non-writing mode" in public_docs
+    assert "There is no batch `--type-plan`" in public_docs
+    assert "Batch streaming cannot be combined with transforms, recipes" in public_docs
+    assert "Browser Batch exposes" in public_docs
+    assert "saved transfer plan" in public_docs
+    assert "CSV, JSON, and standalone HTML" in public_docs
+    assert "normal `--overwrite` and `--create-dirs` protections" in public_docs
+    assert "no row-level values" in public_docs

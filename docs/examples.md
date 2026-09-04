@@ -644,12 +644,20 @@ statconvert transform .\input\data.xlsx .\new-output\data.csv --create-dirs
 statconvert report .\input\data.sav --output .\reports\data.html --create-dirs
 ```
 
-Capture a JSON plan or write a durable CSV result report:
+Capture a JSON plan or write durable CSV/JSON/HTML operational reports:
 
 ```powershell
 statconvert batch .\input .\output --to parquet --dry-run --json > .\output\batch-plan.json
 statconvert batch .\input .\output --to parquet --report .\reports\batch-results.csv
+statconvert batch .\input .\output --to parquet --dry-run --report .\reports\filesystem-plan.html --create-dirs
+statconvert batch .\input .\output --to parquet --policy safe --full-plan --report .\reports\policy-plan.json --create-dirs
 ```
+
+Batch reports are explicit writes protected by `--overwrite` and `--create-dirs`; `.html`
+and `.htm` both infer HTML. HTML is
+a bounded operational summary, not a data preview; it includes aggregate and per-item
+recipe/policy state but no row-level values. Full-plan creates only the requested report,
+not dataset outputs or sidecars.
 
 These commands and recipes remain documentation-only examples.
 
@@ -982,7 +990,23 @@ Saving writes only the explicit recipe path and returns without transforming dat
 `--overwrite-recipe` to replace an existing recipe. Typed mapping entries preserve scalar
 types and reject ambiguous boolean/integer keys. Preview applies the full recipe to a
 copied dataset and writes nothing. Workflow configs remain compatible and self-contained;
-config recipe references and batch recipe loading are deferred. The local browser interface is documented in the
+config recipe references remain deferred.
+
+The batch CLI reuses the same recipe and transfer-policy machinery:
+
+```powershell
+statconvert batch .\incoming .\converted --to parquet --recipe survey-cleanup.toml --dry-run
+statconvert batch .\incoming .\converted --to parquet --recipe survey-cleanup.toml --full-plan
+statconvert batch .\incoming .\converted --to parquet --policy safe --full-plan
+statconvert batch .\incoming .\converted --to parquet --recipe survey-cleanup.toml --policy smallest-types
+statconvert batch .\incoming .\converted --to parquet --policy smallest-types --optimize-types
+```
+
+Dry-run checks recipe syntax but never reads datasets. Full-plan reads and assesses pending
+items without writing outputs. Normal in-memory recipe-plus-policy execution applies the
+recipe first. There is no batch `--type-plan`, saved policy plan, streaming recipe/policy,
+or workflow-config recipe/policy field. Browser Batch exposes the same optional controls
+through the backend and is documented in the
 [Browser UI Guide](ui.md).
 
 ## Choose separate outputs for large object sets

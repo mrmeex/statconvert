@@ -245,5 +245,9 @@ def test_frontend_policy_controls_are_explicit_and_scoped() -> None:
     assert "Optional transfer target" in report
     assert "Transfer-policy section" in report
     assert "Legacy-compatible" in reference
-    assert "policy" not in batch.casefold()
+    assert "Current behavior (no policy)" in batch
+    assert "analysis-ready" in batch
+    assert "smallest-types" in batch
+    assert "legacy-compatible" not in batch
+    assert "setOptimizeTypes(false)" in batch
     assert "policy" not in settings.casefold()

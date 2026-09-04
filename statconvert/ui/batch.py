@@ -11,6 +11,7 @@ from rich.table import Table
 from rich.text import Text
 
 from statconvert.batch import (
+    BATCH_PLAN_DISPLAY_ITEM_LIMIT,
     BATCH_PROGRESS_ITEM_FINISHED,
     BATCH_PROGRESS_ITEM_STARTED,
     BATCH_STATUS_SUCCESS,
@@ -21,6 +22,7 @@ from statconvert.batch import (
     execute_batch_plan,
 )
 from statconvert.dataset_options import DatasetReadOptions, DatasetWriteOptions
+from statconvert.dataset import Dataset
 from statconvert.transformations.pipeline import TransformationPipeline
 
 from .console import console
@@ -37,6 +39,7 @@ def run_batch_with_progress(
     write_options: DatasetWriteOptions | None = None,
     on_option_warning: Callable[[str], None] | None = None,
     transform_pipeline: TransformationPipeline | None = None,
+    item_processor: Callable[[BatchItem, Dataset], Dataset] | None = None,
     report_path: str | Path | None = None,
 ) -> BatchResult:
     """Execute a batch plan with concise live item and worker status."""
@@ -105,6 +108,7 @@ def run_batch_with_progress(
             write_options=write_options,
             on_option_warning=on_option_warning,
             transform_pipeline=transform_pipeline,
+            item_processor=item_processor,
             on_progress=on_progress,
         )
 
@@ -155,6 +159,13 @@ def show_batch_plan(
         "Value",
         justify="right",
     )
+    summary.add_row("Phase", plan.phase)
+    summary.add_row(
+        "Mode",
+        "lightweight filesystem dry-run" if plan.mode == "dry_run" else plan.mode,
+    )
+    summary.add_row("Input", str(plan.options.input_path))
+    summary.add_row("Output", str(plan.options.output_path))
     summary.add_row(
         "Total items",
         _format_count(
@@ -179,6 +190,12 @@ def show_batch_plan(
             plan.blocked_count
         ),
     )
+    summary.add_row("Would replace", _format_count(plan.would_replace_count))
+    summary.add_row(
+        "Would create directories",
+        _format_count(plan.would_create_directory_count),
+    )
+    summary.add_row("Path conflicts", _format_count(plan.path_conflict_count))
     _add_workload_rows(summary, plan.workload)
     summary.add_row(
         "Target extension",
@@ -221,6 +238,12 @@ def show_batch_plan(
         _format_bool(plan.options.all_objects),
     )
     summary.add_row(
+        "Recipe",
+        "none" if plan.options.recipe_path is None else str(plan.options.recipe_path),
+    )
+    summary.add_row("Policy", plan.options.policy or "none")
+    summary.add_row("Optimize types", _format_bool(plan.options.optimize_types))
+    summary.add_row(
         "Report",
         "none" if report_path is None else str(report_path),
     )
@@ -229,6 +252,14 @@ def show_batch_plan(
         summary
     )
     _show_memory_note(plan.workload.memory_note)
+
+    if plan.reason_counts:
+        reasons = Table(title="Planning Reason Counts")
+        reasons.add_column("Reason code", style="cyan")
+        reasons.add_column("Count", justify="right")
+        for reason_code, count in plan.reason_counts.items():
+            reasons.add_row(reason_code, _format_count(count))
+        console.print(reasons)
 
     table = Table(
         title="Batch Plan Items"
@@ -249,9 +280,17 @@ def show_batch_plan(
     table.add_column(
         "Reason",
     )
+    table.add_column("Reason code", no_wrap=True)
+    table.add_column("Overwrite", no_wrap=True)
+    table.add_column("Directory", no_wrap=True)
+    if plan.options.recipe_path is not None:
+        table.add_column("Recipe", no_wrap=True)
+    if plan.options.policy is not None:
+        table.add_column("Policy", no_wrap=True)
 
-    for item in plan.items:
-        table.add_row(
+    displayed_items = plan.items[:BATCH_PLAN_DISPLAY_ITEM_LIMIT]
+    for item in displayed_items:
+        values = [
             item.status,
             _format_input_file(
                 item
@@ -260,11 +299,30 @@ def show_batch_plan(
                 item.output_file
             ),
             item.reason or "",
-        )
+            item.reason_code or "",
+            item.overwrite_disposition,
+            item.directory_disposition,
+        ]
+        if plan.options.recipe_path is not None:
+            values.append(_format_recipe_outcome(item))
+        if plan.options.policy is not None:
+            values.append(_format_policy_outcome(item))
+        table.add_row(*values)
 
     console.print(
         table
     )
+    items_omitted = len(plan.items) - len(displayed_items)
+    if items_omitted:
+        console.print(
+            f"[yellow]Plan detail truncated:[/yellow] {items_omitted} item(s) omitted "
+            f"after the first {BATCH_PLAN_DISPLAY_ITEM_LIMIT}."
+        )
+    if plan.checks_not_performed:
+        console.print(
+            "[yellow]Not checked:[/yellow] dataset schemas, transform recipe "
+            "compatibility, transfer policy decisions, or required metadata sidecars."
+        )
 
 
 def show_batch_result(
@@ -352,6 +410,10 @@ def show_batch_result(
         "Shape",
         justify="right",
     )
+    if result.plan.options.recipe_path is not None:
+        table.add_column("Recipe", no_wrap=True)
+    if result.plan.options.policy is not None:
+        table.add_column("Policy", no_wrap=True)
     if result.workload.streaming_enabled:
         table.add_column(
             "Streaming",
@@ -373,6 +435,10 @@ def show_batch_result(
             _format_output_file(item),
             _format_shape(item),
         ]
+        if result.plan.options.recipe_path is not None:
+            values.append(_format_recipe_outcome(item))
+        if result.plan.options.policy is not None:
+            values.append(_format_policy_outcome(item))
         if result.workload.streaming_enabled:
             values.append(_format_streaming_item(item))
         values.extend(
@@ -517,6 +583,22 @@ def _format_shape(item: BatchItem) -> str:
     if item.rows is None or item.columns is None:
         return ""
     return f"{item.rows:,}×{item.columns:,}"
+
+
+def _format_recipe_outcome(item: BatchItem) -> str:
+    outcome = item.recipe
+    if not outcome.requested:
+        return "not requested"
+    if outcome.compatibility_status != "not_checked":
+        return outcome.compatibility_status
+    return f"syntax {outcome.syntax_status}; compatibility not checked"
+
+
+def _format_policy_outcome(item: BatchItem) -> str:
+    outcome = item.policy
+    if not outcome.requested:
+        return "not requested"
+    return outcome.status
 
 
 def _batch_progress_details(

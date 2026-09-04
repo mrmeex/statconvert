@@ -189,7 +189,8 @@ def test_type_plan_help_and_existing_commands_have_expected_boundary() -> None:
     assert "--policy" in convert_help.output
     assert "--type-plan" in convert_help.output
     assert "--optimize-types" in convert_help.output
-    assert "--policy" not in batch_help.output
+    assert "--policy" in batch_help.output
+    assert "--type-plan" not in batch_help.output
 
 
 def _csv(tmp_path: Path) -> Path:

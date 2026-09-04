@@ -7,9 +7,19 @@ from pathlib import Path
 from statconvert.batch.exceptions import BatchError
 from statconvert.error_suggestions import did_you_mean
 from statconvert.batch.models import (
+    BATCH_PHASE_FILESYSTEM_PLAN,
+    BATCH_PHASE_FULL_PLAN,
     BATCH_STATUS_BLOCKED,
     BATCH_STATUS_PENDING,
     BATCH_STATUS_SKIPPED,
+    DIRECTORY_BLOCKED,
+    DIRECTORY_EXISTS,
+    DIRECTORY_NOT_NEEDED,
+    DIRECTORY_WOULD_CREATE,
+    OVERWRITE_BLOCKED,
+    OVERWRITE_NOT_NEEDED,
+    OVERWRITE_WOULD_REPLACE,
+    SIDECAR_POTENTIAL_PATH,
     BatchItem,
     BatchPlan,
     BatchPlanningOptions,
@@ -150,6 +160,87 @@ def _included_by_patterns(
     )
 
 
+def _discover_files_for_preflight(
+    *,
+    input_root: Path,
+    output_root: Path,
+    recursive: bool,
+    patterns: list[str] | None,
+    exclude_patterns: list[str] | None,
+) -> tuple[list[Path], list[BatchItem]]:
+    """Discover selected and excluded files without reading dataset contents."""
+
+    files = discover_input_files(input_root, recursive=recursive)
+    base_path = input_root.parent if input_root.is_file() else input_root
+    selected: list[Path] = []
+    skipped: list[BatchItem] = []
+
+    for path in files:
+        reason_code: str | None = None
+        reason: str | None = None
+        output_tree_excluded = False
+        if not _included_by_patterns(path, base_path, patterns):
+            reason_code = "PATTERN_NOT_INCLUDED"
+            reason = "Input did not match an include pattern"
+        elif _matches_patterns(path, base_path, exclude_patterns):
+            reason_code = "EXCLUDED_BY_PATTERN"
+            reason = "Input matched an exclude pattern"
+        elif _inside_recursive_output_tree(
+            path,
+            input_root=input_root,
+            output_root=output_root,
+            recursive=recursive,
+        ):
+            reason_code = "OUTPUT_TREE_EXCLUDED"
+            reason = "Input is inside the recursive batch output tree"
+            output_tree_excluded = True
+
+        if reason_code is None:
+            selected.append(path)
+            continue
+
+        skipped.append(
+            BatchItem(
+                input_file=path,
+                output_file=None,
+                input_extension=path.suffix.lower() or None,
+                status=BATCH_STATUS_SKIPPED,
+                reason=reason,
+                reason_code=reason_code,
+                relative_path=_relative_path(path, input_root),
+                input_size_bytes=_safe_file_size(path),
+                overwrite_disposition=OVERWRITE_NOT_NEEDED,
+                directory_disposition=DIRECTORY_NOT_NEEDED,
+                output_inside_input_excluded=output_tree_excluded,
+            )
+        )
+
+    return selected, skipped
+
+
+def _inside_recursive_output_tree(
+    path: Path,
+    *,
+    input_root: Path,
+    output_root: Path,
+    recursive: bool,
+) -> bool:
+    if not recursive or not input_root.is_dir():
+        return False
+    if _path_key(input_root) == _path_key(output_root):
+        return False
+    return _is_relative_to(output_root, input_root) and _is_relative_to(
+        path, output_root
+    )
+
+
+def _safe_file_size(path: Path) -> int | None:
+    try:
+        return path.stat().st_size if path.is_file() else None
+    except OSError:
+        return None
+
+
 def build_batch_plan(
     input_path: str | Path,
     output_path: str | Path,
@@ -168,6 +259,14 @@ def build_batch_plan(
     streaming_enabled: bool = False,
     chunk_size: int | None = None,
     object_mode: str | None = None,
+    mode: str = "execution",
+    create_dirs: bool = False,
+    filesystem_preflight: bool = False,
+    recipe_path: str | Path | None = None,
+    recipe_name: str | None = None,
+    recipe_step_count: int = 0,
+    policy: str | None = None,
+    optimize_types: bool = False,
 ) -> BatchPlan:
     """
     Build a safe, deterministic batch conversion plan.
@@ -212,22 +311,40 @@ def build_batch_plan(
             streaming_enabled=streaming_enabled,
             chunk_size=chunk_size,
             object_mode=object_mode or "manifest",
+            mode=mode,
+            create_dirs=create_dirs,
+            filesystem_preflight=filesystem_preflight,
+            recipe_path=Path(recipe_path) if recipe_path is not None else None,
+            recipe_name=recipe_name,
+            recipe_step_count=recipe_step_count,
+            policy=policy,
+            optimize_types=optimize_types,
         )
 
-    discovered_files = discover_input_files(
-        input_root,
-        recursive=recursive,
-        patterns=patterns,
-        exclude_patterns=exclude_patterns,
-    )
-    discovered_files = _exclude_recursive_output_tree(
-        discovered_files,
-        input_root,
-        output_root,
-        recursive,
-    )
+    discovery_skips: list[BatchItem] = []
+    if filesystem_preflight:
+        discovered_files, discovery_skips = _discover_files_for_preflight(
+            input_root=input_root,
+            output_root=output_root,
+            recursive=recursive,
+            patterns=patterns,
+            exclude_patterns=exclude_patterns,
+        )
+    else:
+        discovered_files = discover_input_files(
+            input_root,
+            recursive=recursive,
+            patterns=patterns,
+            exclude_patterns=exclude_patterns,
+        )
+        discovered_files = _exclude_recursive_output_tree(
+            discovered_files,
+            input_root,
+            output_root,
+            recursive,
+        )
 
-    if not discovered_files:
+    if not discovered_files and not discovery_skips:
         raise BatchError(
             "No input files were discovered.",
             suggestion=(
@@ -253,8 +370,19 @@ def build_batch_plan(
         streaming_enabled=streaming_enabled,
         chunk_size=chunk_size,
         object_mode=object_mode or ("all_objects" if all_objects else "none"),
+        mode=mode,
+        create_dirs=create_dirs,
+        filesystem_preflight=filesystem_preflight,
+        phase=(
+            BATCH_PHASE_FULL_PLAN if mode == "full_plan" else BATCH_PHASE_FILESYSTEM_PLAN
+        ),
+        recipe_path=Path(recipe_path) if recipe_path is not None else None,
+        recipe_name=recipe_name,
+        recipe_step_count=recipe_step_count,
+        policy=policy,
+        optimize_types=optimize_types,
     )
-    items = []
+    items = list(discovery_skips)
 
     for input_file in discovered_files:
         if all_objects:
@@ -294,11 +422,21 @@ def build_batch_plan(
             ),
         )
 
+    if filesystem_preflight:
+        items.sort(key=lambda item: item.input_file.as_posix().lower())
+
     if all_objects:
         _raise_for_all_objects_output_duplicates(items)
     else:
         _mark_output_collisions(
             items
+        )
+
+    if filesystem_preflight:
+        _apply_filesystem_preflight(
+            items,
+            overwrite=overwrite,
+            create_dirs=create_dirs,
         )
 
     return BatchPlan(
@@ -338,6 +476,11 @@ def _build_all_object_items(
                     if unsupported_input
                     else "Input format is not readable"
                 ),
+                reason_code=(
+                    "UNSUPPORTED_INPUT_FORMAT"
+                    if unsupported_input
+                    else "INPUT_FORMAT_NOT_READABLE"
+                ),
                 relative_path=relative_path,
             )
         ]
@@ -373,6 +516,7 @@ def _build_all_object_items(
                         input_extension=input_extension,
                         status=BATCH_STATUS_SKIPPED,
                         reason=info.message or "Unsupported dataset object",
+                        reason_code="UNSUPPORTED_DATASET_OBJECT",
                         relative_path=relative_path,
                         input_object=selector,
                         object_index=info.index,
@@ -405,6 +549,8 @@ def _build_all_object_items(
                 output_extension=target_extension,
                 status=BATCH_STATUS_BLOCKED if same_path else BATCH_STATUS_PENDING,
                 reason="Input and output path are the same" if same_path else None,
+                reason_code="INPUT_OUTPUT_SAME_PATH" if same_path else None,
+                same_path=same_path,
                 relative_path=relative_path,
                 input_object=selector,
                 output_name=output_name,
@@ -423,6 +569,7 @@ def _build_all_object_items(
                 input_extension=input_extension,
                 status=BATCH_STATUS_SKIPPED,
                 reason="No dataset objects were found",
+                reason_code="NO_DATASET_OBJECTS",
                 relative_path=relative_path,
             )
         )
@@ -455,6 +602,8 @@ def _build_all_objects_dataset_item(
         output_extension=target_extension,
         status=BATCH_STATUS_BLOCKED if same_path else BATCH_STATUS_PENDING,
         reason="Input and output path are the same" if same_path else None,
+        reason_code="INPUT_OUTPUT_SAME_PATH" if same_path else None,
+        same_path=same_path,
         relative_path=relative_path,
         output_name=output_name,
     )
@@ -531,6 +680,14 @@ def _build_manifest_plan(
     streaming_enabled: bool,
     chunk_size: int | None,
     object_mode: str,
+    mode: str,
+    create_dirs: bool,
+    filesystem_preflight: bool,
+    recipe_path: Path | None,
+    recipe_name: str | None,
+    recipe_step_count: int,
+    policy: str | None,
+    optimize_types: bool,
 ) -> BatchPlan:
     """Build one batch item for every included object-manifest row."""
 
@@ -557,6 +714,17 @@ def _build_manifest_plan(
         streaming_enabled=streaming_enabled,
         chunk_size=chunk_size,
         object_mode=object_mode,
+        mode=mode,
+        create_dirs=create_dirs,
+        filesystem_preflight=filesystem_preflight,
+        phase=(
+            BATCH_PHASE_FULL_PLAN if mode == "full_plan" else BATCH_PHASE_FILESYSTEM_PLAN
+        ),
+        recipe_path=recipe_path,
+        recipe_name=recipe_name,
+        recipe_step_count=recipe_step_count,
+        policy=policy,
+        optimize_types=optimize_types,
     )
     items = [
         _build_manifest_item(
@@ -569,6 +737,12 @@ def _build_manifest_plan(
         for row in included_rows
     ]
     _raise_for_manifest_output_duplicates(items)
+    if filesystem_preflight:
+        _apply_filesystem_preflight(
+            items,
+            overwrite=overwrite,
+            create_dirs=create_dirs,
+        )
     return BatchPlan(options=options, items=items)
 
 
@@ -611,9 +785,11 @@ def _build_manifest_item(
     output_file = output_root / relative_parent / f"{output_name}{target_extension}"
     status = BATCH_STATUS_PENDING
     reason = None
+    reason_code = None
     if _same_path(input_file, output_file):
         status = BATCH_STATUS_BLOCKED
         reason = "Input and output path are the same"
+        reason_code = "INPUT_OUTPUT_SAME_PATH"
 
     return BatchItem(
         input_file=input_file,
@@ -622,6 +798,8 @@ def _build_manifest_item(
         output_extension=target_extension,
         status=status,
         reason=reason,
+        reason_code=reason_code,
+        same_path=reason_code == "INPUT_OUTPUT_SAME_PATH",
         relative_path=relative_path,
         input_object=row.input_object,
         output_name=output_name,
@@ -708,6 +886,11 @@ def _build_item(
                 if unsupported_input
                 else "Input format is not readable"
             ),
+            reason_code=(
+                "UNSUPPORTED_INPUT_FORMAT"
+                if unsupported_input
+                else "INPUT_FORMAT_NOT_READABLE"
+            ),
             relative_path=relative_path,
         )
 
@@ -721,6 +904,7 @@ def _build_item(
     )
     status = BATCH_STATUS_PENDING
     reason = None
+    reason_code = None
 
     if _same_path(
         input_file,
@@ -728,6 +912,7 @@ def _build_item(
     ):
         status = BATCH_STATUS_BLOCKED
         reason = "Input and output path are the same"
+        reason_code = "INPUT_OUTPUT_SAME_PATH"
 
     return BatchItem(
         input_file=input_file,
@@ -736,6 +921,8 @@ def _build_item(
         output_extension=output_file.suffix.lower() or target_extension,
         status=status,
         reason=reason,
+        reason_code=reason_code,
+        same_path=reason_code == "INPUT_OUTPUT_SAME_PATH",
         relative_path=relative_path,
     )
 
@@ -864,10 +1051,115 @@ def _mark_output_collisions(
 
         for item in colliding_items:
             item.status = BATCH_STATUS_BLOCKED
+            item.reason_code = "DUPLICATE_OUTPUT_PATH"
             item.reason = (
                 "Output path collision. Use --preserve-structure or choose a different "
                 "output folder."
             )
+            item.duplicate_output = True
+
+
+def _apply_filesystem_preflight(
+    items: list[BatchItem],
+    *,
+    overwrite: bool,
+    create_dirs: bool,
+) -> None:
+    """Attach dry-run path dispositions without creating or reading datasets."""
+
+    for item in items:
+        if item.input_size_bytes is None:
+            item.input_size_bytes = _safe_file_size(item.input_file)
+        if item.output_file is None:
+            item.overwrite_disposition = OVERWRITE_NOT_NEEDED
+            item.directory_disposition = DIRECTORY_NOT_NEEDED
+            continue
+
+        item.potential_sidecar_path = Path(f"{item.output_file}{SIDECAR_SUFFIX}")
+        item.sidecar_disposition = SIDECAR_POTENTIAL_PATH
+        item.same_path = item.same_path or _same_path(
+            item.input_file, item.output_file
+        )
+        if item.same_path:
+            _block_item(
+                item,
+                reason_code="INPUT_OUTPUT_SAME_PATH",
+                reason="Input and output path are the same",
+            )
+
+        output_exists = item.output_file.exists()
+        item.existing_output = output_exists
+        if output_exists and item.output_file.is_dir():
+            item.overwrite_disposition = OVERWRITE_BLOCKED
+            item.directory_disposition = DIRECTORY_BLOCKED
+            _block_item(
+                item,
+                reason_code="OUTPUT_PATH_IS_DIRECTORY",
+                reason="Planned output path exists as a directory",
+            )
+            continue
+
+        if output_exists:
+            if overwrite:
+                item.overwrite_disposition = OVERWRITE_WOULD_REPLACE
+            else:
+                item.overwrite_disposition = OVERWRITE_BLOCKED
+                _block_item(
+                    item,
+                    reason_code="OUTPUT_EXISTS",
+                    reason="Output file already exists and overwrite is disabled",
+                )
+        else:
+            item.overwrite_disposition = OVERWRITE_NOT_NEEDED
+
+        parent = item.output_file.parent
+        if parent.exists():
+            if parent.is_dir():
+                item.directory_disposition = DIRECTORY_EXISTS
+            else:
+                item.directory_disposition = DIRECTORY_BLOCKED
+                _block_item(
+                    item,
+                    reason_code="OUTPUT_PARENT_NOT_DIRECTORY",
+                    reason="Planned output parent exists as a file",
+                )
+            continue
+
+        existing_ancestor = _nearest_existing_ancestor(parent)
+        if existing_ancestor is not None and not existing_ancestor.is_dir():
+            item.directory_disposition = DIRECTORY_BLOCKED
+            _block_item(
+                item,
+                reason_code="OUTPUT_PARENT_NOT_DIRECTORY",
+                reason="An output parent path exists as a file",
+            )
+        elif create_dirs:
+            item.directory_disposition = DIRECTORY_WOULD_CREATE
+        else:
+            item.directory_disposition = DIRECTORY_BLOCKED
+            _block_item(
+                item,
+                reason_code="OUTPUT_DIRECTORY_MISSING",
+                reason="Output directory does not exist and --create-dirs is disabled",
+            )
+
+
+def _block_item(item: BatchItem, *, reason_code: str, reason: str) -> None:
+    """Block a pending item while preserving an earlier, higher-priority blocker."""
+
+    if item.status == BATCH_STATUS_PENDING:
+        item.status = BATCH_STATUS_BLOCKED
+        item.reason_code = reason_code
+        item.reason = reason
+
+
+def _nearest_existing_ancestor(path: Path) -> Path | None:
+    current = path
+    while current != current.parent:
+        if current.exists():
+            return current
+        current = current.parent
+    return current if current.exists() else None
 
 
 def _matches_patterns(

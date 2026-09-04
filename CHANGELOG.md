@@ -1,6 +1,90 @@
 # Changelog
 
-## Unreleased
+## 1.5.0 - 2026-09-04
+
+StatConvert 1.5.0 is the batch and automation maturity release. It adds explicit
+filesystem-only and full-data planning paths, portable recipe and transfer-policy reuse,
+bounded operational reports, and matching Browser Batch controls without changing ordinary
+conversion defaults or adding formats and runtime dependencies.
+
+### Planning (1.5.0a)
+
+- Audited current batch discovery, naming/collisions, overwrite/directory safety,
+  dry-run, execution/workers, direct transforms, transfer-policy boundaries, reporting,
+  logging, Browser UI, documentation, and tests against the released 1.4.1 baseline.
+- Added the private implementation design for a lightweight filesystem-only dry-run,
+  explicit non-writing `--full-plan`, portable recipe and transfer-policy reuse per item,
+  batch-owned output naming, bounded reports, deterministic workers, and continue-on-error
+  execution.
+- Activated the 1.5.0 batch and automation maturity roadmap. Removed UI-to-CLI/config
+  reproducibility export as a feature line because Copy CLI Command already exists;
+  retained advanced selectors/sampling and data dictionary/codebook workflows as later
+  candidates.
+- No runtime batch recipe/policy support, CLI/UI behavior, conversion/transform behavior,
+  format, ORC/database support, dependency, version, license, or release artifact changed
+  in this design slice.
+
+### Batch dry-run and planning improvements (1.5.0b)
+
+- Added additive batch planning fields for phase/mode, stable reason codes, input sizes,
+  overwrite/directory/sidecar dispositions, and same-path, duplicate, existing-output,
+  and recursive-output-tree conflict flags.
+- Made ordinary CLI dry-run and the existing Browser workload plan report existing output
+  blockers or `would_replace`, missing/generated directory blockers or `would_create`,
+  invalid output path kinds, explicit filter/output-tree skips, complete status/reason
+  counts, and deterministic potential-sidecar paths.
+- Added complete plain CLI JSON with summary/unchecked-area/truncation metadata and bounded
+  500-row human/Browser presentation. Dry-run remains dataset-read-free and never applies
+  transforms or transfer policies; only an explicitly requested legacy CSV/JSON plan
+  report writes.
+- Preserved ordinary batch execution, direct transforms, streaming, manifests, all-object
+  behavior, formats, dependencies, version, and license. Batch recipes, policies,
+  optimization, batch type-plan, and full dataset planning remain deferred to 1.5.0c.
+
+### Batch recipe and policy integration (1.5.0c)
+
+- Added CLI-first `batch --recipe`, `--full-plan`, `--policy`, and explicit
+  `--policy smallest-types --optimize-types` using the existing portable recipe and
+  transfer planner/application systems.
+- Added non-writing per-item full planning with read state, before/after shape, bounded
+  recipe/policy diagnostics, complete decision/issue/metadata counts, deterministic worker
+  ordering, and recipe-before-policy evaluation.
+- Added just-in-time recipe and policy execution on safe dataset copies, continue/fail-fast
+  item outcomes, exact optimization counts, and primary/sidecar output rechecks before
+  writing. Ordinary dry-run remains filesystem-only and dataset-read-free.
+- Kept batch type-plan, saved plans, workflow-config references, streaming recipe/policy,
+  Browser Batch controls, HTML reports, retry/resume, new formats, ORC, databases, and new
+  dependencies out of scope.
+
+### Batch reports and report-output preflight (1.5.0d-1)
+
+- Added standalone, escaped HTML reports for filesystem dry-run, full-plan, and execution,
+  including complete summaries, bounded per-item and diagnostic tables, recipe/policy/
+  optimization outcomes, not-checked notes, and manual retry hints without source rows.
+- Stabilized saved JSON reports as a bounded nested contract and CSV reports as a fixed
+  one-row-per-item flattened ledger with complete aggregate and truncation counts.
+- Applied normal `--overwrite` and `--create-dirs` protections to explicit report writes,
+  including source, primary-output, sidecar, existing-file, directory, and parent-path
+  conflicts. Report files are assembled through a same-directory temporary file.
+- Kept ordinary dry-run read-free and full-plan non-writing except for an explicitly
+  requested report. Browser controls, release work, dependencies, formats, and version
+  remain unchanged for the next checkpoint.
+
+### Browser Batch polish (1.5.0d-2)
+
+- Added local portable-recipe selection, explicit full planning, the five implemented
+  transfer policies, and an unchecked exact optimization control limited to
+  `smallest-types`; `analysis-ready` remains planning-only.
+- Relabelled ordinary Browser planning as **Plan files** with explicit filesystem-only
+  scope, added deterministic bounded recipe/policy/result fields and collapsed raw JSON,
+  and invalidated prior plans whenever an effective batch input changes.
+- Added explicit CSV, JSON, and HTML batch-report format/path controls using the existing
+  overwrite/create-directory preflight and updated Copy CLI Command output for direct
+  field-to-option parity.
+- Kept recipe parsing, policy validation and planning, Run eligibility, output naming,
+  and report writing in the backend. No policy default, saved plan, retry/resume,
+  batch `--type-plan`, streaming recipe/policy support, format, dependency, version, or
+  release artifact was added.
 
 ## 1.4.1 - 2026-08-15
 

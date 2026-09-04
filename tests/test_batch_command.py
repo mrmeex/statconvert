@@ -140,8 +140,9 @@ def test_batch_dry_run_reports_existing_output_without_writing(tmp_path):
         ],
     )
 
-    assert result.exit_code == 0
-    assert "pending" in result.output
+    assert result.exit_code == 1
+    assert "blocked" in result.output
+    assert "OUTPUT_EXISTS" in result.output
     assert (output_dir / f"{input_file.stem}.json").read_text() == ""
 
 
@@ -334,12 +335,12 @@ def test_batch_respects_pattern_and_exclude_pattern(tmp_path):
     data = json.loads(
         result.output
     )
-    assert len(
-        data["items"]
-    ) == 1
+    assert len(data["items"]) == 2
     assert data["items"][0]["input_file"].endswith(
         "keep.csv"
     )
+    assert data["items"][1]["status"] == "skipped"
+    assert data["items"][1]["reason_code"] == "EXCLUDED_BY_PATTERN"
 
 
 def test_batch_dry_run_flatten_reports_recursive_collisions(tmp_path):

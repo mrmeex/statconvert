@@ -929,6 +929,14 @@ limits before conversion.
 statconvert batch INPUT_PATH OUTPUT_PATH --to FORMAT [OPTIONS]
 ```
 
+```bash
+statconvert batch incoming converted --to parquet --recipe clean.toml --dry-run
+statconvert batch incoming converted --to parquet --recipe clean.toml --full-plan
+statconvert batch incoming converted --to parquet --policy safe --full-plan
+statconvert batch incoming converted --to parquet --recipe clean.toml --policy smallest-types
+statconvert batch incoming converted --to parquet --policy smallest-types --optimize-types
+```
+
 Options:
 
 - `--to FORMAT` - required writable target extension.
@@ -938,6 +946,14 @@ Options:
 - `--all-objects` - expand every supported object in each container into a separate batch
   item. It cannot be combined with `--object` or `--object-manifest`.
 - `--transform` - apply one shared transformation pipeline to every planned batch item.
+- `--recipe RECIPE.toml` - apply one portable version-1 recipe independently to every
+  item. It is mutually exclusive with `--transform` and direct transform flags.
+- `--full-plan` - read and assess the requested recipe and/or policy without writing
+  dataset outputs. It requires `--recipe` or `--policy`.
+- `--policy POLICY` - use `safe`, `strict`, `analysis-ready`, `preserve-metadata`, or
+  `smallest-types` per item. Batch has no default policy.
+- `--optimize-types` - apply exact existing decisions; requires
+  `--policy smallest-types`.
 - `--select`, `--drop`, `--rename`, `--type`, `--filter`, and `--recode`, plus their
   existing modifier options, have the same syntax and fixed order as `transform`.
 - `--recursive`, `-r` - include subdirectories.
@@ -950,12 +966,14 @@ Options:
 - `--preserve-structure` / `--flatten` - path policy (preserve is default).
 - `--include-unsupported` / `--supported-only` - skipped-input visibility.
 - `--pattern GLOB` and `--exclude-pattern GLOB` - repeatable discovery filters.
-- `--dry-run` - show/write a plan without conversion.
+- `--dry-run` - run lightweight filesystem planning without reading datasets; an explicit
+  `--report` remains the only dry-run write.
 - `--fail-fast` - stop after the first failure; running worker tasks may finish.
 - `--allow-blocked` - execute pending items despite other blocked items.
 - `--json` - emit the plan or result as JSON.
-- `--report FILE` - write a CSV or JSON plan/result report.
-- `--report-format csv|json` - override suffix inference.
+- `--report FILE` - explicitly write a bounded CSV, JSON, or standalone HTML plan/result
+  report; `.html` and `.htm` both infer HTML.
+- `--report-format csv|json|html` - override suffix inference.
 - `--no-progress` - disable file-level progress.
 - `--workers N` - worker threads (default `1`).
 - `--validate` - validate each pending dataset before writing.
@@ -967,16 +985,53 @@ Options:
 - `--overwrite-config` permits replacement of the selected config file only.
 - Common logging options.
 
-Planning is deterministic. It detects unsupported inputs, output-path collisions, nested
-output discovery, and unsupported targets before execution. The user-specified output
-root must exist unless `--create-dirs` is used. Recursive runs preserve relative folders
-by default, and generated subfolders below an existing root are created automatically.
-Existing item outputs fail during execution unless `--overwrite` is used, following the
-normal fail-fast policy. Result and report order follows plan order even with multiple
-workers. Dry-run and JSON planning output include planned item/file counts, supported and
-skipped file counts, total input bytes, largest input size, worker count, target, structure,
-transform/validation state, and object mode. These are filesystem facts, not peak-memory
-estimates. When workers exceed one, console output notes that each worker may hold one
+Planning is deterministic. Ordinary execution retains its existing per-item preflight and
+continue/fail-fast behavior. `--dry-run` adds a filesystem-only preflight: existing files
+are blocked unless `--overwrite` makes them `would_replace`; missing output parents are
+blocked unless `--create-dirs` makes them `would_create`; output directories or parent
+files are blocked; and same-path/duplicate outputs remain blocked regardless of overwrite.
+Filtered files and files excluded from a nested recursive output tree remain visible as
+skipped diagnostic rows with stable reason codes. Unsupported targets still fail early.
+
+Human dry-run output includes planning mode, input/output roots, complete status and reason
+counts, overwrite/directory dispositions, input bytes, and at most 500 item rows with an
+explicit omission notice. CLI JSON retains every deterministic item and adds `phase`,
+`mode`, `summary`, `checks_not_performed`, and explicit truncation metadata; Browser plan
+details remain capped at 500. Potential automatic metadata-sidecar paths are reported when
+predictable, but required sidecars are not inferred. Schema, recipe compatibility, and
+transfer-policy decisions are not checked by ordinary dry-run. With `--recipe`, dry-run
+parses syntax once but does not bind the recipe to dataset columns or apply it. `--policy`
+is rejected with dry-run and directs the user to `--full-plan`.
+
+`--full-plan` is the explicit dataset-reading, non-writing mode. It reads every pending
+supported item in deterministic plan order, records read and before/after shape state,
+checks recipe compatibility, simulates the recipe on a copy, and builds the existing
+target-aware transfer plan against the post-recipe dataset. Blocked or skipped filesystem
+items are not read. Recipe and policy blockers affect only their item; warnings alone do
+not block. Full-plan creates no dataset output, sidecar, directory, config, cache, recipe,
+or saved transfer plan. An explicitly requested CSV/JSON/HTML (`.html` or `.htm`) batch report remains the
+only separate write.
+
+Batch report paths use the same `--overwrite` and `--create-dirs` protections as dataset
+outputs. Existing reports are not replaced by default; missing parents are not created
+without `--create-dirs`; and a report may not collide with a selected source, planned
+primary output, or known sidecar. JSON preserves the bounded nested item contract, CSV is
+a stable flattened one-row-per-item ledger, and HTML provides an escaped operational
+summary. Saved report details are capped at 500 items with complete aggregate and explicit
+omission counts, and never contain row-level source data or raw backend-native metadata.
+
+Normal in-memory execution validates and applies a portable recipe just in time on a deep
+dataset copy, then runs the transfer policy. A blocked policy fails that item; warnings do
+not. `analysis-ready` and `smallest-types` without optimization are plan-only.
+`smallest-types --optimize-types` applies only exact decisions through the shared transfer
+application helper. Recipes and policies never control discovery or output naming. There
+is no batch `--type-plan`, saved plan, policy default, or workflow-config recipe/policy
+reference.
+
+The user-selected output root must exist for execution unless `--create-dirs` is used.
+Recursive execution keeps its existing generated-subfolder behavior. Result and report
+order follows plan order even with multiple workers. Planning byte counts are filesystem
+facts, not peak-memory estimates. When workers exceed one, console output notes that each worker may hold one
 dataset in memory; use `--workers 1` for very large files. Human execution output shows a
 concise workload table before conversion, the files currently active in stable worker
 slots, completed status counts, and a result summary afterward. When a report is requested,
@@ -987,7 +1042,7 @@ is read, transformed, optionally validated, and then written. The same transform
 specification applies to every item; transformation
 failures use normal item-failure and fail-fast behavior. Dry-run parses the specification
 but does not read data, apply transformations, check dataset columns, create directories,
-or write or replace files. In ordinary and shared-`--object` mode, object selection happens
+or write or replace files. Required metadata sidecars are also not checked. In ordinary and shared-`--object` mode, object selection happens
 during execution, so dry-run performs no dataset or object reads. Shared `--object` mode
 selects one object per file; expansion requires `--all-objects`. A format that
 does not support object selection fails as an individual item rather than silently
@@ -1001,7 +1056,8 @@ record rows and chunks, and human summaries, JSON, and CSV/JSON reports expose p
 metrics plus total streamed rows/chunks. Sidecars are committed only after each successful
 data file, while failures preserve existing targets and clean temporary output.
 
-Batch streaming cannot be combined with transforms, validation, object selection,
+Batch streaming cannot be combined with transforms, recipes, transfer policies,
+optimization, validation, object selection,
 object manifests, or all-object expansion. Use normal batch without `--stream` for those
 workflows and for Parquet, Feather, spreadsheets, statistical-package, R, or JSON-array
 formats. Batch streaming config serialization is deferred: `--stream` with

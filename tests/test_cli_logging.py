@@ -516,8 +516,8 @@ def test_validate_and_batch_intentional_exits_have_no_tracebacks(tmp_path: Path)
     assert validate_result.exit_code == 1
     assert "Command outcome: validate | exit_code=1" in validate_contents
     assert "Traceback (most recent call last)" not in validate_contents
-    assert batch_result.exit_code == 0
-    assert "Command completed: batch" in batch_contents
+    assert batch_result.exit_code == 1
+    assert "Command outcome: batch | exit_code=1" in batch_contents
     assert "Traceback (most recent call last)" not in batch_contents
 
 

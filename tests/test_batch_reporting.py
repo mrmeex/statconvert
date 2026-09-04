@@ -42,7 +42,7 @@ def test_write_csv_plan_report_has_stable_rows_and_empty_values(tmp_path):
     )
     report = tmp_path / "reports" / "plan.csv"
 
-    write_batch_plan_report(plan, report)
+    write_batch_plan_report(plan, report, create_dirs=True)
 
     with report.open(encoding="utf-8", newline="") as file:
         rows = list(csv.DictReader(file))
@@ -66,7 +66,12 @@ def test_write_csv_result_report_includes_execution_details(tmp_path):
 
     with report.open(encoding="utf-8", newline="") as file:
         rows = list(csv.DictReader(file))
-    assert [row["status"] for row in rows] == ["success", "failed", "skipped", "blocked"]
+    assert [row["status"] for row in rows] == [
+        "success",
+        "failed",
+        "skipped",
+        "blocked",
+    ]
     assert rows[0]["rows"] == "2"
     assert rows[0]["columns"] == "3"
     assert rows[0]["duration_seconds"] == "0.25"
@@ -78,11 +83,13 @@ def test_write_json_reports_include_type_summary_and_items(tmp_path, kind):
     item = _item(tmp_path, "one.csv", BATCH_STATUS_PENDING)
     report = tmp_path / f"nested/{kind}.json"
     if kind == "plan":
-        write_batch_plan_report(_plan(tmp_path, [item]), report)
+        write_batch_plan_report(_plan(tmp_path, [item]), report, create_dirs=True)
     else:
         item.status = BATCH_STATUS_SUCCESS
         write_batch_result_report(
-            BatchResult(plan=_plan(tmp_path, []), items=[item]), report
+            BatchResult(plan=_plan(tmp_path, []), items=[item]),
+            report,
+            create_dirs=True,
         )
 
     payload = json.loads(report.read_text(encoding="utf-8"))

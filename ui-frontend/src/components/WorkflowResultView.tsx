@@ -1,4 +1,5 @@
 import { ResultView } from "./ResultView";
+import { BatchResultView } from "./BatchResultView";
 
 interface WorkflowResultViewProps {
   workflow: string;
@@ -26,6 +27,9 @@ function pathFormat(value: unknown): string | undefined {
 }
 
 export function WorkflowResultView({ workflow, data }: WorkflowResultViewProps) {
+  if (workflow === "batch") {
+    return <BatchResultView data={data} title="Batch result" />;
+  }
   const plan = details(data);
   let summary: Record<string, unknown> = data;
 

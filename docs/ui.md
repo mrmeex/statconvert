@@ -123,6 +123,25 @@ Use **Include subfolders** for recursive discovery and preserve the folder struc
 needed. Parquet is the default browser target. JSONL and NDJSON are both available as
 line-delimited targets.
 
+**Plan files** is a lightweight filesystem plan. It reports stable per-file reasons,
+existing-output and overwrite disposition, directory-creation implications, conflict
+flags, input sizes, complete counts, and at most 500 deterministic item details. It does
+not inspect schemas or values, apply transforms, run transfer policies, or determine
+whether a metadata sidecar is required.
+
+Select an optional portable TOML recipe and/or one of the five implemented transfer
+policies to enable **Full plan**. Full planning reads selected datasets, checks recipe
+compatibility, scans complete columns for policy decisions, and writes no dataset output
+or sidecar. A report is written only when an explicit report path is supplied. Recipes
+are parsed by the backend and never control batch output naming; policy decisions are also
+backend-owned. Exact optimization is an unchecked option shown only for
+`smallest-types`, while `analysis-ready` remains plan-only.
+
+Batch reports may be CSV, JSON, or standalone HTML and use the normal overwrite and
+create-directory controls. Plan and execution tables remain deterministic and bounded;
+safe raw JSON is collapsed by default. Changing an effective batch field invalidates the
+previous plan before Run.
+
 Workbook and other container formats require an explicit object policy: convert every
 supported object, or apply one object name/index to every input. Automatic mode pauses
 the plan when that choice is required.
@@ -324,6 +343,6 @@ For detailed command options, see the [CLI Reference](cli.md). For general workf
 the [User Guide](user-guide.md) and [Examples and Recipes](examples.md). StatConvert is
 licensed under the [GNU Affero General Public License v3.0 or later](../LICENSE).
 
-Batch policy controls, streaming policy planning, saved plans, and Settings defaults are
-not available. The Reference page summarizes the five implemented policies and the
-deferred `legacy-compatible` profile.
+Streaming recipe/policy processing, saved plans, retry/resume checkpoints, batch
+`--type-plan`, and Settings/global policy defaults are not available. The Reference page
+summarizes the five implemented policies and the deferred `legacy-compatible` profile.

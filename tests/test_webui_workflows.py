@@ -379,6 +379,22 @@ def test_batch_plan_and_background_execution(tmp_path: Path) -> None:
     plan = _post(application, "/api/workflows/plan-batch", payload)
     assert plan.status_code == 200
     assert plan.json()["details"]["counts"]["pending"] == 2
+    assert plan.json()["details"]["phase"] == "filesystem_plan"
+    assert plan.json()["details"]["mode"] == "filesystem_plan"
+    assert plan.json()["details"]["checks_not_performed"] == [
+        "schema",
+        "transform_recipe_compatibility",
+        "transfer_policy_decisions",
+        "required_metadata_sidecars",
+    ]
+    assert plan.json()["details"]["items"][0]["directory_disposition"] == (
+        "would_create"
+    )
+    assert plan.json()["details"]["truncation"] == {
+        "item_limit": 500,
+        "items_omitted": 0,
+        "issues_omitted": 0,
+    }
 
     created = _post(application, "/api/execute/batch", payload)
     job = _wait_for_job(application, created.json()["job_id"])
@@ -469,7 +485,190 @@ def test_g3_frontend_defaults_and_batch_state_contract() -> None:
     assert 'getActiveJob("batch")' in batch
     assert "let batchSessionJobId" in batch
     assert "setPlan(null)" in batch
-    assert "activeJob || !plan?.valid" in batch
+    assert "activeJob || !runAllowed" in batch
+
+
+def test_browser_batch_recipe_policy_full_plan_and_html_report(tmp_path: Path) -> None:
+    application = create_app()
+    input_dir = tmp_path / "input"
+    output_dir = tmp_path / "output"
+    input_dir.mkdir()
+    pd.DataFrame({"name": [" Ada ", "Bob"], "count": [1, 2]}).to_csv(
+        input_dir / "people.csv", index=False
+    )
+    recipe = tmp_path / "clean.toml"
+    recipe.write_text(
+        'version = 1\nname = "clean"\n\n[[steps]]\n'
+        'type = "derive"\ncolumn = "clean_name"\nexpression = "strip(name)"\n',
+        encoding="utf-8",
+    )
+    report = tmp_path / "reports" / "batch.html"
+    payload = {
+        "input_path": str(input_dir),
+        "output_path": str(output_dir),
+        "target_format": "json",
+        "create_dirs": True,
+        "full_plan": True,
+        "recipe_path": str(recipe),
+        "policy": "safe",
+        "report_path": str(report),
+        "report_format": "html",
+    }
+
+    response = _post(application, "/api/workflows/plan-batch", payload)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["valid"] is True
+    assert body["details"]["phase"] == "full_plan"
+    assert body["details"]["items"][0]["recipe_compatibility_status"] == "ready"
+    assert body["details"]["items"][0]["policy_status"] != "not_requested"
+    assert "--recipe" in body["command"]
+    assert "--full-plan" in body["command"]
+    assert "--policy safe" in body["command"]
+    assert "--report-format html" in body["command"]
+    assert report.is_file()
+    assert not output_dir.exists()
+
+
+@pytest.mark.parametrize(
+    ("updates", "message"),
+    [
+        ({"dry_run": True, "full_plan": True, "recipe_path": "missing.toml"}, "either lightweight planning or full planning"),
+        ({"policy": "safe"}, "lightweight file plan"),
+        ({"full_plan": True}, "requires a recipe or transfer policy"),
+        ({"recipe_path": "missing.toml", "stream": True, "full_plan": True}, "does not support recipes or transfer policies"),
+        ({"policy": "safe", "stream": True, "full_plan": True}, "does not support recipes or transfer policies"),
+        ({"policy": "safe", "optimize_types": True, "full_plan": True}, "smallest-types policy"),
+        ({"policy": "analysis-ready", "optimize_types": True, "full_plan": True}, "smallest-types policy"),
+        ({"policy": "legacy-compatible", "full_plan": True}, "not implemented"),
+    ],
+)
+def test_browser_batch_rejects_invalid_deep_plan_options(
+    tmp_path: Path, updates: dict[str, object], message: str
+) -> None:
+    input_dir = tmp_path / "input"
+    input_dir.mkdir()
+    pd.DataFrame({"x": [1]}).to_csv(input_dir / "a.csv", index=False)
+    payload: dict[str, object] = {
+        "input_path": str(input_dir),
+        "output_path": str(tmp_path / "output"),
+        "target_format": "json",
+        "create_dirs": True,
+        **updates,
+    }
+
+    response = _post(create_app(), "/api/workflows/plan-batch", payload)
+
+    assert response.status_code == 400
+    assert message in response.json()["error"]["message"]
+
+
+def test_browser_batch_analysis_ready_is_not_executable(tmp_path: Path) -> None:
+    input_dir = tmp_path / "input"
+    input_dir.mkdir()
+    pd.DataFrame({"x": [1]}).to_csv(input_dir / "a.csv", index=False)
+
+    response = _post(
+        create_app(),
+        "/api/execute/batch",
+        {
+            "input_path": str(input_dir),
+            "output_path": str(tmp_path / "output"),
+            "target_format": "json",
+            "create_dirs": True,
+            "policy": "analysis-ready",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "planning-only" in response.json()["error"]["message"]
+
+
+def test_browser_batch_executes_recipe_before_smallest_type_policy(tmp_path: Path) -> None:
+    application = create_app()
+    input_dir = tmp_path / "input"
+    input_dir.mkdir()
+    pd.DataFrame({"name": [" Ada ", "Bob"], "count": [1, 2]}).to_csv(
+        input_dir / "people.csv", index=False
+    )
+    recipe = tmp_path / "clean.toml"
+    recipe.write_text(
+        'version = 1\n\n[[steps]]\ntype = "derive"\n'
+        'column = "clean_name"\nexpression = "strip(name)"\n',
+        encoding="utf-8",
+    )
+    output_dir = tmp_path / "output"
+
+    created = _post(
+        application,
+        "/api/execute/batch",
+        {
+            "input_path": str(input_dir),
+            "output_path": str(output_dir),
+            "target_format": "json",
+            "create_dirs": True,
+            "recipe_path": str(recipe),
+            "policy": "smallest-types",
+            "optimize_types": True,
+        },
+    )
+    job = _wait_for_job(application, created.json()["job_id"])
+
+    assert job["status"] == "succeeded"
+    item = job["result"]["items"][0]
+    assert item["recipe_execution_status"] == "success"
+    assert item["policy_status"] != "not_requested"
+    assert item["optimization_applied_count"] >= 0
+    assert "clean_name" in pd.read_json(output_dir / "people.json").columns
+
+
+def test_browser_batch_execution_writes_explicit_html_report(tmp_path: Path) -> None:
+    application = create_app()
+    input_dir = tmp_path / "input"
+    input_dir.mkdir()
+    pd.DataFrame({"id": [1, 2]}).to_csv(input_dir / "people.csv", index=False)
+    output_dir = tmp_path / "output"
+    report = tmp_path / "reports" / "batch.html"
+
+    created = _post(
+        application,
+        "/api/execute/batch",
+        {
+            "input_path": str(input_dir),
+            "output_path": str(output_dir),
+            "target_format": "json",
+            "create_dirs": True,
+            "report_path": str(report),
+            "report_format": "html",
+        },
+    )
+    job = _wait_for_job(application, created.json()["job_id"])
+
+    assert job["status"] == "succeeded"
+    assert job["result"]["report_path"] == str(report)
+    assert report.is_file()
+    assert (output_dir / "people.json").is_file()
+
+
+def test_browser_batch_frontend_deep_plan_controls_are_bounded() -> None:
+    root = Path(__file__).resolve().parents[1] / "ui-frontend" / "src"
+    batch = (root / "pages" / "BatchPage.tsx").read_text(encoding="utf-8")
+    details = (root / "components" / "RawDetails.tsx").read_text(encoding="utf-8")
+
+    assert "Plan files" in batch
+    assert "Lightweight file planning" in batch
+    assert "Full plan" in batch
+    assert "Optional portable recipe" in batch
+    assert "Current behavior (no policy)" in batch
+    assert "Apply exact smallest-type optimization" in batch
+    assert '{ value: "html", label: "HTML" }' in batch
+    assert '[".html", ".htm"]' in batch
+    assert "legacy-compatible" not in batch
+    assert "type-plan" not in batch
+    assert "setOptimizeTypes(false)" in batch
+    assert "useEffect(() => { setPlan(null); }" in batch
+    assert 'component="details"' in details
 
 
 def test_second_ui_batch_is_rejected_until_active_job_finishes(

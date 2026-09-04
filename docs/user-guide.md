@@ -823,17 +823,46 @@ statconvert batch input-folder output-folder --to csv --recursive
 statconvert batch input-folder output-folder --to csv --csv-delimiter ";"
 statconvert batch workbooks output-folder --to parquet --object Data
 statconvert batch input-folder output-folder --to xlsx --dry-run
+statconvert batch input-folder output-folder --to parquet --recipe clean.toml --full-plan
+statconvert batch input-folder output-folder --to parquet --policy safe --full-plan
+statconvert batch input-folder output-folder --to parquet --policy smallest-types --optimize-types
 ```
 
-`--recursive` includes subdirectories. A dry run previews the deterministic file and
-output plan without converting data, creating directories, or replacing files. It also
-shows worker count, planned workload size, total input bytes, largest input file, and the
-active object/transform/validation modes. These values come from planning and filesystem
-metadata; they are not predictions of peak memory. The root
-output folder must already exist unless `--create-dirs` is supplied. Preserve-structure
-subfolders generated below an existing root are created automatically during execution.
+`--recursive` includes subdirectories. A dry run is lightweight filesystem planning: it
+does not read dataset schemas or values, apply transforms, or run transfer policies. It
+reports existing outputs, missing/generated directory implications, same-path and
+duplicate-output conflicts, filtered/unsupported reasons, stable reason codes, input
+sizes, and overwrite/directory dispositions without converting data, creating directories,
+or replacing files. Existing outputs are blocked unless `--overwrite` reports
+`would_replace`; missing parents are blocked unless `--create-dirs` reports
+`would_create`. Preserve-structure subfolders retain their existing execution behavior.
+
+Human detail is capped at 500 items with an omission notice; CLI JSON remains complete and
+adds summary, unchecked-area, and truncation metadata. Predictable sidecar paths may be
+shown, but required metadata sidecars are not determined. With `--recipe`, dry-run parses
+the portable recipe once but does not check it against individual schemas. Policy planning
+is never run during dry-run. These values come from planning and filesystem metadata; they
+are not predictions of peak memory.
 Because dry runs do not read container contents,
 object-selection problems are detected during execution rather than during the dry run.
+
+Use `--full-plan` with `--recipe` and/or `--policy` when dataset-reading checks are needed
+without writes. It reads each pending item, applies the recipe to a deep copy for
+compatibility and post-recipe shape, then runs the existing transfer planner on that
+post-recipe dataset. Full-plan creates no data output, metadata sidecar, or directory.
+
+Normal in-memory execution supports portable recipe plus policy together in that order.
+`analysis-ready` and `smallest-types` alone only report decisions;
+`smallest-types --optimize-types` applies exact supported decisions to a copy. Batch has no
+policy default, saved transfer plan, or `--type-plan`. Recipes and policies cannot change
+discovery or output names. They are rejected with `--stream`; workflow-config references
+remain deferred. Browser Batch exposes the same optional recipe and five-policy
+selection, explicit full planning, smallest-types optimization, and CSV/JSON/HTML report
+paths. Its **Plan files** action remains lightweight and dataset-read-free; the frontend
+does not parse recipes or infer policy behavior. No policy is stored in Settings.
+
+Batch report suffix inference treats both `.html` and `.htm` as HTML; `--report-format`
+can explicitly select `csv`, `json`, or `html`.
 
 During a normal human run, StatConvert first shows the planned item count, workers, target,
 structure, object mode, transformation/validation state, and report setting. The live area
@@ -1042,14 +1071,16 @@ even with overwrite.
 
 Use `transform --dry-run` to retain the existing direct-pipeline dry run. Workflow configs
 remain separate and continue to embed paths and ordered steps; config recipe references
-and batch recipe loading are deferred. Portable recipes and the browser builder support
+remain deferred. Batch CLI loads the same portable recipe with `--recipe`, while Browser
+Batch delegates recipe parsing and compatibility checks to the backend. Portable recipes
+and the browser builder support
 stable multi-column `sort`, order-preserving `distinct` with first/last retention, and
 deterministic `row_number`. Direct flags apply these after the existing operations in
 sort, distinct, row-number order; use a recipe for arbitrary interleaving. The complete
 syntax for filters, recoding, type errors, validation, and object selection is in the
-[CLI Reference](cli.md#transform), including every supported function and operator,
-bracketed references for awkward column names, ordered recipe semantics, and the closed
-evaluator's security boundary.
+[CLI Reference](cli.md#transform), which defines every supported function and
+operator, bracketed references for awkward column names, ordered recipe semantics, and
+the closed evaluator's security boundary.
 
 For many inputs, `batch --transform` continues to support the established select, drop,
 rename, type, structured filter, and recode options. The new derive and expression-filter

@@ -1,4 +1,5 @@
 from dataclasses import asdict
+from functools import partial
 import logging as py_logging
 from pathlib import Path
 from typing import Annotated, Any
@@ -7,8 +8,12 @@ import typer
 
 from statconvert.batch import (
     BatchError,
+    batch_plan_to_dict,
+    build_batch_full_plan,
     build_batch_plan,
     execute_batch_plan,
+    process_batch_dataset,
+    validate_batch_report_path,
     write_batch_plan_report,
     write_batch_result_report,
 )
@@ -191,10 +196,7 @@ from statconvert.ui.errors import (
     show_success,
 )
 
-app = typer.Typer(
-    name="statconvert",
-    help="Universal statistical data converter"
-)
+app = typer.Typer(name="statconvert", help="Universal statistical data converter")
 config_app = typer.Typer(
     name="config",
     help="Create, validate and run repeatable TOML workflow configurations.",
@@ -318,9 +320,7 @@ StreamOption = Annotated[
     bool,
     typer.Option(
         "--stream",
-        help=(
-            "Use bounded streaming for CSV, JSONL and NDJSON source/target pairs."
-        ),
+        help=("Use bounded streaming for CSV, JSONL and NDJSON source/target pairs."),
     ),
 ]
 ChunkSizeOption = Annotated[
@@ -328,18 +328,14 @@ ChunkSizeOption = Annotated[
     typer.Option(
         "--chunk-size",
         min=1,
-        help=(
-            "Rows per streaming chunk. Requires --stream; defaults to 100000."
-        ),
+        help=("Rows per streaming chunk. Requires --stream; defaults to 100000."),
     ),
 ]
 BatchStreamOption = Annotated[
     bool,
     typer.Option(
         "--stream",
-        help=(
-            "Use bounded streaming for CSV, JSONL and NDJSON source/target pairs."
-        ),
+        help=("Use bounded streaming for CSV, JSONL and NDJSON source/target pairs."),
         rich_help_panel="Streaming",
     ),
 ]
@@ -348,9 +344,7 @@ BatchChunkSizeOption = Annotated[
     typer.Option(
         "--chunk-size",
         min=1,
-        help=(
-            "Rows per streaming chunk. Requires --stream; defaults to 100000."
-        ),
+        help=("Rows per streaming chunk. Requires --stream; defaults to 100000."),
         rich_help_panel="Streaming",
     ),
 ]
@@ -576,9 +570,7 @@ def transform_recipe_validate(
                 mode="full",
             )
             valid = plan.valid
-            issues = [
-                issue.to_dict() for issue in (*plan.errors, *plan.warnings)
-            ]
+            issues = [issue.to_dict() for issue in (*plan.errors, *plan.warnings)]
         payload: dict[str, Any] = {
             "valid": valid,
             "mode": mode,
@@ -653,6 +645,14 @@ def _run_batch_config(
     **arguments: Any,
 ) -> None:
     """Adapt config field presence to batch's existing CLI-source validation."""
+
+    # Recipe/policy options are intentionally not workflow-config fields in 1.5.0c.
+    # The config runner calls this Typer command as a regular Python function, so
+    # omitted values must be supplied explicitly instead of inheriting OptionInfo.
+    arguments.setdefault("recipe_file", None)
+    arguments.setdefault("full_plan", False)
+    arguments.setdefault("policy", None)
+    arguments.setdefault("optimize_types", False)
 
     parameter_names = {
         "select": "select",
@@ -838,6 +838,8 @@ def _validate_batch_streaming_options(
     object_manifest: str | None,
     all_objects: bool,
     write_config_file: str | None,
+    recipe_file: str | None = None,
+    policy: str | None = None,
 ) -> None:
     """Reject batch modes that do not yet have a streaming contract."""
 
@@ -847,6 +849,11 @@ def _validate_batch_streaming_options(
         raise BatchError(
             "Batch streaming does not support transforms yet.",
             suggestion="Run without --stream, or remove the batch transform options.",
+        )
+    if recipe_file is not None or policy is not None:
+        raise BatchError(
+            "Batch streaming does not support recipes or transfer policies yet.",
+            suggestion="Run without --stream, --recipe, and --policy.",
         )
     if validate_inputs:
         raise BatchError(
@@ -864,6 +871,44 @@ def _validate_batch_streaming_options(
         raise BatchError(
             "Batch streaming config integration is not available yet.",
             suggestion="Run the batch directly, or write a non-streaming batch config.",
+        )
+
+
+def _validate_batch_recipe_policy_options(
+    *,
+    dry_run: bool,
+    full_plan: bool,
+    recipe_file: str | None,
+    policy: str | None,
+    optimize_types: bool,
+    transform_items: bool,
+    transform_options_supplied: bool,
+    write_config_file: str | None,
+) -> None:
+    """Validate the deliberately narrow 1.5.0c batch integration surface."""
+
+    if dry_run and full_plan:
+        raise BatchError("Use either --dry-run or --full-plan, not both.")
+    if full_plan and recipe_file is None and policy is None:
+        raise BatchError("--full-plan requires --recipe or --policy.")
+    if policy is not None and dry_run:
+        raise BatchError(
+            "--policy cannot be used with lightweight --dry-run.",
+            suggestion="Use --full-plan to read datasets and evaluate the policy.",
+        )
+    if recipe_file is not None and transform_items:
+        raise BatchError("Use either --recipe or --transform, not both.")
+    if recipe_file is not None and transform_options_supplied:
+        raise BatchError(
+            "--recipe cannot be combined with direct batch transform options."
+        )
+    if optimize_types and (policy or "").strip().lower() != "smallest-types":
+        raise BatchError("--optimize-types requires --policy smallest-types.")
+    if write_config_file is not None and any(
+        (recipe_file is not None, policy is not None, full_plan, optimize_types)
+    ):
+        raise BatchError(
+            "Batch recipe, policy, and full-plan options cannot be saved to workflow config yet."
         )
 
 
@@ -1024,18 +1069,14 @@ def _validate_convert_transfer_options(
         if type_plan_only:
             raise ConversionError("--type-plan requires --policy POLICY.")
         if optimize_types:
-            raise ConversionError(
-                "--optimize-types requires --policy smallest-types."
-            )
+            raise ConversionError("--optimize-types requires --policy smallest-types.")
         return None
 
     resolved_policy = resolve_policy(policy)
     if type_plan_only and optimize_types:
         raise ConversionError("Use either --type-plan or --optimize-types, not both.")
     if optimize_types and resolved_policy != "smallest-types":
-        raise ConversionError(
-            "--optimize-types requires --policy smallest-types."
-        )
+        raise ConversionError("--optimize-types requires --policy smallest-types.")
     if stream:
         raise ConversionError(
             "Policy/type planning requires full-dataset planning and cannot use --stream.",
@@ -1119,22 +1160,15 @@ def _read_dataset(
     return dataset
 
 
-def _show_dataset_header(
-    input_file: str,
-    dataset
-) -> None:
+def _show_dataset_header(input_file: str, dataset) -> None:
     """
     Display the standard dataset header.
     """
 
     show_dataset_header(
         filename=input_file,
-        file_format=get_file_format(
-            input_file
-        ),
-        backend=get_backend_name(
-            input_file
-        ),
+        file_format=get_file_format(input_file),
+        backend=get_backend_name(input_file),
         rows=dataset.rows,
         columns=len(dataset.columns),
     )
@@ -1168,8 +1202,7 @@ def _show_collection_validation(
 
     selector = f" [{item.input_object}]" if item.input_object else ""
     console.print(
-        f"[bold]Manifest row {item.row_number}: "
-        f"{item.input_file}{selector}[/bold]"
+        f"[bold]Manifest row {item.row_number}: {item.input_file}{selector}[/bold]"
     )
     show_validation_issues(
         issues,
@@ -1277,7 +1310,11 @@ def type_plan(
                     "target": {"requested": target},
                     "policy": resolved_policy,
                     "status": "blocked",
-                    "scan": {"full_scan": False, "rows_scanned": 0, "columns_scanned": 0},
+                    "scan": {
+                        "full_scan": False,
+                        "rows_scanned": 0,
+                        "columns_scanned": 0,
+                    },
                     "summary": {"warning_count": 0, "error_count": 1},
                     "decisions": [],
                     "metadata": [],
@@ -1307,8 +1344,7 @@ def convert(
         False,
         "--all-objects",
         help=(
-            "Convert every supported input object into one multi-object "
-            "output file."
+            "Convert every supported input object into one multi-object output file."
         ),
     ),
     overwrite: OverwriteOption = False,
@@ -1444,9 +1480,7 @@ def convert(
                 csv_decimal,
             )
             if object_selector is not None and all_objects:
-                raise ConversionError(
-                    "Use either --object or --all-objects, not both."
-                )
+                raise ConversionError("Use either --object or --all-objects, not both.")
             try:
                 if stream:
                     streaming_result = execute_streaming_convert(
@@ -1469,15 +1503,11 @@ def convert(
                         read_options=read_options,
                         write_options=write_options,
                         on_option_warning=show_warning,
-                        on_validation=lambda name, issues: (
-                            _show_object_validation(
-                                name,
-                                issues,
-                                strict=strict_validation,
-                                target_format=(
-                                    Path(output_file).suffix.lower() or None
-                                ),
-                            )
+                        on_validation=lambda name, issues: _show_object_validation(
+                            name,
+                            issues,
+                            strict=strict_validation,
+                            target_format=(Path(output_file).suffix.lower() or None),
                         ),
                     )
                 elif resolved_policy is None:
@@ -1495,9 +1525,7 @@ def convert(
                         on_validation=lambda issues: show_validation_issues(
                             issues,
                             strict=strict_validation,
-                            target_format=(
-                                Path(output_file).suffix.lower() or None
-                            ),
+                            target_format=(Path(output_file).suffix.lower() or None),
                         ),
                     )
                 else:
@@ -1523,9 +1551,7 @@ def convert(
                         on_validation=lambda issues: show_validation_issues(
                             issues,
                             strict=strict_validation,
-                            target_format=(
-                                Path(output_file).suffix.lower() or None
-                            ),
+                            target_format=(Path(output_file).suffix.lower() or None),
                         ),
                     )
                     dataset = policy_result.dataset
@@ -1551,18 +1577,13 @@ def convert(
                     show_streaming_conversion_result(streaming_result)
                 elif all_objects:
                     for skipped in conversion_result.skipped_objects:
-                        name = (
-                            skipped.name
-                            or (
-                                f"object_{skipped.index}"
-                                if skipped.index is not None
-                                else "<unnamed>"
-                            )
+                        name = skipped.name or (
+                            f"object_{skipped.index}"
+                            if skipped.index is not None
+                            else "<unnamed>"
                         )
                         message = skipped.message or "Unsupported object"
-                        show_warning(
-                            f"Skipped unsupported object: {name} - {message}"
-                        )
+                        show_warning(f"Skipped unsupported object: {name} - {message}")
                     logger.info(
                         "Multi-object conversion result: output_file=%s "
                         "objects=%s skipped=%s rows=%s",
@@ -1575,9 +1596,7 @@ def convert(
                     console.print(
                         f"Objects converted: {len(conversion_result.objects):,}"
                     )
-                    console.print(
-                        f"Rows converted: {conversion_result.rows:,}"
-                    )
+                    console.print(f"Rows converted: {conversion_result.rows:,}")
                 elif type_plan_only:
                     logger.info(
                         "Non-writing conversion type plan: policy=%s target=%s "
@@ -1619,15 +1638,12 @@ def convert(
                     console.print(f"Rows converted: {dataset.rows:,}")
 
     except Exception as exc:
-
         handle_exception(exc)
 
         raise typer.Exit(1)
 
     if validation_failure is not None:
-        show_error(
-            "Validation failed. Output was not written."
-        )
+        show_error("Validation failed. Output was not written.")
         raise typer.Exit(1)
 
 
@@ -1752,15 +1768,11 @@ def collect(
                         read_options=read_options,
                         write_options=write_options,
                         on_option_warning=show_warning,
-                        on_validation=lambda item, issues: (
-                            _show_collection_validation(
-                                item,
-                                issues,
-                                strict=strict_validation,
-                                target_format=(
-                                    Path(output_file).suffix.lower() or None
-                                ),
-                            )
+                        on_validation=lambda item, issues: _show_collection_validation(
+                            item,
+                            issues,
+                            strict=strict_validation,
+                            target_format=(Path(output_file).suffix.lower() or None),
                         ),
                     )
                 except ValidationFailedError as exc:
@@ -2017,7 +2029,10 @@ def transform(
         if json_output and not preview:
             raise ConversionError("--json is supported only with --preview.")
         if save_recipe_file is not None and (
-            dry_run or preview or write_config_file is not None or recipe_file is not None
+            dry_run
+            or preview
+            or write_config_file is not None
+            or recipe_file is not None
         ):
             raise ConversionError(
                 "--save-recipe cannot be combined with --recipe, --dry-run, "
@@ -2349,22 +2364,17 @@ def transform(
                 )
 
                 if not dry_run:
-                    show_success(
-                        "Transformation completed."
-                    )
+                    show_success("Transformation completed.")
 
     except typer.Exit:
         raise
     except Exception as exc:
-
         handle_exception(exc)
 
         raise typer.Exit(1)
 
     if validation_failure is not None:
-        show_error(
-            "Validation failed. Output was not written."
-        )
+        show_error("Validation failed. Output was not written.")
         raise typer.Exit(1)
 
 
@@ -2381,18 +2391,10 @@ def _attach_extra_column_args(
         return select, drop
 
     if select and not drop:
-        return list(
-            select
-        ) + list(
-            extra_columns
-        ), drop
+        return list(select) + list(extra_columns), drop
 
     if drop and not select:
-        return select, list(
-            drop
-        ) + list(
-            extra_columns
-        )
+        return select, list(drop) + list(extra_columns)
 
     raise ValueError(
         "Extra column values are only supported after a single --select or --drop option."
@@ -2424,7 +2426,6 @@ def formats(
             show_formats_table(formats_list)
 
     except Exception as exc:
-
         handle_exception(exc)
 
         raise typer.Exit(1)
@@ -2455,7 +2456,6 @@ def backends(
             show_backends_table(backends_list)
 
     except Exception as exc:
-
         handle_exception(exc)
 
         raise typer.Exit(1)
@@ -2487,7 +2487,6 @@ def capabilities(
             show_capabilities_panel(target_info)
 
     except Exception as exc:
-
         handle_exception(exc)
 
         raise typer.Exit(1)
@@ -2576,7 +2575,9 @@ def objects(
                         show_objects_not_supported(path.suffix.lower())
                     return
 
-                logger.info("Object listing completed: objects=%s", len(dataset_objects))
+                logger.info(
+                    "Object listing completed: objects=%s", len(dataset_objects)
+                )
                 if json_output:
                     emit_json(dataset_objects)
                 else:
@@ -2645,12 +2646,11 @@ def info(
             _show_dataset_header(input_file, dataset)
             show_dataset_info(dataset)
 
-
     except Exception as exc:
-
         handle_exception(exc)
 
         raise typer.Exit(1)
+
 
 @app.command()
 def schema(
@@ -2682,9 +2682,7 @@ def schema(
             developer_log=developer_log,
         ) as logger:
             if overwrite_contract and export_contract is None:
-                raise ContractError(
-                    "--overwrite-contract requires --export-contract."
-                )
+                raise ContractError("--overwrite-contract requires --export-contract.")
             dataset = _read_dataset(
                 input_file,
                 object_selector=object_selector,
@@ -2707,7 +2705,6 @@ def schema(
                 show_success(f"Schema contract written: {contract_path}")
 
     except Exception as exc:
-
         handle_exception(exc)
 
         raise typer.Exit(1)
@@ -2752,7 +2749,6 @@ def labels(
             show_labels(dataset, limit)
 
     except Exception as exc:
-
         handle_exception(exc)
 
         raise typer.Exit(1)
@@ -2781,7 +2777,10 @@ def metadata(
         bool, typer.Option("--diagnose", help="Run read-only metadata diagnostics.")
     ] = False,
     validate_sidecar: Annotated[
-        bool, typer.Option("--validate-sidecar", help="Validate a sidecar without applying it.")
+        bool,
+        typer.Option(
+            "--validate-sidecar", help="Validate a sidecar without applying it."
+        ),
     ] = False,
     json_output: Annotated[
         bool, typer.Option("--json", help="Emit diagnostics as JSON.")
@@ -2828,7 +2827,8 @@ def metadata(
             diagnostic_mode = diagnose or validate_sidecar
             patch_mode = patch_file is not None
             apply_save_mode = bool(
-                apply_sidecar and sidecar_input is not None
+                apply_sidecar
+                and sidecar_input is not None
                 and (sidecar_output is not None or dry_run)
             )
             if diagnose and validate_sidecar:
@@ -2841,13 +2841,15 @@ def metadata(
                 raise MetadataSidecarError(
                     "--json and --strict require --diagnose or --validate-sidecar."
                 )
-            if diagnostic_mode and any((
-                export_sidecar,
-                apply_sidecar,
-                patch_mode,
-                export_dictionary is not None,
-                export_script is not None,
-            )):
+            if diagnostic_mode and any(
+                (
+                    export_sidecar,
+                    apply_sidecar,
+                    patch_mode,
+                    export_dictionary is not None,
+                    export_script is not None,
+                )
+            ):
                 raise MetadataSidecarError(
                     "Metadata diagnostics cannot be combined with export or apply options."
                 )
@@ -2883,8 +2885,7 @@ def metadata(
                 export_sidecar or apply_sidecar or patch_mode
             ):
                 raise MetadataSidecarError(
-                    "--overwrite-sidecar requires --export-sidecar or "
-                    "--apply-sidecar."
+                    "--overwrite-sidecar requires --export-sidecar or --apply-sidecar."
                 )
             if overwrite_dictionary and export_dictionary is None:
                 raise DataDictionaryError(
@@ -2895,7 +2896,8 @@ def metadata(
                     "--overwrite-script requires --export-script."
                 )
             if (
-                apply_sidecar and not apply_save_mode
+                apply_sidecar
+                and not apply_save_mode
                 and get_backend_name(input_file) == "pyreadstat"
             ):
                 raise MetadataSidecarError(
@@ -3039,10 +3041,7 @@ def metadata(
                 )
             _show_dataset_header(input_file, dataset)
             show_metadata_summary(dataset)
-            if (
-                applied_result is not None
-                and applied_result.unmatched_data_columns
-            ):
+            if applied_result is not None and applied_result.unmatched_data_columns:
                 unmatched = ", ".join(applied_result.unmatched_data_columns)
                 show_warning(
                     "Sidecar metadata applies only to matching columns. "
@@ -3070,32 +3069,36 @@ def metadata(
 
     except Exception as exc:
         if json_output:
-            emit_json({
-                "valid": False,
-                "writes": False,
-                "target": sidecar_output,
-                "source_data_modified": False,
-                "sidecar_target_modified": False,
-                "overwrite_required": False,
-                "changes": [],
-                "total_changes": 0,
-                "shown_changes": 0,
-                "truncated": False,
-                "conflicts": [{
-                    "severity": "error",
-                    "code": "metadata_edit_error",
-                    "message": str(exc),
-                    "column": None,
-                    "field": None,
-                    "suggestion": getattr(exc, "suggestion", None),
-                    "details": {},
-                }],
-                "issues": [],
-                "coverage": None,
-                "object_kind": None,
-                "object_name": object_selector,
-                "dry_run": dry_run,
-            })
+            emit_json(
+                {
+                    "valid": False,
+                    "writes": False,
+                    "target": sidecar_output,
+                    "source_data_modified": False,
+                    "sidecar_target_modified": False,
+                    "overwrite_required": False,
+                    "changes": [],
+                    "total_changes": 0,
+                    "shown_changes": 0,
+                    "truncated": False,
+                    "conflicts": [
+                        {
+                            "severity": "error",
+                            "code": "metadata_edit_error",
+                            "message": str(exc),
+                            "column": None,
+                            "field": None,
+                            "suggestion": getattr(exc, "suggestion", None),
+                            "details": {},
+                        }
+                    ],
+                    "issues": [],
+                    "coverage": None,
+                    "object_kind": None,
+                    "object_name": object_selector,
+                    "dry_run": dry_run,
+                }
+            )
         else:
             handle_exception(exc)
 
@@ -3110,14 +3113,22 @@ def metadata_diff(
     right_object: RightObjectSelectorOption = None,
     columns: Annotated[
         list[str] | None,
-        typer.Option("--column", "--columns", help="Compare metadata for this column; repeat as needed."),
+        typer.Option(
+            "--column",
+            "--columns",
+            help="Compare metadata for this column; repeat as needed.",
+        ),
     ] = None,
-    json_output: Annotated[bool, typer.Option("--json", help="Emit JSON output.")] = False,
+    json_output: Annotated[
+        bool, typer.Option("--json", help="Emit JSON output.")
+    ] = False,
     report: Annotated[
-        str | None, typer.Option("--report", help="Write a .csv, .json or .html report.")
+        str | None,
+        typer.Option("--report", help="Write a .csv, .json or .html report."),
     ] = None,
     report_format: Annotated[
-        str | None, typer.Option("--report-format", help="Report format: json, csv or html.")
+        str | None,
+        typer.Option("--report-format", help="Report format: json, csv or html."),
     ] = None,
     strict: Annotated[
         bool, typer.Option("--strict", help="Exit with failure when metadata differs.")
@@ -3221,7 +3232,6 @@ def summary(
             show_dataset_summary(dataset_summary)
 
     except Exception as exc:
-
         handle_exception(exc)
 
         raise typer.Exit(1)
@@ -3295,7 +3305,6 @@ def describe(
             show_column_profiles(profiles)
 
     except Exception as exc:
-
         handle_exception(exc)
 
         raise typer.Exit(1)
@@ -3397,7 +3406,6 @@ def frequencies(
             show_frequency_tables(tables)
 
     except Exception as exc:
-
         handle_exception(exc)
 
         raise typer.Exit(1)
@@ -3443,9 +3451,7 @@ def missing(
     """
 
     try:
-        _validate_threshold(
-            threshold
-        )
+        _validate_threshold(threshold)
         columns = _attach_extra_describe_columns(
             extra_columns=list(ctx.args), columns=columns
         )
@@ -3484,7 +3490,6 @@ def missing(
             show_missing_profiles(profiles)
 
     except Exception as exc:
-
         handle_exception(exc)
 
         raise typer.Exit(1)
@@ -3591,9 +3596,7 @@ def validate(
                 issues = []
                 contract_validation = streaming_result.contract_validation
             else:
-                target_extension = _resolve_target_extension(
-                    to_format
-                )
+                target_extension = _resolve_target_extension(to_format)
                 dataset = _read_dataset(
                     input_file,
                     object_selector=object_selector,
@@ -3615,18 +3618,13 @@ def validate(
                 combined_issues,
                 strict,
             )
-            error_count = sum(
-                issue.severity == "error"
-                for issue in combined_issues
-            )
+            error_count = sum(issue.severity == "error" for issue in combined_issues)
             warning_count = sum(
-                issue.severity == "warning"
-                for issue in combined_issues
+                issue.severity == "warning" for issue in combined_issues
             )
 
             logger.info(
-                "Validation result: errors=%s warnings=%s strict=%s "
-                "schema_contract=%s",
+                "Validation result: errors=%s warnings=%s strict=%s schema_contract=%s",
                 error_count,
                 warning_count,
                 strict,
@@ -3634,10 +3632,7 @@ def validate(
             )
 
             if json_output:
-                validation_payload = [
-                    asdict(issue)
-                    for issue in issues
-                ]
+                validation_payload = [asdict(issue) for issue in issues]
                 if streaming_result is not None:
                     emit_json(
                         {
@@ -3690,15 +3685,12 @@ def validate(
                 )
 
     except Exception as exc:
-
         handle_exception(exc)
 
         raise typer.Exit(1)
 
     if exit_code:
-        raise typer.Exit(
-            exit_code
-        )
+        raise typer.Exit(exit_code)
 
 
 @app.command(
@@ -3980,14 +3972,26 @@ def report(
         "--section",
         help="Include only this report section. Repeatable.",
     ),
-    no_summary: bool = typer.Option(False, "--no-summary", help="Omit dataset summary."),
+    no_summary: bool = typer.Option(
+        False, "--no-summary", help="Omit dataset summary."
+    ),
     no_schema: bool = typer.Option(False, "--no-schema", help="Omit schema."),
-    no_metadata: bool = typer.Option(False, "--no-metadata", help="Omit metadata summary."),
+    no_metadata: bool = typer.Option(
+        False, "--no-metadata", help="Omit metadata summary."
+    ),
     no_labels: bool = typer.Option(False, "--no-labels", help="Omit labels."),
-    no_missing: bool = typer.Option(False, "--no-missing", help="Omit missing-value analysis."),
-    no_describe: bool = typer.Option(False, "--no-describe", help="Omit descriptive profiles."),
-    frequencies: bool = typer.Option(False, "--frequencies", help="Include frequency tables."),
-    no_validation: bool = typer.Option(False, "--no-validation", help="Omit validation."),
+    no_missing: bool = typer.Option(
+        False, "--no-missing", help="Omit missing-value analysis."
+    ),
+    no_describe: bool = typer.Option(
+        False, "--no-describe", help="Omit descriptive profiles."
+    ),
+    frequencies: bool = typer.Option(
+        False, "--frequencies", help="Include frequency tables."
+    ),
+    no_validation: bool = typer.Option(
+        False, "--no-validation", help="Omit validation."
+    ),
     columns: list[str] | None = typer.Option(
         None,
         "--columns",
@@ -4026,9 +4030,7 @@ def report(
     policy: str | None = typer.Option(
         None,
         "--policy",
-        help=(
-            "Add a target-aware transfer-policy section; requires --target-format."
-        ),
+        help=("Add a target-aware transfer-policy section; requires --target-format."),
     ),
     strict_validation: bool = typer.Option(
         False,
@@ -4236,8 +4238,7 @@ def report(
             )
 
             resolved_output_format = (
-                output_format
-                or Path(output_file).suffix.lstrip(".").lower()
+                output_format or Path(output_file).suffix.lstrip(".").lower()
             )
             logger.info("Dataset report written: output_file=%s", output_file)
             logger.info(
@@ -4298,6 +4299,26 @@ def batch(
         False,
         "--transform",
         help="Apply the existing transformation pipeline to every batch item.",
+    ),
+    recipe_file: str | None = typer.Option(
+        None,
+        "--recipe",
+        help="Apply a portable version-1 transform recipe to each batch item.",
+    ),
+    full_plan: bool = typer.Option(
+        False,
+        "--full-plan",
+        help="Read and assess recipe/policy compatibility without writing outputs.",
+    ),
+    policy: str | None = typer.Option(
+        None,
+        "--policy",
+        help="Plan each item with an explicit transfer policy.",
+    ),
+    optimize_types: bool = typer.Option(
+        False,
+        "--optimize-types",
+        help="Apply exact smallest-types decisions per item.",
     ),
     select: list[str] | None = typer.Option(
         None,
@@ -4419,12 +4440,12 @@ def batch(
     report: str | None = typer.Option(
         None,
         "--report",
-        help="Write a CSV or JSON batch report.",
+        help="Write a CSV, JSON or HTML batch report.",
     ),
     report_format: str | None = typer.Option(
         None,
         "--report-format",
-        help="Report format override: csv or json.",
+        help="Report format override: csv, json or html.",
     ),
     no_progress: bool = typer.Option(
         False,
@@ -4466,6 +4487,17 @@ def batch(
             stream=stream,
             chunk_size=chunk_size,
         )
+        transform_options_supplied = _batch_transform_options_supplied(ctx)
+        _validate_batch_recipe_policy_options(
+            dry_run=dry_run,
+            full_plan=full_plan,
+            recipe_file=recipe_file,
+            policy=policy,
+            optimize_types=optimize_types,
+            transform_items=transform_items,
+            transform_options_supplied=transform_options_supplied,
+            write_config_file=write_config_file,
+        )
         _validate_batch_streaming_options(
             stream=stream,
             transform_items=transform_items,
@@ -4474,6 +4506,12 @@ def batch(
             object_manifest=object_manifest,
             all_objects=all_objects,
             write_config_file=write_config_file,
+            recipe_file=recipe_file,
+            policy=policy,
+        )
+        resolved_policy = resolve_policy(policy) if policy is not None else None
+        portable_batch_recipe = (
+            parse_portable_recipe(recipe_file) if recipe_file is not None else None
         )
         _validate_write_config_options(write_config_file, overwrite_config)
         if write_config_file is not None:
@@ -4492,7 +4530,6 @@ def batch(
                 ignore_missing_columns=ignore_missing_columns,
                 reset_index=reset_index,
             )
-            transform_options_supplied = _batch_transform_options_supplied(ctx)
             if transform_items and transform_pipeline.is_empty():
                 raise BatchError(
                     "--transform requires at least one transformation option."
@@ -4566,6 +4603,10 @@ def batch(
                 "object_manifest": object_manifest,
                 "all_objects": all_objects,
                 "transform": transform_items,
+                "recipe": recipe_file,
+                "full_plan": full_plan,
+                "policy": resolved_policy,
+                "optimize_types": optimize_types,
                 "select": select,
                 "drop": drop,
                 "rename": rename,
@@ -4618,33 +4659,24 @@ def batch(
                 ignore_missing_columns=ignore_missing_columns,
                 reset_index=reset_index,
             )
-            transform_options_supplied = _batch_transform_options_supplied(ctx)
             if transform_items and transform_pipeline.is_empty():
                 raise BatchError(
                     "--transform requires at least one transformation option."
                 )
             if not transform_items and transform_options_supplied:
-                raise BatchError(
-                    "Transformation options require --transform."
-                )
-            active_transform_pipeline = (
-                transform_pipeline
-                if transform_items
-                else None
-            )
+                raise BatchError("Transformation options require --transform.")
+            active_transform_pipeline = transform_pipeline if transform_items else None
+
             def option_warning(message: str) -> None:
                 _show_dataset_option_warning(
                     message,
                     json_output=json_output,
                 )
+
             if object_selector is not None and object_manifest is not None:
-                raise BatchError(
-                    "Use either --object or --object-manifest, not both."
-                )
+                raise BatchError("Use either --object or --object-manifest, not both.")
             if object_selector is not None and all_objects:
-                raise BatchError(
-                    "Use either --object or --all-objects, not both."
-                )
+                raise BatchError("Use either --object or --all-objects, not both.")
             if object_manifest is not None and all_objects:
                 raise BatchError(
                     "Use either --object-manifest or --all-objects, not both."
@@ -4676,28 +4708,111 @@ def batch(
                 streaming_enabled=stream,
                 chunk_size=effective_chunk_size,
                 object_mode=object_mode,
+                mode=(
+                    "dry_run" if dry_run else "full_plan" if full_plan else "execution"
+                ),
+                create_dirs=create_dirs,
+                filesystem_preflight=dry_run or full_plan,
+                recipe_path=recipe_file,
+                recipe_name=(
+                    portable_batch_recipe.name
+                    if portable_batch_recipe is not None
+                    else None
+                ),
+                recipe_step_count=(
+                    len(portable_batch_recipe.steps)
+                    if portable_batch_recipe is not None
+                    else 0
+                ),
+                policy=resolved_policy,
+                optimize_types=optimize_types,
             )
+            if report is not None:
+                validate_batch_report_path(
+                    plan,
+                    report,
+                    report_format=report_format,
+                    overwrite=overwrite,
+                    create_dirs=create_dirs,
+                )
+            batch_item_processor = None
+            if portable_batch_recipe is not None or resolved_policy is not None:
+                protected_batch_paths = frozenset(
+                    path.resolve(strict=False).as_posix().casefold()
+                    for item in plan.items
+                    for path in (item.input_file, item.output_file)
+                    if path is not None
+                )
+                batch_item_processor = partial(
+                    process_batch_dataset,
+                    recipe=portable_batch_recipe,
+                    policy=resolved_policy,
+                    optimize_types=optimize_types,
+                    execution=True,
+                    overwrite=overwrite,
+                    protected_paths=protected_batch_paths,
+                )
             input_path_value = Path(input_path)
             output_path_value = Path(output_path)
-            if input_path_value.is_file() and output_path_value.suffix:
-                validate_output_parent_directory(
-                    output_path_value,
-                    create_dirs=create_dirs,
-                    dry_run=dry_run,
-                )
-            else:
-                validate_output_root_directory(
-                    output_path_value,
-                    create_dirs=create_dirs,
-                    dry_run=dry_run,
-                )
+            if not dry_run and not full_plan:
+                if input_path_value.is_file() and output_path_value.suffix:
+                    validate_output_parent_directory(
+                        output_path_value,
+                        create_dirs=create_dirs,
+                    )
+                else:
+                    validate_output_root_directory(
+                        output_path_value,
+                        create_dirs=create_dirs,
+                    )
 
-            if dry_run:
+            if full_plan:
+                plan = build_batch_full_plan(
+                    plan,
+                    recipe=portable_batch_recipe,
+                    policy=resolved_policy,
+                    optimize_types=optimize_types,
+                    workers=workers,
+                    object_selector=object_selector,
+                    read_options=read_options,
+                    on_option_warning=option_warning,
+                )
                 if report is not None:
-                    write_batch_plan_report(plan, report, report_format)
+                    write_batch_plan_report(
+                        plan,
+                        report,
+                        report_format,
+                        overwrite=overwrite,
+                        create_dirs=create_dirs,
+                    )
                 if not json_output:
                     console.print(
-                        "[bold]Dry run:[/bold] planning only; no datasets will be converted."
+                        "[bold]Full plan:[/bold] datasets were read for recipe/policy "
+                        "assessment; no dataset outputs were written."
+                    )
+                _show_batch_json_or_plan(plan, json_output, report_path=report)
+                logger.info(
+                    "Batch full-plan result: total=%s pending=%s skipped=%s blocked=%s",
+                    plan.total_count,
+                    plan.pending_count,
+                    plan.skipped_count,
+                    plan.blocked_count,
+                )
+                exit_code = 1 if plan.has_blockers else 0
+
+            elif dry_run:
+                if report is not None:
+                    write_batch_plan_report(
+                        plan,
+                        report,
+                        report_format,
+                        overwrite=overwrite,
+                        create_dirs=create_dirs,
+                    )
+                if not json_output:
+                    console.print(
+                        "[bold]Dry run:[/bold] planning only; lightweight filesystem "
+                        "checks; no datasets will be read or converted."
                     )
                 _show_batch_json_or_plan(
                     plan,
@@ -4749,6 +4864,7 @@ def batch(
                         write_options=write_options,
                         on_option_warning=option_warning,
                         transform_pipeline=active_transform_pipeline,
+                        item_processor=batch_item_processor,
                     )
                 else:
                     result = run_batch_with_progress(
@@ -4762,16 +4878,21 @@ def batch(
                         write_options=write_options,
                         on_option_warning=option_warning,
                         transform_pipeline=active_transform_pipeline,
+                        item_processor=batch_item_processor,
                         report_path=report,
                     )
 
                 if report is not None:
-                    write_batch_result_report(result, report, report_format)
+                    write_batch_result_report(
+                        result,
+                        report,
+                        report_format,
+                        overwrite=overwrite,
+                        create_dirs=create_dirs,
+                    )
 
                 if json_output:
-                    _print_json(
-                        result
-                    )
+                    _print_json(result)
                 else:
                     show_batch_result(
                         result,
@@ -4797,15 +4918,12 @@ def batch(
                 )
 
     except Exception as exc:
-
         handle_exception(exc)
 
         raise typer.Exit(1)
 
     if exit_code:
-        raise typer.Exit(
-            exit_code
-        )
+        raise typer.Exit(exit_code)
 
 
 def _show_batch_json_or_plan(
@@ -4818,9 +4936,7 @@ def _show_batch_json_or_plan(
     """
 
     if json_output:
-        _print_json(
-            plan
-        )
+        _print_json(batch_plan_to_dict(plan))
         return
 
     show_batch_plan(
@@ -4851,15 +4967,9 @@ def _attach_extra_describe_columns(
         return columns
 
     if columns:
-        return list(
-            columns
-        ) + list(
-            extra_columns
-        )
+        return list(columns) + list(extra_columns)
 
-    raise ValueError(
-        "Extra column values are only supported after --columns."
-    )
+    raise ValueError("Extra column values are only supported after --columns.")
 
 
 def _validate_positive_option(
@@ -4871,9 +4981,7 @@ def _validate_positive_option(
     """
 
     if value <= 0:
-        raise ValueError(
-            f"{option_name} must be greater than 0."
-        )
+        raise ValueError(f"{option_name} must be greater than 0.")
 
 
 def _validate_threshold(
@@ -4887,9 +4995,7 @@ def _validate_threshold(
         return
 
     if threshold < 0 or threshold > 100:
-        raise ValueError(
-            "--threshold must be between 0 and 100."
-        )
+        raise ValueError("--threshold must be between 0 and 100.")
 
 
 def _filter_profiles_by_type(
@@ -4915,11 +5021,7 @@ def _filter_profiles_by_type(
             "Unsupported profile type. Use numeric, categorical, datetime or other."
         )
 
-    return [
-        profile
-        for profile in profiles
-        if profile.profile_type == profile_type
-    ]
+    return [profile for profile in profiles if profile.profile_type == profile_type]
 
 
 def _filter_missing_profiles(
@@ -4942,9 +5044,7 @@ def _filter_missing_profiles(
 
     if threshold is not None:
         filtered = [
-            profile
-            for profile in filtered
-            if profile.missing_percent >= threshold
+            profile for profile in filtered if profile.missing_percent >= threshold
         ]
 
     return filtered
@@ -4960,14 +5060,10 @@ def _resolve_target_extension(
     if target is None:
         return None
 
-    result = resolve_format_info(
-        target
-    )
+    result = resolve_format_info(target)
 
     if not result:
-        raise ValueError(
-            f"Unsupported target format: {target}"
-        )
+        raise ValueError(f"Unsupported target format: {target}")
 
     extension, _ = result
 
@@ -4982,16 +5078,10 @@ def _validation_exit_code(
     Return the validate command exit code for issues and strict mode.
     """
 
-    if any(
-        issue.severity == "error"
-        for issue in issues
-    ):
+    if any(issue.severity == "error" for issue in issues):
         return 1
 
-    if strict and any(
-        issue.severity == "warning"
-        for issue in issues
-    ):
+    if strict and any(issue.severity == "warning" for issue in issues):
         return 1
 
     return 0
@@ -5100,9 +5190,7 @@ def peek(
             _show_dataset_header(input_file, dataset)
             show_preview(dataset, rows)
 
-
     except Exception as exc:
-
         handle_exception(exc)
 
         raise typer.Exit(1)

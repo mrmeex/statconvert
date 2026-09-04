@@ -142,7 +142,14 @@ class BatchRequest(BaseModel):
     workers: int | None = Field(default=None, ge=1)
     patterns: list[str] = Field(default_factory=list, max_length=100)
     exclude_patterns: list[str] = Field(default_factory=list, max_length=100)
+    dry_run: bool = False
+    full_plan: bool = False
+    recipe_path: str | None = None
+    policy: str | None = None
+    optimize_types: bool = False
     report_path: str | None = None
+    report_format: Literal["csv", "json", "html"] | None = None
+    allow_blocked: bool = False
     stream: bool = False
     chunk_size: int | None = Field(default=None, ge=1)
 

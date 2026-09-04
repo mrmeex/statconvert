@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+from functools import partial
 from pathlib import Path
 import shlex
 import subprocess
@@ -14,8 +15,12 @@ from statconvert.batch import (
     BatchError,
     batch_plan_to_rows,
     batch_result_to_rows,
+    build_batch_full_plan,
     build_batch_plan,
     execute_batch_plan,
+    process_batch_dataset,
+    validate_batch_report_path,
+    write_batch_plan_report,
     write_batch_result_report,
 )
 from statconvert.contracts import validate_schema_contract_file
@@ -196,7 +201,9 @@ def browse_local_path(
             key=lambda path: (not path.is_dir(), path.name.casefold()),
         )
     except OSError as exc:
-        raise WebUiRequestError(f"Unable to browse directory {current}: {exc}") from None
+        raise WebUiRequestError(
+            f"Unable to browse directory {current}: {exc}"
+        ) from None
     for child in children:
         is_directory = child.is_dir()
         if not is_directory and selection == "directory":
@@ -272,9 +279,7 @@ def _inspect_schema_rows(dataset: Dataset) -> list[dict[str, Any]]:
                 "display_format": variable.display_format if variable else None,
                 "measure": variable.measure if variable else None,
                 "role": variable.role if variable else None,
-                "value_label_count": (
-                    len(variable.value_labels) if variable else 0
-                ),
+                "value_label_count": (len(variable.value_labels) if variable else 0),
             }
         )
     return rows
@@ -645,7 +650,9 @@ def execute_convert(request: ConvertRequest, context: JobContext) -> dict[str, A
             "streaming": False,
         }
     else:
-        context.emit("reading", message="Reading and planning input dataset.", progress=0.2)
+        context.emit(
+            "reading", message="Reading and planning input dataset.", progress=0.2
+        )
         result = transform_with_policy(
             request.input_path,
             request.output_path,
@@ -674,10 +681,30 @@ def execute_convert(request: ConvertRequest, context: JobContext) -> dict[str, A
     }
 
 
-def plan_batch(request: BatchRequest) -> dict[str, Any]:
-    _validate_batch_request(request)
+def plan_batch(
+    request: BatchRequest, *, execution: bool = False
+) -> dict[str, Any]:
+    _validate_batch_request(request, execution=execution)
     _effective_chunk_size(request.stream, request.chunk_size)
-    plan = _build_ui_batch_plan(request)
+    recipe = _batch_recipe(request)
+    policy = _batch_policy(request)
+    plan = _build_ui_batch_plan(
+        request,
+        filesystem_preflight=True,
+        recipe=recipe,
+        policy=policy,
+    )
+    if request.full_plan:
+        plan = build_batch_full_plan(
+            plan,
+            recipe=recipe,
+            policy=policy,
+            optimize_types=request.optimize_types,
+            workers=request.workers or 1,
+            object_selector=(
+                request.object_selector if request.object_mode == "specific" else None
+            ),
+        )
     if request.stream:
         for item in plan.pending_items():
             if item.output_file is None:
@@ -690,8 +717,7 @@ def plan_batch(request: BatchRequest) -> dict[str, Any]:
         {
             str(item.input_file)
             for item in plan.items
-            if item.input_extension
-            and format_supports_objects(item.input_extension)
+            if item.input_extension and format_supports_objects(item.input_extension)
         }
     )
     warnings: list[str] = []
@@ -712,32 +738,69 @@ def plan_batch(request: BatchRequest) -> dict[str, Any]:
         warnings.append(
             "The plan contains blocked items and cannot run until resolved."
         )
+    if request.report_path:
+        validate_batch_report_path(
+            plan,
+            request.report_path,
+            report_format=request.report_format,
+            overwrite=request.overwrite,
+            create_dirs=request.create_dirs,
+        )
+        if request.dry_run or request.full_plan:
+            write_batch_plan_report(
+                plan,
+                request.report_path,
+                request.report_format,
+                overwrite=request.overwrite,
+                create_dirs=request.create_dirs,
+            )
+    rows = batch_plan_to_rows(plan)
     return {
         "workflow": "batch",
-        "valid": not plan.has_blockers and not object_choice_required,
+        "valid": (
+            (
+                not plan.has_blockers
+                or (request.allow_blocked and not request.full_plan)
+            )
+            and not object_choice_required
+        ),
         "command": batch_command(request),
         "details": {
+            "phase": plan.phase,
+            "mode": plan.mode,
             "workload": make_json_safe(plan.workload),
-            "counts": {
-                "total": plan.total_count,
-                "pending": plan.pending_count,
-                "skipped": plan.skipped_count,
-                "blocked": plan.blocked_count,
-            },
-            "items": make_json_safe(batch_plan_to_rows(plan)[:500]),
+            "counts": make_json_safe(plan.summary_dict()),
+            "items": make_json_safe(rows[:500]),
             "truncated": plan.total_count > 500,
+            "truncation": {
+                "item_limit": 500,
+                "items_omitted": max(0, plan.total_count - 500),
+                "issues_omitted": 0,
+            },
+            "checks_not_performed": list(plan.checks_not_performed),
             "container_files": container_files,
             "object_choice_required": object_choice_required,
             "object_mode": request.object_mode,
             "workers": request.workers or 1,
             "workers_automatic": request.workers is None,
+            "report_path": request.report_path,
+            "report_format": request.report_format,
         },
         "warnings": warnings,
     }
 
 
 def execute_batch(request: BatchRequest, context: JobContext) -> dict[str, Any]:
-    plan_payload = plan_batch(request)
+    _validate_batch_request(request, execution=True)
+    execution_request = request.model_copy(
+        update={
+            "dry_run": False,
+            "full_plan": False,
+            "report_path": None,
+            "report_format": None,
+        }
+    )
+    plan_payload = plan_batch(execution_request, execution=True)
     if not plan_payload["valid"]:
         if plan_payload["details"].get("object_choice_required"):
             raise BatchError(
@@ -750,7 +813,9 @@ def execute_batch(request: BatchRequest, context: JobContext) -> dict[str, Any]:
             "Batch plan contains blocked items.",
             suggestion="Resolve output collisions or enable overwrite, then plan again.",
         )
-    plan = _build_ui_batch_plan(request)
+    recipe = _batch_recipe(request)
+    policy = _batch_policy(request)
+    plan = _build_ui_batch_plan(request, recipe=recipe, policy=policy)
     validate_output_root_directory(
         request.output_path,
         create_dirs=request.create_dirs,
@@ -768,9 +833,7 @@ def execute_batch(request: BatchRequest, context: JobContext) -> dict[str, Any]:
                     "item_index": index,
                     "input_path": str(item.input_file),
                     "output_path": str(item.output_file) if item.output_file else None,
-                    "status": (
-                        "queued" if item.status == "pending" else item.status
-                    ),
+                    "status": ("queued" if item.status == "pending" else item.status),
                     "message": item.reason,
                 }
                 for index, item in enumerate(plan.items)
@@ -811,11 +874,42 @@ def execute_batch(request: BatchRequest, context: JobContext) -> dict[str, Any]:
         ),
         "on_progress": progress,
     }
+    if recipe is not None or policy is not None:
+        protected_paths = frozenset(
+            path.resolve(strict=False).as_posix().casefold()
+            for item in plan.items
+            for path in (item.input_file, item.output_file)
+            if path is not None
+        )
+        execution_options["item_processor"] = partial(
+            process_batch_dataset,
+            recipe=recipe,
+            policy=policy,
+            optimize_types=request.optimize_types,
+            execution=True,
+            overwrite=request.overwrite,
+            protected_paths=protected_paths,
+        )
     if request.workers is not None:
         execution_options["workers"] = request.workers
+    if request.report_path:
+        validate_batch_report_path(
+            plan,
+            request.report_path,
+            report_format=request.report_format,
+            overwrite=request.overwrite,
+            create_dirs=request.create_dirs,
+        )
     result = execute_batch_plan(plan, **execution_options)
     if request.report_path:
-        write_batch_result_report(result, request.report_path)
+        write_batch_result_report(
+            result,
+            request.report_path,
+            request.report_format,
+            overwrite=request.overwrite,
+            create_dirs=request.create_dirs,
+        )
+    rows = batch_result_to_rows(result)
     return {
         "plan": plan_payload,
         "summary": {
@@ -825,8 +919,17 @@ def execute_batch(request: BatchRequest, context: JobContext) -> dict[str, Any]:
             "skipped": result.skipped_count,
             "blocked": result.blocked_count,
         },
-        "items": make_json_safe(batch_result_to_rows(result)),
+        "items": make_json_safe(rows[:500]),
         "report_path": request.report_path,
+        "report_format": request.report_format,
+        "truncation": {
+            "item_limit": 500,
+            "items_omitted": max(0, len(rows) - 500),
+            "issues_omitted": sum(
+                item.recipe.diagnostics_omitted + item.policy.diagnostics_omitted
+                for item in result.items
+            ),
+        },
     }
 
 
@@ -1018,7 +1121,9 @@ def execute_transform(
             suggestion="Resolve every step error before running the recipe.",
         )
     context.emit("planned", message="Transform recipe validated.", progress=0.1)
-    context.emit("transforming", message="Reading and transforming dataset.", progress=0.3)
+    context.emit(
+        "transforming", message="Reading and transforming dataset.", progress=0.3
+    )
     transformed = transform_file(
         input_file=request.input_path,
         output_file=request.output_path,
@@ -1164,7 +1269,9 @@ def config_load(request: ConfigTextRequest) -> dict[str, Any]:
         "command": config.command,
         "toml": path.read_text(encoding="utf-8"),
         "canonical_toml": to_toml(config),
-        "cli_command": _display_command(["statconvert", "config", "validate", str(path)]),
+        "cli_command": _display_command(
+            ["statconvert", "config", "validate", str(path)]
+        ),
     }
 
 
@@ -1254,7 +1361,9 @@ def plan_compare(request: CompareRequest) -> dict[str, Any]:
     right = _read(request.right_path, right_selector)
     options = _compare_options(request)
     if not request.compare_values and request.sample_size is not None:
-        raise WebUiRequestError("Sample size cannot be used when value comparison is disabled.")
+        raise WebUiRequestError(
+            "Sample size cannot be used when value comparison is disabled."
+        )
     return {
         "workflow": "compare",
         "valid": True,
@@ -1328,9 +1437,7 @@ def plan_report(request: ReportRequest) -> dict[str, Any]:
         )
     resolved_policy = _resolve_ui_policy(request.policy)
     if resolved_policy is not None and not request.target_format:
-        raise WebUiRequestError(
-            "A report transfer policy requires a target format."
-        )
+        raise WebUiRequestError("A report transfer policy requires a target format.")
     transfer_plan = (
         build_transfer_plan(
             dataset,
@@ -1355,8 +1462,14 @@ def plan_report(request: ReportRequest) -> dict[str, Any]:
             "sections": [
                 name
                 for name in (
-                    "summary", "schema", "metadata", "labels", "missing",
-                    "describe", "frequencies", "validation",
+                    "summary",
+                    "schema",
+                    "metadata",
+                    "labels",
+                    "missing",
+                    "describe",
+                    "frequencies",
+                    "validation",
                 )
                 if getattr(report_options, f"include_{name}")
             ],
@@ -1584,9 +1697,15 @@ def reference_capabilities() -> dict[str, Any]:
             {
                 key: info[key]
                 for key in (
-                    "can_read", "can_write", "is_container", "object_selection",
-                    "object_kind", "multi_object_write", "output_object_kind",
-                    "supports_multiple_sheets", "supports_multiple_tables",
+                    "can_read",
+                    "can_write",
+                    "is_container",
+                    "object_selection",
+                    "object_kind",
+                    "multi_object_write",
+                    "output_object_kind",
+                    "supports_multiple_sheets",
+                    "supports_multiple_tables",
                     "supports_streaming",
                 )
             }
@@ -1658,7 +1777,13 @@ def compare_command(request: CompareRequest) -> str:
 
 
 def report_command(request: ReportRequest) -> str:
-    arguments = ["statconvert", "report", request.input_path, "--output", request.output_path]
+    arguments = [
+        "statconvert",
+        "report",
+        request.input_path,
+        "--output",
+        request.output_path,
+    ]
     if request.object_selector:
         arguments.extend(["--object", request.object_selector])
     if request.output_format:
@@ -1826,8 +1951,22 @@ def batch_command(request: BatchRequest) -> str:
         arguments.extend(["--pattern", pattern])
     for pattern in request.exclude_patterns:
         arguments.extend(["--exclude-pattern", pattern])
+    if request.recipe_path:
+        arguments.extend(["--recipe", request.recipe_path])
+    if request.dry_run:
+        arguments.append("--dry-run")
+    if request.full_plan:
+        arguments.append("--full-plan")
+    if request.policy:
+        arguments.extend(["--policy", request.policy])
+    if request.optimize_types:
+        arguments.append("--optimize-types")
+    if request.allow_blocked:
+        arguments.append("--allow-blocked")
     if request.report_path:
         arguments.extend(["--report", request.report_path])
+    if request.report_format:
+        arguments.extend(["--report-format", request.report_format])
     if request.stream:
         arguments.append("--stream")
         arguments.extend(
@@ -2030,7 +2169,7 @@ def _normalize_writable_target(target_format: str) -> str:
     return target
 
 
-def _validate_batch_request(request: BatchRequest) -> None:
+def _validate_batch_request(request: BatchRequest, *, execution: bool) -> None:
     if request.object_mode == "specific" and not request.object_selector:
         raise WebUiRequestError(
             "Specific-object mode requires an object name or zero-based index."
@@ -2044,6 +2183,47 @@ def _validate_batch_request(request: BatchRequest) -> None:
             "Batch streaming does not support object handling.",
             suggestion="Turn off streaming or use automatic mode with plain text files.",
         )
+    if request.dry_run and request.full_plan:
+        raise WebUiRequestError("Use either lightweight planning or full planning, not both.")
+    if execution and (request.dry_run or request.full_plan):
+        raise WebUiRequestError("Planning modes cannot be submitted as batch execution.")
+    if not execution and request.full_plan and not (
+        request.recipe_path or request.policy
+    ):
+        raise WebUiRequestError("Full planning requires a recipe or transfer policy.")
+    if not execution and request.policy and not request.full_plan:
+        raise WebUiRequestError(
+            "Transfer policies cannot be evaluated by the lightweight file plan.",
+            suggestion="Use Full plan to read datasets and evaluate the policy.",
+        )
+    if request.stream and (request.recipe_path or request.policy):
+        raise WebUiRequestError(
+            "Batch streaming does not support recipes or transfer policies yet.",
+            suggestion="Turn off streaming or clear the recipe and policy.",
+        )
+    if request.optimize_types and request.policy != "smallest-types":
+        raise WebUiRequestError(
+            "Exact type optimization requires the smallest-types policy."
+        )
+    if execution and request.policy == "analysis-ready":
+        raise WebUiRequestError(
+            "The analysis-ready policy is planning-only in Browser Batch.",
+            suggestion="Use Full plan, or choose a policy that supports execution.",
+        )
+    if request.report_format and not request.report_path:
+        raise WebUiRequestError("A report format requires an explicit report path.")
+
+
+def _batch_recipe(request: BatchRequest):
+    if not request.recipe_path:
+        return None
+    return parse_portable_recipe(request.recipe_path)
+
+
+def _batch_policy(request: BatchRequest) -> str | None:
+    if not request.policy:
+        return None
+    return _resolve_ui_policy(request.policy)
 
 
 def _transform_recipe(request: TransformRequest):
@@ -2066,7 +2246,13 @@ def _portable_transform_recipe(request: TransformRequest):
     )
 
 
-def _build_ui_batch_plan(request: BatchRequest):
+def _build_ui_batch_plan(
+    request: BatchRequest,
+    *,
+    filesystem_preflight: bool = False,
+    recipe: Any = None,
+    policy: str | None = None,
+):
     object_mode = {
         "automatic": "none",
         "all": "all_objects",
@@ -2085,6 +2271,14 @@ def _build_ui_batch_plan(request: BatchRequest):
         streaming_enabled=request.stream,
         chunk_size=_effective_chunk_size(request.stream, request.chunk_size),
         object_mode=object_mode,
+        mode="filesystem_plan" if filesystem_preflight else "execution",
+        create_dirs=request.create_dirs,
+        filesystem_preflight=filesystem_preflight,
+        recipe_path=request.recipe_path,
+        recipe_name=recipe.name if recipe is not None else None,
+        recipe_step_count=len(recipe.steps) if recipe is not None else 0,
+        policy=policy,
+        optimize_types=request.optimize_types,
     )
 
 

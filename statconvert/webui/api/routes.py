@@ -464,7 +464,7 @@ def create_api_router(
 
     @router.post("/execute/batch", response_model=JobCreatedResponse)
     async def batch_execute(request: BatchRequest) -> JobCreatedResponse:
-        plan_batch(request)
+        plan_batch(request, execution=True)
         record = job_manager.submit_unique(
             "batch",
             lambda context: execute_with_ui_logging(

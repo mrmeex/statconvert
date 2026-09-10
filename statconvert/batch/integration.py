@@ -19,6 +19,7 @@ from statconvert.batch.models import (
     BatchItem,
     BatchPlan,
 )
+from statconvert.batch.planning import output_writes_metadata_sidecar
 from statconvert.dataset import Dataset
 from statconvert.dataset_options import DatasetReadOptions
 from statconvert.metadata.sidecar import SIDECAR_SUFFIX
@@ -373,10 +374,12 @@ def _mark_sidecar_collisions(plan: BatchPlan) -> None:
     source_paths = {_path_key(item.input_file) for item in plan.items}
     sidecars: dict[str, list[BatchItem]] = {}
     for item in plan.items:
-        if item.status != BATCH_STATUS_PENDING or item.sidecar_disposition not in {
-            "required",
-            "optional",
-        }:
+        if item.status != BATCH_STATUS_PENDING or item.output_file is None:
+            continue
+        if (
+            item.sidecar_disposition not in {"required", "optional"}
+            and not output_writes_metadata_sidecar(item.output_file)
+        ):
             continue
         if item.potential_sidecar_path is None:
             continue
@@ -387,6 +390,13 @@ def _mark_sidecar_collisions(plan: BatchPlan) -> None:
                 item,
                 code="SIDECAR_PATH_CONFLICT",
                 message="Required sidecar conflicts with a selected source or primary output.",
+                subsystem="preflight",
+            )
+        elif item.potential_sidecar_path.exists() and not plan.options.overwrite:
+            _block(
+                item,
+                code="SIDECAR_OUTPUT_EXISTS",
+                message="Metadata sidecar already exists and overwrite is disabled.",
                 subsystem="preflight",
             )
     for colliding in sidecars.values():

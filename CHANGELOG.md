@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.5.1 - 2026-09-10
+
+StatConvert 1.5.1 is a stabilization patch for the 1.5.0 batch workflow.
+
+### Fixed
+
+- Automatic metadata sidecars now respect `--overwrite` during lightweight planning,
+  full planning, and the final execution preflight.
+- Automatic metadata sidecars no longer collide with selected sources or planned primary
+  outputs.
+- Browser Batch clears a completed job display when form options change.
+
+### Safety and compatibility
+
+- No new features, dependencies, formats, ORC support, or database support were added.
+- No-policy/no-recipe batch behavior is unchanged.
+- Ordinary dry-run remains dataset-read-free, full-plan remains non-writing except for
+  explicit reports, and report writes remain explicit and preflighted.
+- The license remains AGPL-3.0-or-later.
+
 ## 1.5.0 - 2026-09-04
 
 StatConvert 1.5.0 is the batch and automation maturity release. It adds explicit

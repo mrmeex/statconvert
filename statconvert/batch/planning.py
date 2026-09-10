@@ -7,6 +7,7 @@ from pathlib import Path
 from statconvert.batch.exceptions import BatchError
 from statconvert.error_suggestions import did_you_mean
 from statconvert.batch.models import (
+    BATCH_MODE_FULL_PLAN,
     BATCH_PHASE_FILESYSTEM_PLAN,
     BATCH_PHASE_FULL_PLAN,
     BATCH_STATUS_BLOCKED,
@@ -437,6 +438,7 @@ def build_batch_plan(
             items,
             overwrite=overwrite,
             create_dirs=create_dirs,
+            defer_sidecar_checks=mode == BATCH_MODE_FULL_PLAN,
         )
 
     return BatchPlan(
@@ -742,6 +744,7 @@ def _build_manifest_plan(
             items,
             overwrite=overwrite,
             create_dirs=create_dirs,
+            defer_sidecar_checks=mode == BATCH_MODE_FULL_PLAN,
         )
     return BatchPlan(options=options, items=items)
 
@@ -1064,6 +1067,7 @@ def _apply_filesystem_preflight(
     *,
     overwrite: bool,
     create_dirs: bool,
+    defer_sidecar_checks: bool,
 ) -> None:
     """Attach dry-run path dispositions without creating or reading datasets."""
 
@@ -1142,6 +1146,74 @@ def _apply_filesystem_preflight(
                 reason_code="OUTPUT_DIRECTORY_MISSING",
                 reason="Output directory does not exist and --create-dirs is disabled",
             )
+
+    if not defer_sidecar_checks:
+        _apply_potential_sidecar_preflight(items, overwrite=overwrite)
+
+
+def _apply_potential_sidecar_preflight(
+    items: list[BatchItem],
+    *,
+    overwrite: bool,
+) -> None:
+    """Protect automatic sidecar paths without reading any dataset."""
+
+    primary_paths = {
+        _path_key(item.output_file)
+        for item in items
+        if item.output_file is not None
+    }
+    source_paths = {_path_key(item.input_file) for item in items}
+    sidecars: dict[str, list[BatchItem]] = defaultdict(list)
+
+    for item in items:
+        if (
+            item.status != BATCH_STATUS_PENDING
+            or item.output_file is None
+            or item.potential_sidecar_path is None
+            or not output_writes_metadata_sidecar(item.output_file)
+        ):
+            continue
+
+        key = _path_key(item.potential_sidecar_path)
+        sidecars[key].append(item)
+        if key in primary_paths or key in source_paths:
+            _block_item(
+                item,
+                reason_code="SIDECAR_PATH_CONFLICT",
+                reason=(
+                    "Automatic metadata sidecar conflicts with a selected source or "
+                    "planned primary output"
+                ),
+            )
+        elif item.potential_sidecar_path.exists() and not overwrite:
+            _block_item(
+                item,
+                reason_code="SIDECAR_OUTPUT_EXISTS",
+                reason=(
+                    "Automatic metadata sidecar already exists and overwrite is disabled"
+                ),
+            )
+
+    for colliding in sidecars.values():
+        if len(colliding) <= 1:
+            continue
+        for item in colliding:
+            _block_item(
+                item,
+                reason_code="DUPLICATE_SIDECAR_PATH",
+                reason="Multiple items would write the same metadata sidecar",
+            )
+
+
+def output_writes_metadata_sidecar(output_file: Path) -> bool:
+    """Return whether the registered target writes an automatic sidecar."""
+
+    resolved = resolve_format_info(output_file.suffix)
+    if resolved is None:
+        return False
+    _, format_info = resolved
+    return "sidecar" in str(format_info.get("metadata_mode", "")).casefold()
 
 
 def _block_item(item: BatchItem, *, reason_code: str, reason: str) -> None:

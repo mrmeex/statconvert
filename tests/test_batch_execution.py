@@ -48,6 +48,24 @@ def test_execute_batch_plan_converts_pending_csv_to_json(tmp_path):
     assert item.error is None
 
 
+def test_execution_rechecks_automatic_sidecar_before_primary_write(tmp_path):
+    input_file = _write_csv(tmp_path / "input" / "sample.csv")
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+    plan = build_batch_plan(input_file, output_dir, "json")
+    output_file = output_dir / "sample.json"
+    sidecar = Path(f"{output_file}.statconvert-metadata.json")
+    sidecar.write_text("sentinel", encoding="utf-8")
+
+    result = execute_batch_plan(plan)
+
+    assert result.failed_count == 1
+    assert result.items[0].error is not None
+    assert "Metadata sidecar already exists" in result.items[0].error
+    assert not output_file.exists()
+    assert sidecar.read_text(encoding="utf-8") == "sentinel"
+
+
 def test_execute_batch_plan_converts_in_parallel_and_preserves_order(tmp_path):
     input_dir = tmp_path / "input"
     output_dir = tmp_path / "output"

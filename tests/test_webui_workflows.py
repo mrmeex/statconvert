@@ -667,7 +667,9 @@ def test_browser_batch_frontend_deep_plan_controls_are_bounded() -> None:
     assert "legacy-compatible" not in batch
     assert "type-plan" not in batch
     assert "setOptimizeTypes(false)" in batch
-    assert "useEffect(() => { setPlan(null); }" in batch
+    assert "setPlan(null); setError(null);" in batch
+    assert "terminalStatuses.has(jobStatus)" in batch
+    assert "batchSessionJobId = null; setJobId(null); setJobStatus(null);" in batch
     assert 'component="details"' in details
 
 

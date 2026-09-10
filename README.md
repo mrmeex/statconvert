@@ -5,12 +5,12 @@ inspecting, validating, batch-processing, comparing, reporting, and logging stat
 datasets. It uses a backend registry and a common `Dataset` model so format-specific code
 stays out of conversion and analysis workflows.
 
-Version 1.5.0 matures batch and automation workflows with lightweight filesystem planning,
-explicit non-writing full plans, portable recipe and transfer-policy integration, exact
-opt-in smallest-type optimization, bounded JSON/CSV/HTML reports, and matching local
-browser controls. Recipes run before policies, ordinary conversion and lightweight dry-run
-behavior remain unchanged, and analysis-ready recommendations remain plan-only. Version
-1.5.0 adds no formats, ORC or database support, persistent jobs, or runtime dependencies.
+Version 1.5.1 is a stabilization patch for the 1.5.0 batch workflow. Automatic metadata
+sidecars now respect `--overwrite` and cannot collide with planned primary outputs, while
+Browser Batch clears a completed job display when form options change. Recipes still run
+before policies, ordinary conversion and lightweight dry-run behavior remain unchanged,
+and full planning remains non-writing except for explicitly requested reports. Version
+1.5.1 adds no features, formats, ORC or database support, persistent jobs, or dependencies.
 The local browser UI remains bound to the local machine and is installed through the
 optional `statconvert[ui]` extra; the CLI keeps its 11 base runtime dependencies.
 

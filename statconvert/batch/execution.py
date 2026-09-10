@@ -29,10 +29,12 @@ from statconvert.batch.models import (
     BatchProgressEvent,
     BatchResult,
 )
+from statconvert.batch.planning import output_writes_metadata_sidecar
 from statconvert.dataset_options import DatasetReadOptions, DatasetWriteOptions
 from statconvert.dataset import Dataset
 from statconvert.exceptions import OutputPathError
 from statconvert.inspection import ValidationIssue, validate_dataset
+from statconvert.metadata.sidecar import SIDECAR_SUFFIX
 from statconvert.streaming.execution import execute_streaming_convert
 from statconvert.streaming.options import validate_chunk_size
 from statconvert.transformations.pipeline import TransformationPipeline
@@ -573,15 +575,23 @@ def _validate_item_ready(
                 "Use --overwrite to replace it, or choose a different output path."
             ),
         )
+    sidecar_path = item.potential_sidecar_path
+    writes_sidecar = output_writes_metadata_sidecar(item.output_file)
+    if sidecar_path is None and writes_sidecar:
+        sidecar_path = Path(f"{item.output_file}{SIDECAR_SUFFIX}")
     if (
-        item.sidecar_disposition in {"required", "optional"}
-        and item.potential_sidecar_path is not None
-        and item.potential_sidecar_path.exists()
+        sidecar_path is not None
+        and (
+            item.sidecar_disposition in {"required", "optional"}
+            or writes_sidecar
+        )
+        and sidecar_path.exists()
         and not overwrite
     ):
-        raise OutputPathError(
-            f"Required metadata sidecar already exists: {item.potential_sidecar_path}",
-            suggestion="Use --overwrite to replace it, or choose a different output path.",
+        raise BatchIntegrationError(
+            f"Metadata sidecar already exists: {sidecar_path}",
+            code="SIDECAR_OUTPUT_EXISTS",
+            subsystem="preflight",
         )
 
 

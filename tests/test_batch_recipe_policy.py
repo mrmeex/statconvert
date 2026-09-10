@@ -497,6 +497,32 @@ def test_policy_full_plan_blocks_existing_required_sidecar(tmp_path):
     assert sidecar.read_text(encoding="utf-8") == "existing"
 
 
+def test_recipe_full_plan_blocks_existing_automatic_sidecar(tmp_path):
+    source = _write_csv(tmp_path / "input" / "data.csv")
+    recipe = _write_recipe(tmp_path / "recipe.toml")
+    output = tmp_path / "output" / "data.json"
+    output.parent.mkdir()
+    sidecar = Path(f"{output}.statconvert-metadata.json")
+    sidecar.write_text("existing", encoding="utf-8")
+
+    result, payload = _invoke_json(
+        str(source),
+        str(output),
+        "--to",
+        "json",
+        "--recipe",
+        str(recipe),
+        "--full-plan",
+    )
+
+    item = payload["items"][0]
+    assert result.exit_code == 1
+    assert item["sidecar_disposition"] == "potential_path"
+    assert item["reason_code"] == "SIDECAR_OUTPUT_EXISTS"
+    assert not output.exists()
+    assert sidecar.read_text(encoding="utf-8") == "existing"
+
+
 def test_policy_json_bounds_diagnostics_but_keeps_complete_counts(tmp_path):
     columns = {f"mixed_{index}": 1 for index in range(105)}
     second = {name: "text" for name in columns}

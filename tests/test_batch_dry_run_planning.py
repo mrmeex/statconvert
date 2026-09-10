@@ -125,6 +125,68 @@ def test_existing_output_dispositions_follow_overwrite(tmp_path: Path) -> None:
     assert output.read_text(encoding="utf-8") == "original"
 
 
+def test_existing_automatic_sidecar_requires_overwrite(tmp_path: Path) -> None:
+    source = _write_csv(tmp_path / "input/source.csv")
+    output = tmp_path / "output/source.json"
+    output.parent.mkdir()
+    sidecar = Path(f"{output}.statconvert-metadata.json")
+    sidecar.write_text("sentinel", encoding="utf-8")
+
+    blocked = _dry_plan(source.parent, output.parent)
+    replacing = _dry_plan(source.parent, output.parent, overwrite=True)
+
+    assert blocked.items[0].status == "blocked"
+    assert blocked.items[0].reason_code == "SIDECAR_OUTPUT_EXISTS"
+    assert replacing.items[0].status == "pending"
+    assert sidecar.read_text(encoding="utf-8") == "sentinel"
+
+    native_plan = build_batch_plan(
+        source.parent,
+        tmp_path / "native-output",
+        "sav",
+        create_dirs=True,
+        filesystem_preflight=True,
+    )
+    native_sidecar = Path(
+        f"{native_plan.items[0].output_file}.statconvert-metadata.json"
+    )
+    native_sidecar.parent.mkdir()
+    native_sidecar.write_text("unrelated", encoding="utf-8")
+    native_plan = build_batch_plan(
+        source.parent,
+        native_sidecar.parent,
+        "sav",
+        filesystem_preflight=True,
+    )
+
+    assert native_plan.items[0].status == "pending"
+
+
+def test_automatic_sidecar_cannot_collide_with_another_primary_output(
+    tmp_path: Path,
+) -> None:
+    input_root = tmp_path / "input"
+    _write_csv(input_root / "a.csv")
+    _write_csv(input_root / "a.json.statconvert-metadata.csv")
+
+    plan = _dry_plan(input_root, tmp_path / "output", create_dirs=True)
+    overwrite_plan = _dry_plan(
+        input_root,
+        tmp_path / "output-overwrite",
+        create_dirs=True,
+        overwrite=True,
+    )
+    by_name = {item.input_file.name: item for item in plan.items}
+    overwrite_by_name = {
+        item.input_file.name: item for item in overwrite_plan.items
+    }
+
+    assert by_name["a.csv"].status == "blocked"
+    assert by_name["a.csv"].reason_code == "SIDECAR_PATH_CONFLICT"
+    assert by_name["a.json.statconvert-metadata.csv"].status == "pending"
+    assert overwrite_by_name["a.csv"].reason_code == "SIDECAR_PATH_CONFLICT"
+
+
 def test_missing_root_and_generated_subdirectory_dispositions(tmp_path: Path) -> None:
     input_root = tmp_path / "input"
     _write_csv(input_root / "nested/source.csv")

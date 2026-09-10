@@ -54,7 +54,12 @@ export function BatchPage() {
     return () => { mounted = false; };
   }, []);
 
-  useEffect(() => { setPlan(null); }, [
+  useEffect(() => {
+    setPlan(null); setError(null);
+    if (jobStatus && terminalStatuses.has(jobStatus)) {
+      batchSessionJobId = null; setJobId(null); setJobStatus(null);
+    }
+  }, [
     inputPath, outputPath, targetFormat, recursive, overwrite, createDirs,
     preserveStructure, objectMode, objectSelector, failFast, allowBlocked,
     patterns, excludePatterns, recipePath, policy, optimizeTypes, reportPath,

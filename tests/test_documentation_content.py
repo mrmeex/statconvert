@@ -153,7 +153,7 @@ def test_public_docs_describe_transfer_policy_boundaries() -> None:
     assert "validation policy flags" in public_docs
     assert "browser UI" in public_docs
     index = (PROJECT_ROOT / "docs/index.md").read_text(encoding="utf-8")
-    assert "StatConvert 1.5.0 matures batch and automation workflows" in index
+    assert "StatConvert 1.5.1 is a stabilization patch" in index
     assert "Recipes run before policies" in index
     assert "new runtime dependency" in index
 

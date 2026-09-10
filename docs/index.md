@@ -69,13 +69,13 @@ statconvert ui
 </section>
 
 <p>
-  StatConvert 1.5.0 matures batch and automation workflows with lightweight filesystem
-  planning, explicit non-writing full plans, portable recipes and transfer policies,
-  exact opt-in smallest-type optimization, bounded CSV/JSON/HTML reports, and matching
-  Browser Batch controls. Recipes run before policies, ordinary conversion remains
-  unchanged, and analysis-ready recommendations remain plan-only. There is no batch
-  type-plan, streaming recipe/policy support, saved plan, retry/resume mechanism, default
-  policy, new format family, ORC or database support, or new runtime dependency.
+  StatConvert 1.5.1 is a stabilization patch for the 1.5.0 batch workflow. Automatic
+  metadata sidecars now respect <code>--overwrite</code> and cannot collide with planned
+  primary outputs, while Browser Batch clears a completed job display when form options
+  change. Recipes run before policies, and no-policy/no-recipe batch behavior is unchanged.
+  No new runtime dependency, feature, format, ORC, or database support was added;
+  ordinary dry-run remains dataset-read-free and full-plan remains non-writing except for
+  explicit reports.
 </p>
 
 <footer class="statconvert-home-footer">
